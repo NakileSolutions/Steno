@@ -153,6 +153,25 @@ pub fn fts_query(input: &str) -> Option<String> {
     }
 }
 
+/// Requête FTS5 « au moins un des mots significatifs » (questions en langage naturel).
+pub fn fts_query_any(input: &str) -> Option<String> {
+    const STOP: &[&str] = &[
+        "les", "des", "une", "est", "que", "qui", "quoi", "quel", "quelle", "quels", "quelles", "pour", "sur", "dans",
+        "avec", "par", "pas", "plus", "aux", "ont", "fait", "faire", "été", "etait", "decide", "décidé", "dit", "comment",
+        "pourquoi", "quand", "où", "nous", "vous", "ils", "elle", "cette", "ces", "son", "ses", "leur", "the", "and",
+    ];
+    let toks: Vec<String> = input
+        .split(|c: char| !c.is_alphanumeric() && c != '-' && c != '_')
+        .filter(|t| t.chars().count() >= 3 && !STOP.contains(&t.to_lowercase().as_str()))
+        .map(|t| format!("\"{}\"*", t.replace('"', "")))
+        .collect();
+    if toks.is_empty() {
+        None
+    } else {
+        Some(toks.join(" OR "))
+    }
+}
+
 /// Segment à insérer (le `seq` est attribué par la base).
 #[derive(Debug, Clone)]
 pub struct NewSegment {
@@ -1152,6 +1171,16 @@ impl Db {
     /// Recherche plein texte dans les transcriptions (hors apartés) et les comptes rendus.
     pub fn search(&self, query: &str, limit: i64) -> Result<Vec<SearchHit>> {
         let Some(q) = fts_query(query) else { return Ok(vec![]) };
+        self.search_fts(&q, limit)
+    }
+
+    /// Recherche « au moins un mot » pour les questions en langage naturel.
+    pub fn search_relevant(&self, question: &str, limit: i64) -> Result<Vec<SearchHit>> {
+        let Some(q) = fts_query_any(question) else { return Ok(vec![]) };
+        self.search_fts(&q, limit)
+    }
+
+    fn search_fts(&self, q: &str, limit: i64) -> Result<Vec<SearchHit>> {
         self.with(|c| {
             let mut out = vec![];
             let mut st = c.prepare(
