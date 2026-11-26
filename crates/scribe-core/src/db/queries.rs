@@ -248,16 +248,12 @@ impl Db {
                  (SELECT COUNT(*) FROM segments s WHERE s.meeting_id=m.id AND s.is_echo=0), ",
             );
             let mut args: Vec<rusqlite::types::Value> = vec![];
-            if let Some(q) = &fts {
-                sql.push_str(
-                    "(SELECT snippet(segments_fts, 0, '«', '»', '…', 12) FROM segments_fts \
-                     JOIN segments s2 ON s2.id = segments_fts.rowid \
-                     WHERE segments_fts MATCH ?1 AND s2.meeting_id = m.id AND s2.private = 0 LIMIT 1) AS snip ",
-                );
-                args.push(q.clone().into());
-            } else {
-                sql.push_str("NULL AS snip ");
+            if fts.is_some() {
+                // ?1 est utilisé plus bas ; l'extrait est calculé après coup (une requête par réunion
+                // affichée, bornée par les identifiants de ses segments).
+                args.push(fts.clone().unwrap().into());
             }
+            sql.push_str("NULL AS snip ");
             sql.push_str("FROM meetings m WHERE 1=1 ");
             if fts.is_some() {
                 sql.push_str(
@@ -298,7 +294,26 @@ impl Db {
                     snippet: r.get(13)?,
                 })
             })?;
-            rows.collect()
+            let mut list: Vec<MeetingSummary> = rows.collect::<rusqlite::Result<_>>()?;
+            if let Some(q) = &fts {
+                let mut range = c.prepare("SELECT MIN(id), MAX(id) FROM segments WHERE meeting_id=?1")?;
+                let mut snip = c.prepare(
+                    "SELECT snippet(segments_fts, 0, '«', '»', '…', 12) FROM segments_fts \
+                     JOIN segments s ON s.id = segments_fts.rowid \
+                     WHERE segments_fts MATCH ?1 AND segments_fts.rowid BETWEEN ?2 AND ?3 \
+                       AND s.meeting_id = ?4 AND s.private = 0 LIMIT 1",
+                )?;
+                for m in list.iter_mut() {
+                    let (lo, hi): (Option<i64>, Option<i64>) =
+                        range.query_row([&m.meeting.id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+                    if let (Some(lo), Some(hi)) = (lo, hi) {
+                        m.snippet = snip
+                            .query_row(params![q, lo, hi, m.meeting.id], |r| r.get(0))
+                            .optional()?;
+                    }
+                }
+            }
+            Ok(list)
         })
     }
 
