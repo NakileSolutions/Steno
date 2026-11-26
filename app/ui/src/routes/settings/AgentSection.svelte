@@ -79,9 +79,9 @@
 
 {#if settings.agent.provider === 'custom'}
   <div class="field">
-    <label class="field-label" for="custom-cmd">Commande<span class="hint">Modèle de commande. <code>{'{prompt}'}</code> est remplacé par la demande.</span></label>
+    <label class="field-label" for="custom-cmd">Commande<span class="hint">Modèle de commande : <code>{'{prompt_file}'}</code> = fichier contenant la demande (sinon envoyée sur l'entrée standard), <code>{'{model}'}</code>, <code>{'{run_dir}'}</code>.</span></label>
     <div class="field-body">
-      <input id="custom-cmd" class="input mono" bind:value={settings.agent.custom_command} placeholder={'mon-agent --print {prompt}'} />
+      <input id="custom-cmd" class="input mono" bind:value={settings.agent.custom_command} placeholder={'mon-agent --print --input {prompt_file}'} />
     </div>
   </div>
 {/if}

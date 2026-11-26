@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/scribe-core", "crates/scribe-cli"]
-default-members = ["crates/scribe-core", "crates/scribe-cli"]
+members = ["crates/scribe-core", "crates/scribe-cli", "app/src-tauri"]
+default-members = ["crates/scribe-core", "crates/scribe-cli", "app/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"

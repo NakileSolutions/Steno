@@ -7,10 +7,17 @@ const fDay = dtf({ weekday: 'long', day: 'numeric', month: 'long' });
 const fShort = dtf({ day: 'numeric', month: 'short' });
 const fFull = dtf({ weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-export const time = (iso: string | null | undefined) => (iso ? fTime.format(new Date(iso)) : '');
-export const timeS = (iso: string | null | undefined) => (iso ? fTimeS.format(new Date(iso)) : '');
-export const shortDate = (iso: string) => fShort.format(new Date(iso));
-export const fullDate = (iso: string) => cap(fFull.format(new Date(iso)));
+/** Formate une date ISO ; une valeur qui n'est pas une date (ex. « vendredi ») est rendue telle quelle. */
+function safe(f: Intl.DateTimeFormat, iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime()) ? f.format(d) : String(iso);
+}
+
+export const time = (iso: string | null | undefined) => safe(fTime, iso);
+export const timeS = (iso: string | null | undefined) => safe(fTimeS, iso);
+export const shortDate = (iso: string) => safe(fShort, iso);
+export const fullDate = (iso: string) => cap(safe(fFull, iso));
 
 export function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -23,6 +30,7 @@ function startOfDay(d: Date): number {
 /** « Aujourd'hui », « Hier », « Lundi 24 novembre »… */
 export function dayLabel(iso: string): string {
   const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return iso;
   const diff = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86400000);
   if (diff === 0) return "Aujourd'hui";
   if (diff === 1) return 'Hier';
@@ -31,6 +39,7 @@ export function dayLabel(iso: string): string {
 
 export function relDay(iso: string): string {
   const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return iso;
   const diff = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86400000);
   if (diff === 0) return time(iso);
   if (diff === 1) return 'Hier';

@@ -58,7 +58,7 @@
       toastError(e);
     }
   }
-  const overdue = (a: Action) => a.status === 'open' && !!a.due && a.due < new Date().toISOString().slice(0, 10);
+  const overdue = (a: Action) => a.status === 'open' && !!a.due && /^\d{4}-\d{2}-\d{2}/.test(a.due) && a.due < new Date().toISOString().slice(0, 10);
 </script>
 
 <div class="page scroll">
