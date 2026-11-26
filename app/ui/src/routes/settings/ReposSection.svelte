@@ -1,0 +1,85 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { api } from '../../lib/api';
+  import type { Repo } from '../../lib/types';
+  import { confirmDialog, toast, toastError } from '../../lib/ui.svelte';
+  import Icon from '../../lib/components/Icon.svelte';
+
+  let repos = $state<Repo[]>([]);
+  let loaded = $state(false);
+
+  onMount(async () => {
+    try {
+      repos = await api.listRepos();
+    } catch (e) {
+      toastError(e);
+    } finally {
+      loaded = true;
+    }
+  });
+
+  async function add() {
+    try {
+      const path = await api.pickFolder();
+      if (!path) return;
+      const r = await api.addRepo(path);
+      repos.push(r);
+      toast(`Dépôt « ${r.label} » ajouté.`);
+    } catch (e) {
+      toastError(e);
+    }
+  }
+  async function update(r: Repo) {
+    try {
+      await api.updateRepo($state.snapshot(r) as Repo);
+    } catch (e) {
+      toastError(e);
+    }
+  }
+  async function remove(r: Repo) {
+    if (!(await confirmDialog({ title: `Retirer « ${r.label} » ?`, message: 'Le dossier ne sera plus lisible par l’agent. Rien n’est supprimé sur le disque.', confirm: 'Retirer', danger: true }))) return;
+    try {
+      await api.removeRepo(r.id);
+      repos = repos.filter((x) => x.id !== r.id);
+    } catch (e) {
+      toastError(e);
+    }
+  }
+</script>
+
+<p class="intro muted">Dossiers que l’agent peut <strong>lire</strong> (jamais modifier) pendant les demandes en direct et la corrélation. Enregistré automatiquement.</p>
+
+<div class="list">
+  {#each repos as r (r.id)}
+    <div class="repo card">
+      <div class="row">
+        <Icon name="folder" size={16} />
+        <input class="input label-in" bind:value={r.label} onchange={() => update(r)} aria-label="Libellé du dépôt" />
+        <span class="path faint small ellipsis grow" title={r.path}>{r.path}</span>
+        <button class="btn ghost sm icon" onclick={() => remove(r)} aria-label="Retirer {r.label}" title="Retirer"><Icon name="trash" size={13} /></button>
+      </div>
+      <div class="row opts">
+        <label class="check small"><input type="checkbox" bind:checked={r.use_live} onchange={() => update(r)} /> En direct</label>
+        <label class="check small"><input type="checkbox" bind:checked={r.use_correlation} onchange={() => update(r)} /> Corrélation</label>
+      </div>
+      <label class="globs">
+        <span class="small muted">Exclusions (un motif glob par ligne)</span>
+        <textarea class="input mono" rows="2" bind:value={r.exclude_globs} onchange={() => update(r)} placeholder={'**/node_modules/**\n**/*.min.js'}></textarea>
+      </label>
+    </div>
+  {:else}
+    {#if loaded}<div class="empty"><Icon name="folder" size={28} /><p>Aucun dépôt lisible.</p></div>{/if}
+  {/each}
+</div>
+<button class="btn" onclick={add}><Icon name="plus" size={14} />Ajouter un dossier…</button>
+
+<style>
+  .intro { margin: 14px 0; }
+  .list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+  .repo { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .label-in { width: 160px; font-weight: 600; height: 26px; }
+  .path { font-family: var(--mono); font-size: 11.5px; }
+  .opts { gap: 18px; padding-left: 24px; }
+  .globs { display: flex; flex-direction: column; gap: 4px; padding-left: 24px; }
+  .globs textarea { font-size: 12px; }
+</style>

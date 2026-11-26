@@ -221,7 +221,8 @@ pub async fn generate(inner: &Inner, meeting_id: &str) -> Result<()> {
             .collect::<Vec<_>>(),
     )?;
     for (label, name) in &parsed.speakers {
-        if label.starts_with("Eux") && !name.trim().is_empty() {
+        let label_used = speakers.iter().any(|s| &s.label == label);
+        if label.starts_with("Eux") && label_used && !name.trim().is_empty() {
             // Proposition : seulement si l'utilisateur n'a rien saisi.
             let existing = speakers.iter().find(|s| &s.label == label).and_then(|s| s.display_name.clone());
             if existing.is_none() {

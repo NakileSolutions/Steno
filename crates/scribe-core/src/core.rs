@@ -640,7 +640,16 @@ pub(crate) fn create_request(
             let Some(m) = &meeting else { bail!("aucune réunion en cours pour cette note") };
             let is_action = verb.map(|v| crate::text::normalize(v).contains("action")).unwrap_or(false)
                 || crate::text::normalize(query).starts_with("action");
-            let text = query.trim_start_matches([':', ' ']).to_string();
+            let mut text = query.trim_start_matches([':', ' ']).to_string();
+            for p in ["que ", "qu'", "qu’"] {
+                if text.to_lowercase().starts_with(p) {
+                    text = text[p.len()..].trim_start().to_string();
+                    break;
+                }
+            }
+            if let Some(first) = text.chars().next() {
+                text = first.to_uppercase().collect::<String>() + &text[first.len_utf8()..];
+            }
             inner.db.add_note(&m.id, &text, if origin == "voice" || origin == "hotkey" { "voice" } else { "user" })?;
             if is_action {
                 inner.db.add_action(&m.id, None, &text, None)?;

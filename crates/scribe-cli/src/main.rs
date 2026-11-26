@@ -1,1 +1,406 @@
-fn main(){}
+//! CLI `scribe` : ask · doctor · init · export · mcp, plus outils de développement
+//! (replay, simulate, daemon) et le crochet `policy-hook` appelé par les agents.
+
+mod init;
+mod mcp;
+mod replay;
+
+use anyhow::{bail, Context, Result};
+use clap::{Parser, Subcommand};
+use scribe_core::core::CoreOptions;
+use scribe_core::events::CoreEvent;
+use scribe_core::live::SidecarSpec;
+use scribe_core::model::MeetingFilter;
+use scribe_core::{Core, Db};
+use std::path::PathBuf;
+use std::time::Duration;
+
+#[derive(Parser)]
+#[command(name = "scribe", version, about = "Scribe — assistant de réunion local", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    cmd: Cmd,
+}
+
+#[derive(Subcommand)]
+enum Cmd {
+    /// Pose une question sur l'historique des réunions (ou une recherche croisée avec --croisee).
+    Ask {
+        question: String,
+        /// Recherche croisée (code, Jira, Confluence, Datadog) au lieu de l'historique.
+        #[arg(long)]
+        croisee: bool,
+        /// Réunion de rattachement (recherche croisée).
+        #[arg(long)]
+        meeting: Option<String>,
+        /// N'affiche que les résultats plein texte, sans appel IA.
+        #[arg(long)]
+        no_ai: bool,
+        #[arg(long, default_value_t = 300)]
+        timeout: u64,
+    },
+    /// Vérifie l'installation : permissions, Teams, sidecar, agent, connecteurs, politique.
+    Doctor {
+        /// Interroge réellement l'agent pour tester la politique lecture seule (consomme un appel).
+        #[arg(long)]
+        live: bool,
+    },
+    /// Premier lancement en ligne de commande (équivalent de l'assistant de l'app).
+    Init,
+    /// Exporte une réunion (ou toutes) en markdown.
+    Export {
+        id: Option<String>,
+        #[arg(long)]
+        all: bool,
+        #[arg(long, default_value = "md")]
+        format: String,
+        /// Dossier de sortie (sinon : sortie standard pour une réunion).
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Serveur MCP local en lecture seule (stdio).
+    Mcp,
+    /// Liste les réunions.
+    Meetings {
+        #[arg(long)]
+        query: Option<String>,
+        #[arg(long, default_value_t = 30)]
+        limit: i64,
+    },
+    /// Réglages : export / import TOML (config d'équipe).
+    Settings {
+        #[command(subcommand)]
+        action: SettingsCmd,
+    },
+    /// Tâches en attente (et exécution si l'app ne tourne pas).
+    Jobs {
+        #[arg(long)]
+        run: bool,
+    },
+    /// Simulateur du sidecar audio : rejoue un fichier d'exemple (protocole JSON lines).
+    Replay {
+        file: PathBuf,
+        #[arg(long, default_value_t = 1.0)]
+        speed: f64,
+        /// Quitte à la fin du fichier.
+        #[arg(long)]
+        exit: bool,
+    },
+    /// Rejoue un fichier d'exemple dans tout le pipeline (sans app) et attend le compte rendu.
+    Simulate {
+        file: PathBuf,
+        #[arg(long, default_value_t = 0.0)]
+        speed: f64,
+        #[arg(long, default_value_t = 600)]
+        timeout: u64,
+    },
+    /// Cœur sans interface : session en direct + file de tâches (journal sur la sortie standard).
+    Daemon {
+        /// Commande du sidecar (ex. : --sidecar scribe --sidecar replay --sidecar fichier.jsonl).
+        #[arg(long)]
+        sidecar: Vec<String>,
+    },
+    /// Crochet « avant outil » des agents (lit l'appel sur stdin ; code 2 = refusé).
+    #[command(hide = true)]
+    PolicyHook { policy: PathBuf },
+}
+
+#[derive(Subcommand)]
+enum SettingsCmd {
+    Export { file: Option<PathBuf> },
+    Import { file: PathBuf },
+    Show,
+}
+
+fn open_core(sidecar: Option<SidecarSpec>) -> Result<Core> {
+    scribe_core::paths::ensure_dirs()?;
+    let db = Db::open_default()?;
+    Core::new(db, CoreOptions { hook_exe: std::env::current_exe().ok(), sidecar, agent_override: None })
+}
+
+fn print_request(r: &scribe_core::model::Request) {
+    match r.status.as_str() {
+        "done" | "refused" => println!("{}", r.answer_md.clone().or(r.summary.clone()).unwrap_or_default()),
+        "error" => eprintln!("❌ {}", r.error.clone().unwrap_or_default()),
+        "cancelled" => eprintln!("Demande annulée."),
+        s => eprintln!("Demande en cours ({s})…"),
+    }
+    if !r.tools_used.is_empty() {
+        eprintln!("\nOutils utilisés : {}", r.tools_used.join(", "));
+    }
+}
+
+async fn wait_request(core: &Core, id: &str, timeout: u64) -> Result<scribe_core::model::Request> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout);
+    loop {
+        let r = core.db().get_request(id)?.context("demande introuvable")?;
+        if !matches!(r.status.as_str(), "queued" | "running") {
+            return Ok(r);
+        }
+        if tokio::time::Instant::now() > deadline {
+            bail!("délai dépassé ; la demande continue dans l'app");
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let cli = Cli::parse();
+    if let Cmd::PolicyHook { policy } = &cli.cmd {
+        let mut input = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut input)?;
+        std::process::exit(scribe_core::policy::hook_main(policy, &input));
+    }
+    if let Cmd::Replay { file, speed, exit } = &cli.cmd {
+        return replay::run(file, *speed, *exit);
+    }
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()))
+        .with_writer(std::io::stderr)
+        .init();
+
+    match cli.cmd {
+        Cmd::Ask { question, croisee, meeting, no_ai, timeout } => {
+            let core = open_core(None)?;
+            if !croisee {
+                let hits = core.db().search_relevant(&question, 8)?;
+                if hits.is_empty() {
+                    eprintln!("Aucun extrait trouvé dans l'historique.");
+                } else {
+                    eprintln!("Extraits trouvés :");
+                    for h in &hits {
+                        eprintln!(
+                            "  • {} ({}) : {}",
+                            h.title.clone().unwrap_or_else(|| h.meeting_id.clone()),
+                            h.started_at.get(..10).unwrap_or(""),
+                            h.snippet.replace('\n', " ")
+                        );
+                    }
+                    eprintln!();
+                }
+                if no_ai {
+                    return Ok(());
+                }
+            }
+            let r = if croisee {
+                core.ask(&question, meeting.as_deref(), "cli")?
+            } else {
+                core.ask_history(&question, "cli")?
+            };
+            let r = if r.status == "queued" {
+                if core.db().app_is_running()? {
+                    eprintln!("L'app Scribe traite la demande…");
+                } else {
+                    let c = core.clone();
+                    tokio::spawn(async move {
+                        let _ = c.run_pending_jobs().await;
+                    });
+                }
+                wait_request(&core, &r.id, timeout).await?
+            } else {
+                r
+            };
+            print_request(&r);
+        }
+        Cmd::Doctor { live } => {
+            let core = open_core(None)?;
+            let items = scribe_core::doctor::run(&core, live).await;
+            let mut worst = 0;
+            for i in &items {
+                let icon = match i.status.as_str() {
+                    "ok" => "✅",
+                    "warn" => {
+                        worst = worst.max(1);
+                        "⚠️ "
+                    }
+                    _ => {
+                        worst = 2;
+                        "❌"
+                    }
+                };
+                println!("{icon} {} : {}", i.name, i.message);
+                if let Some(f) = &i.fix {
+                    if i.status != "ok" {
+                        println!("     → {f}");
+                    }
+                }
+            }
+            if worst == 2 {
+                std::process::exit(1);
+            }
+        }
+        Cmd::Init => {
+            let core = open_core(None)?;
+            init::run(&core).await?;
+        }
+        Cmd::Export { id, all, format, out } => {
+            if format != "md" {
+                bail!("format non pris en charge : {format} (seul « md » existe)");
+            }
+            let core = open_core(None)?;
+            let ids: Vec<String> = if all {
+                core.db().list_meetings(&MeetingFilter { limit: Some(5000), ..Default::default() })?.into_iter().map(|m| m.meeting.id).collect()
+            } else {
+                vec![id.context("précisez un identifiant de réunion ou --all")?]
+            };
+            match out {
+                Some(dir) => {
+                    for id in &ids {
+                        let p = scribe_core::export::export_to_dir(core.db(), id, &dir)?;
+                        eprintln!("{}", p.display());
+                    }
+                }
+                None if ids.len() == 1 => print!("{}", core.export_meeting(&ids[0])?),
+                None => bail!("--all demande --out <dossier>"),
+            }
+        }
+        Cmd::Mcp => {
+            scribe_core::paths::ensure_dirs()?;
+            mcp::serve(Db::open_default()?)?;
+        }
+        Cmd::Meetings { query, limit } => {
+            let core = open_core(None)?;
+            for m in core.db().list_meetings(&MeetingFilter { query, limit: Some(limit), ..Default::default() })? {
+                println!(
+                    "{}  {:<10} {}{}  {}",
+                    m.meeting.started_at.get(..16).unwrap_or("").replace('T', " "),
+                    m.meeting.status,
+                    if m.meeting.confidential { "🔒 " } else { "" },
+                    m.meeting.title.clone().unwrap_or_default(),
+                    m.meeting.id
+                );
+            }
+        }
+        Cmd::Settings { action } => {
+            let core = open_core(None)?;
+            match action {
+                SettingsCmd::Export { file } => {
+                    let t = core.export_settings()?;
+                    match file {
+                        Some(f) => std::fs::write(f, t)?,
+                        None => print!("{t}"),
+                    }
+                }
+                SettingsCmd::Import { file } => {
+                    core.import_settings(&std::fs::read_to_string(file)?)?;
+                    eprintln!("Réglages importés.");
+                }
+                SettingsCmd::Show => println!("{}", serde_json::to_string_pretty(&core.settings())?),
+            }
+        }
+        Cmd::Jobs { run } => {
+            let core = open_core(None)?;
+            for j in core.db().pending_jobs()? {
+                println!("#{} {} {} ({}, essais {})", j.id, j.kind, j.meeting_id.unwrap_or_default(), j.status, j.attempts);
+            }
+            if run {
+                if core.db().app_is_running()? {
+                    bail!("l'app Scribe tourne : c'est elle qui traite la file");
+                }
+                let n = core.run_pending_jobs().await?;
+                eprintln!("{n} tâche(s) exécutée(s).");
+            }
+        }
+        Cmd::Simulate { file, speed, timeout } => simulate(file, speed, timeout).await?,
+        Cmd::Daemon { sidecar } => {
+            let spec = (!sidecar.is_empty()).then(|| SidecarSpec { program: sidecar[0].clone(), args: sidecar[1..].to_vec() });
+            let core = open_core(spec)?;
+            core.start_background();
+            let mut rx = core.subscribe();
+            eprintln!("Scribe tourne sans interface (Ctrl+C pour arrêter).");
+            loop {
+                tokio::select! {
+                    ev = rx.recv() => match ev {
+                        Ok(ev) => log_event(&ev),
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(_) => break,
+                    },
+                    _ = tokio::signal::ctrl_c() => break,
+                }
+            }
+            core.shutdown();
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        Cmd::PolicyHook { .. } | Cmd::Replay { .. } => unreachable!(),
+    }
+    Ok(())
+}
+
+fn log_event(ev: &CoreEvent) {
+    match ev {
+        CoreEvent::Segment(s) => println!(
+            "[{}] {}{}{} : {}",
+            s.ts.get(11..19).unwrap_or(""),
+            s.speaker,
+            if s.private { " (aparté)" } else { "" },
+            if s.is_echo { " (écho)" } else { "" },
+            s.text
+        ),
+        CoreEvent::Request(r) => println!("» demande {} [{}] {} : {}", &r.id[..8], r.intent, r.status, r.summary.clone().unwrap_or(r.query.clone())),
+        CoreEvent::Report { meeting_id, version } => println!("» compte rendu v{version} : {meeting_id}"),
+        CoreEvent::Notify { title, body, .. } => println!("🔔 {title} — {body}"),
+        CoreEvent::CommandDetected => println!("🔔 commande vocale détectée"),
+        CoreEvent::Live(_) | CoreEvent::MeetingsChanged => {}
+    }
+}
+
+/// Pipeline complet sans app : replay → réunion → demandes → compte rendu.
+async fn simulate(file: PathBuf, speed: f64, timeout: u64) -> Result<()> {
+    let exe = std::env::current_exe()?;
+    let spec = SidecarSpec {
+        program: exe.display().to_string(),
+        args: vec!["replay".into(), file.display().to_string(), "--speed".into(), speed.to_string()],
+    };
+    let core = open_core(Some(spec))?;
+    let mut rx = core.subscribe();
+    core.start_background();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout);
+    let mut meeting: Option<String> = None;
+    let mut last_segment = tokio::time::Instant::now();
+    let mut seen_segments = 0usize;
+    let mut stopped = false;
+    loop {
+        if tokio::time::Instant::now() > deadline {
+            bail!("délai dépassé");
+        }
+        match tokio::time::timeout(Duration::from_millis(300), rx.recv()).await {
+            Ok(Ok(ev)) => {
+                if let CoreEvent::Segment(s) = &ev {
+                    meeting = Some(s.meeting_id.clone());
+                    seen_segments += 1;
+                    last_segment = tokio::time::Instant::now();
+                }
+                if !matches!(ev, CoreEvent::Segment(_)) {
+                    log_event(&ev);
+                }
+            }
+            Ok(Err(_)) | Err(_) => {}
+        }
+        // Fin du fichier : plus de segment depuis 3 s → on arrête la réunion.
+        if !stopped && seen_segments > 0 && last_segment.elapsed() > Duration::from_secs(3) {
+            stopped = true;
+            eprintln!("{seen_segments} segments reçus ; fin de la réunion.");
+            let _ = core.stop_meeting().await;
+        }
+        if stopped {
+            let Some(id) = &meeting else { break };
+            let pending = core.db().pending_jobs()?;
+            let m = core.db().get_meeting(id)?.context("réunion introuvable")?;
+            let active = core.db().count_active_requests()?;
+            if pending.is_empty() && active == 0 && matches!(m.status.as_str(), "done" | "error") {
+                println!("\nRéunion : {} ({})", m.title.unwrap_or_default(), id);
+                for r in core.db().requests(id)? {
+                    println!("  • [{}] {} → {} : {}", r.intent, r.query, r.status, r.summary.unwrap_or_default());
+                }
+                if let Some(r) = core.db().get_report(id)? {
+                    println!("\n{}", r.markdown);
+                }
+                break;
+            }
+        }
+    }
+    core.shutdown();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    Ok(())
+}

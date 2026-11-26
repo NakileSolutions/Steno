@@ -515,7 +515,10 @@ impl Session {
         self.inner.emit(CoreEvent::Segment(seg.clone()));
         if me && !seg.is_echo {
             if private {
-                self.aside_buf.push((seg.id, seg.text.clone()));
+                // Seuls les apartés déclenchés par le raccourci forment une demande.
+                if self.aside || self.aside_flush_at.is_some() {
+                    self.aside_buf.push((seg.id, seg.text.clone()));
+                }
             } else {
                 let u = Utterance { id: seg.id, t0: a, t1: b, text: seg.text.clone() };
                 for cmd in self.assembler.push_me(&self.detector, &u, Instant::now()) {

@@ -1,0 +1,27 @@
+{
+  "title": "Daily ORION",
+  "voice_commands": [
+    {
+      "intent": "search",
+      "query_contains": "erreurs Datadog sur ms-booking"
+    },
+    {
+      "intent": "note",
+      "query_contains": "Marie relance le support Brindille"
+    }
+  ],
+  "private_segments": 2,
+  "echo_segments": 1,
+  "decision_contains": "verrou de créneau",
+  "actions": [
+    {
+      "owner": "Marie",
+      "text_contains": "APP-1234"
+    },
+    {
+      "owner": "Moi",
+      "text_contains": "Confluence"
+    }
+  ],
+  "segments": 492
+}

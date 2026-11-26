@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Info.plist d'exemple pour scribe-audio.
+
+  - Il est embarqué dans le binaire du sidecar (section __TEXT,__info_plist, voir Package.swift).
+  - Les deux clés NS…UsageDescription doivent AUSSI figurer dans l'Info.plist de Scribe.app
+    (app/src-tauri/Info.plist) : c'est l'app parente qui est le « processus responsable »
+    aux yeux de TCC quand elle lance le sidecar.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>local.scribe.audio</string>
+	<key>CFBundleName</key>
+	<string>scribe-audio</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Scribe utilise le micro pour transcrire localement ce que vous dites pendant vos réunions et détecter vos commandes vocales. L'audio ne quitte jamais votre Mac.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Scribe capte le son de Microsoft Teams pour transcrire localement ce que disent les autres participants. L'audio ne quitte jamais votre Mac.</string>
+</dict>
+</plist>
