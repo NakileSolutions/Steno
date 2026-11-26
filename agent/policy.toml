@@ -1,0 +1,42 @@
+# Politique lecture seule commune à tous les agents (PLAN §5.4).
+# Chaque adaptateur la traduit dans le mécanisme de son CLI. Les dépôts lisibles sont
+# ceux cochés dans les réglages (ajoutés à l'exécution), jamais listés ici.
+
+# Aucun dossier inscriptible.
+writable_dirs = []
+
+# Commandes shell autorisées (préfixes). Tout le reste est refusé.
+# Les tubes `|` ne sont acceptés que vers les commandes de `pipe_commands`.
+allowed_commands = [
+  "rg", "grep", "ls", "cat", "head", "tail", "wc", "find",
+  "git log", "git show", "git blame", "git grep", "git diff", "git status", "git branch", "git ls-files",
+  "glab mr view", "glab mr list", "glab mr diff", "glab issue view", "glab issue list",
+]
+pipe_commands = ["head", "tail", "wc", "sort", "uniq", "grep", "rg", "cut"]
+
+# Options interdites même pour une commande autorisée.
+denied_arguments = ["-exec", "-execdir", "-delete", "-fprint", "-fprintf", "-ok", "--output", "-o"]
+
+# Outils intégrés autorisés (lecture).
+builtin_read_tools = ["Read", "Grep", "Glob", "LS"]
+
+# Motifs d'outils MCP interdits (globs insensibles à la casse sur le nom complet de l'outil,
+# `*` = n'importe quoi). Un faux refus est sans gravité ; un faux accord publierait à l'extérieur.
+denied_tool_patterns = [
+  "*send*", "*post*", "*create*", "*update*", "*edit*", "*delete*", "*transition*", "*comment*",
+  "*merge*", "*push*", "*write*", "*destructive*", "*upload*", "*publish*",
+]
+
+# Mots interdits dans le nom de l'outil : le nom est découpé en mots (snake_case, camelCase,
+# tirets) et un mot égal à l'un d'eux (ou suivi de s / ed / ing / e) est refusé.
+denied_tool_words = [
+  "add", "remove", "share", "trash", "archive", "assign", "schedule", "reply", "forward", "draft",
+  "label", "move", "rename", "approve", "close", "resolve", "mute", "invite", "insert", "patch",
+  "put", "set", "upsert", "modify", "submit", "trigger", "cancel", "revoke", "grant", "commit",
+  "react", "complete", "mark", "unlabel", "untrash", "respond", "copy", "restore", "enable", "disable",
+  "execute", "run", "start", "stop", "kill", "restart", "deploy", "rollback", "acknowledge", "ack",
+]
+
+# Exceptions précises aux mots interdits (globs sur le nom complet). Les globs de
+# `denied_tool_patterns` restent toujours prioritaires.
+allowed_tool_exceptions = ["*executeread*", "*execute_read*"]

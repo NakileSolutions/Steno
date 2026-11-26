@@ -1,0 +1,11 @@
+# Mots très courants en français (et en réunion de dev) : un mot d'appel qui en fait partie déclenche un avertissement.
+a ah ai aie aller alors ami an apres as assez au aucun aussi autre aux avant avec avoir bah bien bon bonjour bonne bravo
+ca car ce cela celle celui cent ces cet cette chaque chef chez chose ci comme comment dans de debut des deux dire dis dit
+dix doit donc dont du elle elles en encore enfin entre est et etait ete etre eu euh eux fais faire fait faut fin fois font
+gars genre grand gros hein heure hier ici il ils je jour juste la le les leur lui ma mais mal me merci meme mes met mettre
+moi mon mot ne ni non nos notre nous nouveau oh ok on ont or ou oui par parce pas peu peut peux plus point pour pourquoi
+pres puis quand que quel quelle qui quoi rien sa sans se sera ses si sien soit son sont sous suis sur ta tard te tes tien
+toi ton tous tout toute tres trop tu un une vais va vers veux vie voila vos votre vous vrai vu
+super top cool parfait daccord voila allo salut hello hey bye stop go next ticket bug code test tests prod build deploy
+release sprint daily review merge commit branche branch push pull job jobs log logs api app serveur service client data
+base table script description scrum story epic task point demo projet equipe reunion appel micro son audio
