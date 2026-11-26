@@ -146,7 +146,7 @@ pub fn serve(db: Db) -> Result<()> {
         let resp = match serde_json::from_str::<Value>(&line) {
             Ok(Value::Array(batch)) => {
                 let r: Vec<Value> = batch.iter().filter_map(|m| handle(&db, m)).collect();
-                (!r.is_empty()).then(|| Value::Array(r))
+                (!r.is_empty()).then_some(Value::Array(r))
             }
             Ok(msg) => handle(&db, &msg),
             Err(_) => Some(json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": "JSON invalide"}})),

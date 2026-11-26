@@ -53,7 +53,6 @@ fn init_logs() {
 fn play_feedback(core: &Core) {
     let mode = core.settings().voice.feedback;
     if mode == "none" {
-        return;
     }
     #[cfg(target_os = "macos")]
     {

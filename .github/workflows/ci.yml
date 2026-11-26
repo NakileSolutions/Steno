@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      macos:
+        description: "Compiler aussi le sidecar Swift et l'app sur macOS (minutes macOS facturées plus cher)"
+        type: boolean
+        default: false
+
+jobs:
+  linux:
+    name: Tests (cœur, CLI, politique lecture seule, UI)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Tests Rust (dont acceptation avec le faux agent)
+        run: cargo test --workspace --exclude scribe-app
+      - name: Performance de la recherche (500 réunions)
+        run: cargo test -p scribe-core --release --test perf -- --ignored
+      - name: Interface
+        working-directory: app/ui
+        run: npm ci && npm run check && npm run build
+
+  macos:
+    name: Sidecar Swift et app (macOS)
+    if: github.event_name == 'workflow_dispatch' && inputs.macos
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Sidecar
+        working-directory: audio/ScribeAudio
+        run: swift build -c release && swift test
+      - name: App
+        run: make app

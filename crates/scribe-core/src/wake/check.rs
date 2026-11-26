@@ -41,7 +41,7 @@ pub fn check_wake_word(word: &str, strict: bool, db: Option<&Db>) -> Result<Wake
     }
     if let Some(db) = db {
         // Analyse de l'historique : chaque mot du mot d'appel.
-        let last = n.split(' ').last().unwrap_or(&n).to_string();
+        let last = n.split(' ').next_back().unwrap_or(&n).to_string();
         let (count, scanned) = db.count_word_in_recent(&last, 20)?;
         c.history_count = count;
         c.meetings_scanned = scanned;

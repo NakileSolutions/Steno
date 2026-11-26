@@ -135,7 +135,7 @@ pub fn extract_summary(answer: &str) -> String {
         let lc = l.trim_start_matches(['*', '#', ' ']).to_string();
         let low = lc.to_lowercase();
         if low.starts_with("tl;dr") || low.starts_with("tldr") {
-            let body = lc.splitn(2, ':').nth(1).unwrap_or("").replace("**", "").trim().to_string();
+            let body = lc.split_once(':').map(|x| x.1).unwrap_or("").replace("**", "").trim().to_string();
             let mut s = body;
             if s.is_empty() {
                 s = lines.get(i + 1).map(|x| x.to_string()).unwrap_or_default();

@@ -1,0 +1,114 @@
+# Adaptateurs d'agent — options utilisées et versions testées
+
+Code : `crates/scribe-core/src/agents/`. C'est le **seul** endroit qui connaît les CLI.
+Les options des CLI changent vite : à chaque mise à jour d'un agent, relancer
+`scribe doctor --live` (test réel « poste sur Slack ») et mettre ce fichier à jour.
+
+| Adaptateur | Statut | Version vérifiée | Bloque les MCP en écriture ? | Reprise de session |
+|---|---|---|---|---|
+| `claude-code` | supporté (référence) | 2.1.332 (`--help` vérifié) | **oui** (crochet `PreToolUse`) | oui (`--session-id` / `--resume`) |
+| `codex` | supporté | non installé ici — À VÉRIFIER | non → connecteurs grisés | oui (`codex exec resume`) |
+| `gemini` | expérimental | non installé ici — À VÉRIFIER | non → connecteurs grisés | non (résumé rejoué) |
+| `opencode` | expérimental | non installé ici — À VÉRIFIER | non → connecteurs grisés | oui (`--session`) |
+| `custom` | générique | — | non → connecteurs grisés | non (résumé rejoué) |
+
+## Principe commun
+
+- Un **dossier d'exécution par réunion** (`~/Library/Application Support/Scribe/runs/<réunion>/`),
+  stable pour que la reprise de session fonctionne. Les consignes (`agent/INSTRUCTIONS.md` +
+  `agent/playbooks/*.md`, complétées par le profil) y sont écrites au format du CLI :
+  `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` ou `INSTRUCTIONS.md`.
+- L'invite est envoyée sur l'**entrée standard** (pas de limite de taille de ligne de commande).
+- Les clés d'API présentes dans l'environnement (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GEMINI_API_KEY`…) sont **retirées** de l'environnement de l'agent, sauf si « Autoriser
+  l'utilisation d'une clé API » est coché : l'agent utilise donc l'abonnement du dev.
+- Le processus est lancé dans son propre groupe et tué entièrement au délai ou à l'annulation.
+- Niveaux : `quick` (note, récap, test), `search` (recherche croisée, corrélation, historique),
+  `summary` (compte rendu). Modèle vide = modèle par défaut du CLI.
+
+## `claude-code`
+
+```
+claude -p --output-format stream-json --verbose
+       --permission-mode dontAsk
+       --settings <run>/.scribe/settings-<id>.json
+       [--model <m>]
+       --session-id <uuid> | --resume <id> | --no-session-persistence
+       # sans outils (compte rendu, récap) :
+       --tools "" --strict-mcp-config --mcp-config '{"mcpServers":{}}'
+       # avec outils (recherche, corrélation) :
+       --tools Read,Grep,Glob,Bash
+       --allowedTools Read Grep Glob "Bash(rg *)" … mcp__<connecteur>…
+       --disallowedTools Write Edit MultiEdit NotebookEdit WebFetch WebSearch Task
+       --add-dir <dépôt>…
+```
+
+Lecture seule, en trois couches :
+1. `dontAsk` : tout outil non listé dans `--allowedTools` est refusé sans question.
+2. `--disallowedTools` + `permissions.deny` (projet et `--settings`) : écriture, web, sous-agents.
+3. **Crochet `PreToolUse`** (`<exécutable Scribe> policy-hook <politique.json>`) appelé avant
+   **chaque** outil : motifs MCP interdits, mots d'écriture dans le nom de l'outil
+   (`addOrEditJiraIssueComment`, `executeWrite`…), connecteurs non activés, commandes shell
+   hors liste (`;`, `>`, `$(`… refusés), chemins hors des dépôts cochés, budget d'appels
+   (15 en direct, 30 en corrélation). Code de sortie 2 = refus, raison renvoyée à l'agent.
+   Le crochet est le même binaire que l'app (`Scribe.app/Contents/MacOS/scribe-app policy-hook …`)
+   ou la CLI (`scribe policy-hook …`).
+
+Sortie : `system/init` (session, modèle), `assistant` (`tool_use` → outils utilisés), `user`
+(`tool_result` en erreur → outil refusé, retiré de `tools_used`), `result` (réponse finale).
+
+Connecteurs : `claude mcp list` (« nom: cible - ✓ Connected »). Les connecteurs du compte
+Claude (« claude.ai Atlassian ») apparaissent dans les outils sous `mcp__claude_ai_Atlassian__…`.
+**Spike S3** : vérifier qu'ils sont bien disponibles en mode `-p` sur la version installée ;
+sinon plan B : `claude mcp add --transport http <nom> <url>`.
+
+## `codex`
+
+```
+codex exec [resume <thread>] --json --skip-git-repo-check --sandbox read-only
+           -c mcp_servers={} -c approval_policy="never"
+           -C <run> --output-last-message <fichier> [-m <m>] -
+```
+
+- Bac à sable `read-only` : aucun fichier écrit, pas de réseau pour le shell.
+- Les dépôts lisibles sont listés dans l'invite (lecture autorisée partout en `read-only`).
+- MCP : pas de liste de refus par motif → **connecteurs non activables** ; `-c mcp_servers={}`
+  doit neutraliser les serveurs configurés : **À VÉRIFIER (S3)**.
+- Sortie JSONL : `thread.started` (identifiant de reprise), `item.completed`
+  (`agent_message`, `command_execution`, `mcp_tool_call`), `turn.failed` ; l'ancien format
+  `{"msg": …}` est aussi lu. La réponse finale vient de `--output-last-message`.
+
+## `gemini` (expérimental)
+
+```
+gemini --output-format json --approval-mode default
+       --allowed-mcp-server-names scribe-aucun-serveur [-m <m>]
+       [--include-directories <dépôt>…] -p "Réponds à la demande ci-dessus…"   # invite sur stdin
+```
+
+En mode non interactif, les outils qui demandent une approbation (écriture, shell) sont
+refusés ; aucun serveur MCP n'est autorisé. Sortie `{"response": …, "stats": …}` ou texte brut.
+
+## `opencode` (expérimental)
+
+```
+opencode run --format json [-m fournisseur/modèle] [--session <id>] "<invite>"
+```
+
+`opencode.json` dans le dossier d'exécution : `edit` et `webfetch` refusés, `bash` refusé
+sauf les commandes de lecture de `agent/policy.toml`. Sortie JSON en flux (parties `text`)
+ou texte brut.
+
+## `custom`
+
+Modèle de commande saisi dans Réglages → Agent IA, lancé par `sh -c`. Variables :
+`{prompt_file}` (fichier contenant consignes + invite ; sinon envoyées sur stdin),
+`{model}`, `{run_dir}`. La sortie standard est la réponse. Aucun connecteur.
+
+## Tester un adaptateur
+
+```bash
+scribe doctor            # détection, version, politique (test local)
+scribe doctor --live     # + test réel : l'agent doit refuser « poste sur Slack »
+cargo test -p scribe-cli --test acceptance   # avec le faux `claude` de fixtures/fake-bin
+```

@@ -138,10 +138,10 @@ pub trait AgentAdapter: Send + Sync {
 /// Construit l'adaptateur choisi. `custom_command` sert à l'adaptateur `custom`.
 pub fn adapter_for(id: &str, custom_command: &str) -> Option<Arc<dyn AgentAdapter>> {
     Some(match id {
-        "claude-code" => Arc::new(ClaudeCode::default()),
-        "codex" => Arc::new(Codex::default()),
-        "gemini" => Arc::new(Gemini::default()),
-        "opencode" => Arc::new(OpenCode::default()),
+        "claude-code" => Arc::new(ClaudeCode),
+        "codex" => Arc::new(Codex),
+        "gemini" => Arc::new(Gemini),
+        "opencode" => Arc::new(OpenCode),
         "custom" => Arc::new(Custom::new(custom_command)),
         _ => return None,
     })

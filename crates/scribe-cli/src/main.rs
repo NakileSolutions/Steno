@@ -364,18 +364,15 @@ async fn simulate(file: PathBuf, speed: f64, timeout: u64) -> Result<()> {
         if tokio::time::Instant::now() > deadline {
             bail!("délai dépassé");
         }
-        match tokio::time::timeout(Duration::from_millis(300), rx.recv()).await {
-            Ok(Ok(ev)) => {
-                if let CoreEvent::Segment(s) = &ev {
-                    meeting = Some(s.meeting_id.clone());
-                    seen_segments += 1;
-                    last_segment = tokio::time::Instant::now();
-                }
-                if !matches!(ev, CoreEvent::Segment(_)) {
-                    log_event(&ev);
-                }
+        if let Ok(Ok(ev)) = tokio::time::timeout(Duration::from_millis(300), rx.recv()).await {
+            if let CoreEvent::Segment(s) = &ev {
+                meeting = Some(s.meeting_id.clone());
+                seen_segments += 1;
+                last_segment = tokio::time::Instant::now();
             }
-            Ok(Err(_)) | Err(_) => {}
+            if !matches!(ev, CoreEvent::Segment(_)) {
+                log_event(&ev);
+            }
         }
         // Fin du fichier : plus de segment depuis 3 s → on arrête la réunion.
         if !stopped && seen_segments > 0 && last_segment.elapsed() > Duration::from_secs(3) {

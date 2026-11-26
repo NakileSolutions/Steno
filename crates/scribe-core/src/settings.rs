@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
+#[derive(Default)]
 pub struct Settings {
     pub agent: AgentSettings,
     pub voice: VoiceSettings,
@@ -17,18 +18,6 @@ pub struct Settings {
     pub profile: ProfileSettings,
 }
 
-impl Default for Settings {
-    fn default() -> Self {
-        Settings {
-            agent: AgentSettings::default(),
-            voice: VoiceSettings::default(),
-            audio: AudioSettings::default(),
-            correlation: CorrelationSettings::default(),
-            privacy: PrivacySettings::default(),
-            profile: ProfileSettings::default(),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(default)]
