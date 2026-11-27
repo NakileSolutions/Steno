@@ -10,7 +10,7 @@ afterEach(() => vi.useRealTimers());
 
 const m = (id: string, started_at: string): MeetingSummary => ({
   id, title: id, title_source: null, started_at, ended_at: null, status: 'done', confidential: false,
-  agent_provider: null, correlation: 'on_demand', correlated: false, open_actions: 0, segment_count: 0, snippet: null,
+  agent_provider: null, correlation: 'on_demand', call_app: null, correlated: false, open_actions: 0, segment_count: 0, snippet: null,
 });
 
 describe('groupByDay', () => {

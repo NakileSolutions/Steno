@@ -1,12 +1,12 @@
-// Capture du son de Teams par un process tap Core Audio (macOS 14.2+).
+// Capture du son des apps de visio par un process tap Core Audio (macOS 14.2+).
 //
 // Étapes (cf. sample AudioCap) :
-//   1. CATapDescription(stereoMixdownOfProcesses:) sur TOUT l'arbre de processus Teams
-//      (le nouveau Teams peut sortir l'audio par un processus auxiliaire) ;
+//   1. CATapDescription(stereoMixdownOfProcesses:) sur TOUT l'arbre de processus des apps
+//      captées (Teams, Slack… peuvent sortir l'audio par un processus auxiliaire) ;
 //   2. AudioHardwareCreateProcessTap ;
 //   3. agrégat privé contenant la sortie système par défaut + le tap ;
 //   4. IOProc par bloc sur une file dédiée (pas le thread temps réel : on peut allouer).
-// La recréation (changement de la liste des processus Teams, de périphérique de sortie,
+// La recréation (changement de la liste des processus captés, de périphérique de sortie,
 // réveil) est pilotée par CaptureSession.
 
 import AudioToolbox
@@ -17,7 +17,7 @@ import Foundation
 @available(macOS 14.2, *)
 final class ProcessTap {
     enum Target: Equatable {
-        /// Mixage stéréo des processus listés (arbre Teams).
+        /// Mixage stéréo des processus listés (arbre des apps captées).
         case processes([AudioObjectID])
         /// Plan B : tout le son du système sauf les processus listés (Scribe lui-même).
         case systemExcluding([AudioObjectID])
@@ -196,7 +196,7 @@ final class ProcessTap {
 
     private func describe(_ target: Target) -> String {
         switch target {
-        case let .processes(ids): return "processus Teams \(ids)"
+        case let .processes(ids): return "processus \(ids)"
         case let .systemExcluding(ids): return "son système hors \(ids)"
         }
     }

@@ -734,7 +734,7 @@ export function createMockBackend(): Backend {
   };
 
   // Exposé pour le débogage dans la console du navigateur (mode faux backend uniquement).
-  (window as unknown as { __scribeMock?: unknown }).__scribeMock = {
+  const mockApi = {
     emit,
     live,
     get meetings() { return meetings; },
@@ -749,16 +749,17 @@ export function createMockBackend(): Backend {
      * Simule le début d'un appel dans une app de visio (`slack`, `zoom`…), ou sa fin avec
      * `app = null`. Aucun effet sur l'écoute ; une app désactivée dans les réglages est ignorée.
      */
-    call(app: string | null, title: string | null = null) {
+    call(app: string | null, title: string | null = null): boolean {
       if (app && !settings.audio.call_apps.some((a) => a.id === app && a.enabled)) return false;
       live.call = app ? { active: true, app, app_name: appName(app), title } : { active: false, app: null, app_name: null, title: null };
       emitLive();
       return true;
     },
     /** Raccourci : appel Teams (ou fin d'appel avec `false`). */
-    teams(active: boolean, title: string | null = TEAMS_TITLE) {
-      return this.call(active ? 'teams' : null, active ? title : null);
+    teams(active: boolean, title: string | null = TEAMS_TITLE): boolean {
+      return mockApi.call(active ? 'teams' : null, active ? title : null);
     },
   };
+  (window as unknown as { __scribeMock?: unknown }).__scribeMock = mockApi;
   return backend;
 }

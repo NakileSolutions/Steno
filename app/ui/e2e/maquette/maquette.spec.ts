@@ -209,8 +209,107 @@ test.describe('réglages', () => {
 
   test('audio : plus de démarrage ni d’arrêt automatiques', async ({ page }) => {
     await open(page, '/settings?section=audio');
-    await expect(page.getByText('Proposer de démarrer l’écoute quand un appel Teams commence (notification seulement)')).toBeVisible();
+    await expect(page.getByText('Proposer de démarrer l’écoute quand un appel commence')).toBeVisible();
     await expect(page.getByText(/Démarrer automatiquement|Fin de réunion après/)).toHaveCount(0);
+    await expect(page.getByText('L’écoute ne démarre jamais seule ; une fois lancée, le son capté est celui de l’app de l’appel en cours.')).toBeVisible();
+  });
+
+  test('apps de visio : désactiver, ajouter, supprimer, avertissement navigateur', async ({ page }) => {
+    await open(page, '/settings?section=audio');
+    await expect(page.getByRole('heading', { name: 'Apps de visio' })).toBeVisible();
+    const apps = page.getByRole('group', { name: 'Apps de visio' });
+    for (const name of ['Microsoft Teams', 'Slack', 'Zoom', 'Webex', 'Discord', 'FaceTime', 'Navigateur (Google Meet…)']) {
+      await expect(apps.getByText(name, { exact: true })).toBeVisible();
+    }
+    await expect(apps.getByText('com.tinyspeck.slackmacgap')).toBeVisible();
+    await expect(page.getByLabel('Proposer de démarrer l’écoute quand un appel commence')).toBeChecked();
+    // Le navigateur est désactivé par défaut, avec un avertissement clair.
+    await expect(page.getByLabel('Surveiller Navigateur (Google Meet…)')).not.toBeChecked();
+    await expect(apps.getByText(/capte tout le son du navigateur, y compris les autres onglets/)).toBeVisible();
+
+    // Désactiver Zoom.
+    await expect(page.getByLabel('Surveiller Zoom')).toBeChecked();
+    await page.getByLabel('Surveiller Zoom').uncheck();
+    await expect(page.getByText('Modifications non enregistrées')).toBeVisible();
+
+    // Les apps de la liste par défaut ne se suppriment pas.
+    await expect(apps.getByRole('button', { name: /^Supprimer/ })).toHaveCount(0);
+
+    // Ajouter une app : identifiant de bundle vérifié, identifiant généré.
+    await apps.getByRole('button', { name: 'Ajouter une app' }).click();
+    const form = apps.getByRole('form', { name: 'Ajouter une app' });
+    await form.getByLabel('Nom').fill('Google Chat');
+    await form.getByLabel('Identifiant de bundle').fill('pas un bundle');
+    await form.getByRole('button', { name: 'Ajouter', exact: true }).click();
+    await expect(form.getByRole('alert')).toContainText('n’est pas un identifiant de bundle');
+    await form.getByLabel('Identifiant de bundle').fill('com.google.chat');
+    await expect(form.getByText('google-chat')).toBeVisible();
+    await form.getByRole('button', { name: 'Ajouter', exact: true }).click();
+    await expect(apps.getByText('Google Chat', { exact: true })).toBeVisible();
+    await expect(apps.getByText('com.google.chat')).toBeVisible();
+    await expect(page.getByLabel('Surveiller Google Chat')).toBeChecked();
+
+    await page.getByRole('button', { name: 'Enregistrer' }).click();
+    await expect(page.getByText('Réglages enregistrés.')).toBeVisible();
+
+    // Relu depuis le backend : Zoom désactivé, Google Chat ajouté (et supprimable).
+    await page.evaluate(() => (location.hash = '#/meetings'));
+    await expect(page.getByRole('region', { name: 'Liste des réunions' })).toBeVisible();
+    await page.evaluate(() => (location.hash = '#/settings?section=audio'));
+    await expect(page.getByLabel('Surveiller Zoom')).not.toBeChecked();
+    await expect(page.getByLabel('Surveiller Google Chat')).toBeChecked();
+    // Un appel Zoom n'est plus signalé.
+    const zoom = await page.evaluate(() => (window as unknown as { __scribeMock: { call(a: string, t: string): boolean } }).__scribeMock.call('zoom', 'Point'));
+    expect(zoom).toBe(false);
+
+    await apps.getByRole('button', { name: 'Supprimer Google Chat' }).click();
+    await expect(apps.getByText('Google Chat', { exact: true })).toHaveCount(0);
+  });
+});
+
+test.describe('apps de visio', () => {
+  test('un appel Slack simulé est proposé, jamais démarré seul', async ({ page }) => {
+    await open(page, '/live');
+    const live = main(page);
+    await expect(live.getByText('Appel Teams détecté : Refinement ORION — sprint 48')).toBeVisible();
+    await page.evaluate(() => (window as unknown as { __scribeMock: { call(a: string, t: string): boolean } }).__scribeMock.call('slack', 'Huddle dans #equipe-flotte'));
+    await expect(live.getByText('Appel Slack détecté : Huddle dans #equipe-flotte')).toBeVisible();
+    await expect(live.getByRole('button', { name: 'Démarrer l’écoute' })).toBeVisible();
+    await expect(nav(page).getByText('Appel Slack détecté')).toBeVisible();
+    await expect(live.getByText('Appel Teams détecté :')).toHaveCount(0);
+    await page.waitForTimeout(1500);
+    await expect(live.getByRole('region', { name: 'Transcription en direct' })).toHaveCount(0);
+
+    // Démarrage manuel : la réunion garde l'app de l'appel.
+    await live.getByRole('button', { name: 'Démarrer l’écoute' }).click();
+    await expect(live.getByRole('heading', { name: 'Huddle dans #equipe-flotte' })).toBeVisible();
+    await expect(live.getByRole('meter', { name: 'Slack' })).toBeVisible();
+    await live.getByRole('button', { name: 'Arrêter l’écoute' }).click();
+    await expect(live.getByText('Appel Slack détecté : Huddle dans #equipe-flotte')).toBeVisible({ timeout: 8000 });
+  });
+
+  test('navigateur : libellé et avertissement', async ({ page }) => {
+    await open(page, '/settings?section=audio');
+    await page.getByLabel('Surveiller Navigateur (Google Meet…)').check();
+    await page.getByRole('button', { name: 'Enregistrer' }).click();
+    await expect(page.getByText('Réglages enregistrés.')).toBeVisible();
+    await page.evaluate(() => (window as unknown as { __scribeMock: { call(a: string, t: string): boolean } }).__scribeMock.call('browser', 'Meet — Point hebdo'));
+    await nav(page).getByRole('link', { name: 'En direct', exact: true }).click();
+    await expect(main(page).getByText('Appel détecté dans le navigateur : Meet — Point hebdo')).toBeVisible();
+    await expect(main(page).getByText(/tout le son du navigateur sera capté, y compris les autres onglets/)).toBeVisible();
+  });
+
+  test('puce de l’app dans la liste et le détail', async ({ page }) => {
+    await open(page);
+    const list = page.getByRole('region', { name: 'Liste des réunions' });
+    const huddle = list.getByRole('link', { name: /Huddle #equipe-flotte/ });
+    await expect(huddle.getByText('Slack', { exact: true })).toBeVisible();
+    await expect(list.getByRole('link', { name: /Revue d'architecture/ }).getByText('Zoom', { exact: true })).toBeVisible();
+    await expect(list.getByRole('link', { name: /Point incident ms-pricing/ }).locator('.pill.app')).toHaveCount(0);
+    await huddle.click();
+    const detail = page.getByRole('region', { name: 'Détail de la réunion' });
+    await expect(detail.getByRole('heading', { name: 'Huddle #equipe-flotte' })).toBeVisible();
+    await expect(detail.getByTitle('Appel Slack')).toBeVisible();
   });
 });
 

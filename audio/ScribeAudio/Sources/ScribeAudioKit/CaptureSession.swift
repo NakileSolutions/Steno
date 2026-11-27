@@ -1,12 +1,26 @@
 // Session de capture : du `start` au `stop`.
 //
-// Possède le micro, le tap Teams, les deux chaînes de traitement, les WAV éventuels et la
-// minuterie des niveaux. Gère la recréation du tap (liste des processus Teams modifiée,
-// sortie par défaut modifiée, réveil) et le mode aparté.
+// Possède le micro, le tap des apps de visio, les deux chaînes de traitement, les WAV
+// éventuels et la minuterie des niveaux. Gère la recréation du tap (processus des apps captées
+// modifiés ou apparus, sortie par défaut modifiée, réveil) et le mode aparté.
 
 import AppKit
 import CoreAudio
 import Foundation
+
+/// Ce que le tap doit capter : les processus des apps sélectionnées par `start.apps`.
+struct TapSource: Equatable {
+    /// Noms des apps captées (messages et journaux).
+    var appNames: [String]
+    /// Union des objets processus HAL de ces apps (triée).
+    var processes: [AudioObjectID]
+
+    static let empty = TapSource(appNames: [], processes: [])
+
+    var label: String {
+        appNames.isEmpty ? "aucune app" : appNames.joined(separator: ", ")
+    }
+}
 
 @available(macOS 14.2, *)
 final class CaptureSession {
@@ -18,13 +32,13 @@ final class CaptureSession {
     }
 
     enum TapMode {
-        /// Arbre de processus Teams (par défaut).
-        case teams
+        /// Arbre de processus des apps captées (par défaut).
+        case apps
         /// Plan B : tout le son du système sauf Scribe (`SCRIBE_TAP_MODE=global`).
         case global
 
         static var fromEnvironment: TapMode {
-            ProcessInfo.processInfo.environment["SCRIBE_TAP_MODE"] == "global" ? .global : .teams
+            ProcessInfo.processInfo.environment["SCRIBE_TAP_MODE"] == "global" ? .global : .apps
         }
     }
 
@@ -49,7 +63,9 @@ final class CaptureSession {
     private let tapQueue = DispatchQueue(label: "scribe.audio.tap.control")
     private var tap: ProcessTap?
     private var tapTarget: ProcessTap.Target?
-    private var teamsProcesses: [AudioObjectID] = []
+    private var tapSource = TapSource.empty
+    /// Aucun processus à taper au démarrage : on attend qu'ils apparaissent.
+    private var waitingForProcesses = false
     private var tapRetry: DispatchWorkItem?
     private var tapFailures = 0
     private var running = false
@@ -110,7 +126,7 @@ final class CaptureSession {
 
     // MARK: Cycle de vie
 
-    func start(teamsProcesses initial: [AudioObjectID]) async {
+    func start(tapSource initial: TapSource) async {
         mePipeline.start()
         themPipeline.start()
         levels.start()
@@ -140,7 +156,7 @@ final class CaptureSession {
         // Tap (canal « them »).
         tapQueue.sync {
             running = true
-            teamsProcesses = initial
+            tapSource = initial
             for selector in [kAudioHardwarePropertyDefaultSystemOutputDevice, kAudioHardwarePropertyDefaultOutputDevice] {
                 if let l = HALPropertyListener(selector: selector, queue: tapQueue, handler: { [weak self] in
                     self?.tapQueue.async { self?.reconcileTap(force: true, reason: "sortie audio par défaut modifiée") }
@@ -149,6 +165,17 @@ final class CaptureSession {
                 }
             }
             reconcileTap(force: false, reason: "démarrage")
+            if tapMode == .apps, initial.processes.isEmpty {
+                // App pas encore lancée (ou sans client audio) : le micro tourne quand même et
+                // le tap sera créé dès que ses processus apparaîtront (`updateTapSource`).
+                let message: String
+                if initial.appNames.isEmpty {
+                    message = "Aucune app de visio n'est surveillée : seul le micro est capté, pas le son des participants."
+                } else {
+                    message = "Aucun processus audio de \(initial.label) : l'app n'est pas lancée ou n'a pas encore ouvert l'audio. Le micro est capté ; le son des participants le sera dès que \(initial.label) apparaîtra."
+                }
+                reportError(.tapFailed, message, recoverable: true)
+            }
         }
 
         // Veille / réveil.
@@ -182,14 +209,17 @@ final class CaptureSession {
         await themPipeline.finish()
     }
 
-    // MARK: Teams et tap
+    // MARK: Apps captées et tap
 
-    /// Nouvelle liste de processus Teams (relevé du moniteur toutes les 2 s).
-    func updateTeamsProcesses(_ processes: [AudioObjectID]) {
+    /// Nouvelle liste de processus à capter (relevé du moniteur toutes les 2 s, ou `watch`).
+    func updateTapSource(_ source: TapSource) {
         tapQueue.async { [weak self] in
-            guard let self, self.running, processes != self.teamsProcesses else { return }
-            self.teamsProcesses = processes
-            self.reconcileTap(force: false, reason: "processus Teams modifiés")
+            guard let self, self.running, source != self.tapSource else { return }
+            let reason = source.appNames == self.tapSource.appNames
+                ? "processus de \(source.label) modifiés"
+                : "apps captées : \(source.label)"
+            self.tapSource = source
+            self.reconcileTap(force: false, reason: reason)
         }
     }
 
@@ -201,8 +231,8 @@ final class CaptureSession {
         case .global:
             let me = HAL.processObject(forPID: getpid())
             desired = .systemExcluding(me.map { [$0] } ?? [])
-        case .teams:
-            desired = teamsProcesses.isEmpty ? nil : .processes(teamsProcesses)
+        case .apps:
+            desired = tapSource.processes.isEmpty ? nil : .processes(tapSource.processes)
         }
         if !force, desired == tapTarget, (tap != nil) == (desired != nil) { return }
 
@@ -212,7 +242,12 @@ final class CaptureSession {
         tap?.stop()
         tap = nil
         tapTarget = desired
-        guard let desired else { return }
+        guard let desired else {
+            // Mode apps sans processus (app fermée ou pas encore lancée) : en attente.
+            waitingForProcesses = true
+            Log.info("tap : aucun processus de \(tapSource.label) à capter, en attente de leur apparition")
+            return
+        }
 
         let newTap = ProcessTap(target: desired) { [weak self] samples, rate in
             self?.handleTapSamples(samples, sampleRate: rate)
@@ -221,6 +256,10 @@ final class CaptureSession {
             try newTap.start()
             tap = newTap
             tapFailures = 0
+            if waitingForProcesses {
+                waitingForProcesses = false
+                Log.info("processus de \(tapSource.label) apparus : capture du son des participants démarrée")
+            }
         } catch ProcessTap.TapError.permissionDenied(let status) {
             Log.error("tap refusé (OSStatus \(status))")
             permissions.setSystemAudio(.denied)
@@ -228,7 +267,8 @@ final class CaptureSession {
         } catch {
             tapFailures += 1
             Log.error("tap : \(error)")
-            reportError(.tapFailed, "Capture du son de Teams impossible (\(error)). Nouvel essai en cours.", recoverable: true)
+            let what = tapMode == .global ? "du Mac" : "de \(tapSource.label)"
+            reportError(.tapFailed, "Capture du son \(what) impossible (\(error)). Nouvel essai en cours.", recoverable: true)
             let delay = min(10.0, Double(tapFailures) * 2)
             let item = DispatchWorkItem { [weak self] in self?.reconcileTap(force: true, reason: "nouvel essai") }
             tapRetry = item
