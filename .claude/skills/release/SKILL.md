@@ -15,7 +15,7 @@ prepares the PR and stops there, unless the maintainer explicitly asks for more.
    previous version (`git log --oneline vPREVIOUS..`). The maintainer merges.
 4. After the merge, by an administrator:
    `git checkout main && git pull && git tag -s vX.Y.Z -m "Sténo X.Y.Z" && git push origin vX.Y.Z`.
-   The "Publication" workflow checks the tag and creates the GitHub release.
+   The release workflow (`.github/workflows/release.yml`) checks the tag and creates the GitHub release.
 5. A published tag is never moved or deleted: if something is wrong, release the next version.
 
 Reminder: users install from source, so a broken release blocks their automatic update.
