@@ -82,6 +82,19 @@ impl Db {
         })
     }
 
+    /// Ouvre une base existante en lecture seule, sans migration ni écriture (serveur MCP).
+    pub fn open_read_only(path: &Path) -> Result<Db> {
+        use rusqlite::OpenFlags;
+        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
+            .with_context(|| format!("impossible d'ouvrir la base {} en lecture", path.display()))?;
+        conn.pragma_update(None, "busy_timeout", 5000)?;
+        conn.pragma_update(None, "query_only", "ON")?;
+        Ok(Db {
+            conn: Arc::new(Mutex::new(conn)),
+            path: Some(path.to_path_buf()),
+        })
+    }
+
     /// Ouvre la base par défaut (`paths::db_path()`).
     pub fn open_default() -> Result<Db> {
         Db::open(&crate::paths::db_path())
@@ -159,5 +172,18 @@ mod tests {
             let mode = std::fs::metadata(&p).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o600);
         }
+    }
+
+    #[test]
+    fn ouverture_en_lecture_seule() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("steno.db");
+        Db::open(&p).unwrap().with(|c| c.execute("INSERT INTO settings(key, value) VALUES ('a', '1')", [])).unwrap();
+        let ro = Db::open_read_only(&p).unwrap();
+        let v: String = ro.with(|c| c.query_row("SELECT value FROM settings WHERE key='a'", [], |r| r.get(0))).unwrap();
+        assert_eq!(v, "1");
+        assert!(ro.with(|c| c.execute("INSERT INTO settings(key, value) VALUES ('b', '2')", [])).is_err());
+        assert!(Db::open_read_only(&dir.path().join("absente.db")).is_err(), "aucune base créée");
+        assert!(!dir.path().join("absente.db").exists());
     }
 }

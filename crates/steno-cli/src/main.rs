@@ -311,8 +311,12 @@ async fn main() -> Result<()> {
             }
         }
         Cmd::Mcp => {
-            steno_core::paths::ensure_dirs()?;
-            mcp::serve(Db::open_default()?)?;
+            // Lecture seule : ni migration, ni création de base, ni écriture.
+            let path = steno_core::paths::db_path();
+            if !path.exists() {
+                bail!("base Sténo introuvable ({}) : lancez Sténo une première fois", path.display());
+            }
+            mcp::serve(Db::open_read_only(&path)?)?;
         }
         Cmd::Skill { action } => {
             let st = match action {

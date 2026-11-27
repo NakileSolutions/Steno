@@ -138,12 +138,39 @@ pub fn meeting_markdown(db: &Db, id: &str) -> Result<String> {
 }
 
 /// Écrit `<dossier>/<id>.md` et renvoie le chemin.
+/// Export automatique (Réglages → Confidentialité) : jamais une réunion confidentielle. La
+/// confidentialité est relue avant et après l'écriture d'un fichier temporaire, qui n'est
+/// renommé que si la réunion n'est pas passée en confidentielle entre-temps.
+pub fn auto_export(db: &Db, id: &str, dir: &Path) -> Result<Option<PathBuf>> {
+    if !crate::paths::valid_meeting_id(id) {
+        bail!("identifiant de réunion invalide");
+    }
+    let confidential = || -> Result<bool> { Ok(db.get_meeting(id)?.map(|m| m.confidential).unwrap_or(true)) };
+    if confidential()? {
+        return Ok(None);
+    }
+    let md = meeting_markdown(db, id)?;
+    std::fs::create_dir_all(dir)?;
+    let tmp = dir.join(format!(".{id}.md.tmp"));
+    std::fs::write(&tmp, md)?;
+    if confidential()? {
+        let _ = std::fs::remove_file(&tmp);
+        return Ok(None);
+    }
+    let p = dir.join(format!("{id}.md"));
+    std::fs::rename(&tmp, &p)?;
+    Ok(Some(p))
+}
+
 pub fn export_to_dir(db: &Db, id: &str, dir: &Path) -> Result<PathBuf> {
     export_to_dir_as(db, id, dir, "markdown")
 }
 
 /// Writes `<dir>/<id>.<extension>` in the given format (see [`FORMATS`]) and returns the path.
 pub fn export_to_dir_as(db: &Db, id: &str, dir: &Path, format: &str) -> Result<PathBuf> {
+    if !crate::paths::valid_meeting_id(id) {
+        anyhow::bail!("identifiant de réunion invalide");
+    }
     let ext = extension(format)?;
     std::fs::create_dir_all(dir)?;
     let p = dir.join(format!("{id}.{ext}"));

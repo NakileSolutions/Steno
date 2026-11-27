@@ -57,6 +57,7 @@ static TABLE: &[(&str, &str)] = &[
     ("une corrélation est déjà en cours", "a correlation is already in progress"),
     ("écriture de {}", "writing {}"),
     ("aucune réunion en cours pour cette note", "no meeting in progress for this note"),
+    ("identifiant de réunion invalide", "invalid meeting identifier"),
     // ------------------------------------------------------------ export.rs
     ("format d'export inconnu : {}", "unknown export format: {}"),
     // ------------------------------------------------------------ updates.rs

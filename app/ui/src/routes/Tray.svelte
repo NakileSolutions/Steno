@@ -31,11 +31,24 @@
   }
   onMount(() => {
     loadRecent();
-    return onEvent('steno://request', (r) => {
-      const i = recent.findIndex((x) => x.id === r.id);
-      if (i >= 0) recent[i] = r;
-      else loadRecent();
-    });
+    let confidential = live.s.meeting?.confidential ?? false;
+    const offs = [
+      onEvent('steno://request', (r) => {
+        const i = recent.findIndex((x) => x.id === r.id);
+        if (i >= 0) recent[i] = r;
+        else loadRecent();
+      }),
+      // Réunion passée en confidentielle ou supprimée : ses demandes quittent la liste.
+      onEvent('steno://meetings', () => loadRecent()),
+      onEvent('steno://live', (st) => {
+        const c = st.meeting?.confidential ?? false;
+        if (c !== confidential) {
+          confidential = c;
+          loadRecent();
+        }
+      }),
+    ];
+    return () => offs.forEach((off) => off());
   });
 
   async function toggle() {

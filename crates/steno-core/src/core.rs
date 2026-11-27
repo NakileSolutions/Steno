@@ -208,7 +208,7 @@ impl Inner {
             }
         }
         let key = meeting.map(|m| m.id.clone()).unwrap_or_else(|| "_global".into());
-        let run_dir = crate::paths::runs_dir().join(&key);
+        let run_dir = crate::paths::meeting_subdir(&crate::paths::runs_dir(), &key).context("identifiant de réunion invalide")?;
         let instructions = crate::instructions::build(&s);
         let prompt = crate::instructions::expand(&prompt, &s);
         let mut base_policy = ReadOnlyPolicy::no_tools();
@@ -254,6 +254,22 @@ impl Inner {
             hook_exe: self.hook_exe.clone(),
             skills: s.agent.use_skills,
         };
+        // Jeton enregistré avant de relire la confidentialité : un passage en confidentielle
+        // concurrent l'annule forcément, ou est vu par la relecture.
+        let cancel = cancel.child_token();
+        let cancel_key = meeting.map(|m| format!("meeting:{}:{}", m.id, uuid::Uuid::new_v4().simple()));
+        if let Some(k) = &cancel_key {
+            self.cancels.lock().unwrap().insert(k.clone(), cancel.clone());
+        }
+        // Réunion passée en confidentielle entre-temps : rien ne part.
+        if let Some(m) = meeting {
+            if self.db.get_meeting(&m.id)?.map(|f| f.confidential).unwrap_or(false) {
+                if let Some(k) = &cancel_key {
+                    self.cancels.lock().unwrap().remove(k);
+                }
+                bail!("réunion confidentielle : aucun appel IA");
+            }
+        }
         let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
         tokio::spawn(async move {
             while let Some(ev) = rx.recv().await {
@@ -263,6 +279,9 @@ impl Inner {
             }
         });
         let mut res = adapter.run(req, tx, cancel).await;
+        if let Some(k) = &cancel_key {
+            self.cancels.lock().unwrap().remove(k);
+        }
         // Session perdue (purgée par le CLI) : on recommence une fois avec une nouvelle session.
         if let (Err(e), SessionMode::Resume(_), Some(m)) = (&res, &session, meeting) {
             let msg = e.to_string().to_lowercase();
@@ -702,6 +721,26 @@ impl Core {
                     let _ = cancel_request(&self.inner, &r.id);
                 }
             }
+            // Compte rendu, corrélation, export : tâches annulées, exécutions d'agent arrêtées.
+            self.inner.db.cancel_meeting_jobs(id, &["report", "correlate", "export", "request"])?;
+            let prefix = format!("meeting:{id}:");
+            for (k, tok) in self.inner.cancels.lock().unwrap().iter() {
+                if k.starts_with(&prefix) {
+                    tok.cancel();
+                }
+            }
+            // Compte rendu en préparation abandonné : la réunion ne reste pas « en cours ».
+            if self.inner.db.get_meeting(id)?.is_some_and(|m| m.status == "processing") {
+                self.inner.db.set_meeting_status(id, "done")?;
+            }
+        } else if self.inner.db.has_job("report", id, &["cancelled"])?
+            && self.inner.db.get_report(id)?.is_none()
+            && !self.inner.db.has_job("report", id, &["pending", "running"])?
+        {
+            // Retour en arrière (clic par erreur) : le compte rendu annulé par le passage en
+            // confidentielle est relancé.
+            self.inner.db.enqueue_job("report", Some(id), &serde_json::json!({}))?;
+            self.inner.jobs_notify.notify_one();
         }
         self.inner.emit(CoreEvent::MeetingsChanged);
         let mut st = self.inner.live_state.lock().unwrap().clone();
@@ -735,9 +774,15 @@ impl Core {
     }
 
     pub fn delete_meeting(&self, id: &str) -> Result<()> {
+        // Identifiant vérifié avant toute suppression : jamais de dossier hors de `runs`/`cache`.
+        let (Some(run), Some(cache)) =
+            (crate::paths::meeting_subdir(&crate::paths::runs_dir(), id), crate::paths::meeting_subdir(&crate::paths::cache_dir(), id))
+        else {
+            bail!("identifiant de réunion invalide");
+        };
         self.inner.db.delete_meeting(id)?;
-        let _ = std::fs::remove_dir_all(crate::paths::runs_dir().join(id));
-        let _ = std::fs::remove_dir_all(crate::paths::cache_dir().join(id));
+        let _ = std::fs::remove_dir_all(run);
+        let _ = std::fs::remove_dir_all(cache);
         self.inner.emit(CoreEvent::MeetingsChanged);
         Ok(())
     }
@@ -1056,12 +1101,20 @@ pub(crate) fn create_request(
             if let Some(first) = text.chars().next() {
                 text = first.to_uppercase().collect::<String>() + &text[first.len_utf8()..];
             }
-            inner.db.add_note(&m.id, &text, if origin == "voice" || origin == "hotkey" { "voice" } else { "user" })?;
-            if is_action {
-                inner.db.add_action(&m.id, None, &text, None)?;
+            if origin == "hotkey" {
+                // Aparté : la note reste dans cette demande privée, jamais dans les notes ou les
+                // actions de la réunion (compte rendu, export, MCP).
+                let short = crate::text::truncate(&text, 120);
+                let summary = if inner.lang() == "en" { format!("🔒 Noted privately: {short}") } else { format!("🔒 Noté en aparté : {short}") };
+                finish(&mut r, "done", summary, text.clone());
+            } else {
+                inner.db.add_note(&m.id, &text, if origin == "voice" { "voice" } else { "user" })?;
+                if is_action {
+                    inner.db.add_action(&m.id, None, &text, None)?;
+                }
+                let label = if is_action { "✅ Action notée" } else { "📝 Noté" };
+                finish(&mut r, "done", format!("{label} : {}", crate::text::truncate(&text, 120)), text.clone());
             }
-            let label = if is_action { "✅ Action notée" } else { "📝 Noté" };
-            finish(&mut r, "done", format!("{label} : {}", crate::text::truncate(&text, 120)), text.clone());
         }
         _ => {
             if meeting.as_ref().map(|m| m.confidential).unwrap_or(false) {
@@ -1092,6 +1145,8 @@ pub(crate) fn create_request(
         }
     }
     inner.emit(CoreEvent::Request(r.clone()));
+    // Notifications d'un aparté : aucun texte privé dans la bannière (écran partagé).
+    let aside = origin == "hotkey";
     if r.status == "queued" && matches!(intent, Intent::Cancel | Intent::Stop) {
         // Not an AI job: never waits behind `agent.max_parallel` (the search it cancels).
         inner.db.enqueue_job("control", r.meeting_id.as_deref(), &serde_json::json!({ "request_id": r.id }))?;
@@ -1100,11 +1155,12 @@ pub(crate) fn create_request(
         inner.jobs_notify.notify_one();
         inner.emit(CoreEvent::Notify {
             title: inner.tr("🔎 Je cherche…", "🔎 Searching…"),
-            body: crate::text::truncate(query, 120),
+            body: if aside { inner.tr("Recherche en aparté.", "Private search.") } else { crate::text::truncate(query, 120) },
             route: None,
         });
     } else if let Some(sum) = &r.summary {
-        inner.emit(CoreEvent::Notify { title: "Sténo".into(), body: sum.clone(), route: None });
+        let body = if aside { inner.tr("Aparté traité dans Sténo.", "Private request handled in Sténo.") } else { sum.clone() };
+        inner.emit(CoreEvent::Notify { title: "Sténo".into(), body, route: None });
     }
     Ok(r)
 }
@@ -1116,7 +1172,12 @@ pub(crate) fn run_control(inner: &Inner, intent: Intent, meeting_id: Option<&str
         Intent::Cancel => match inner.db.last_active_request(meeting_id)? {
             Some(last) => {
                 cancel_request(inner, &last.id)?;
-                (format!("Demande annulée : {}", crate::text::truncate(&last.query, 80)), "Demande annulée.".into())
+                // Aparté ou réunion confidentielle : le texte de la demande ne ressort pas.
+                let private = last.origin == "hotkey"
+                    || last.meeting_id.as_deref().and_then(|id| inner.db.get_meeting(id).ok().flatten()).is_some_and(|m| m.confidential);
+                let summary =
+                    if private { "Demande annulée.".to_string() } else { format!("Demande annulée : {}", crate::text::truncate(&last.query, 80)) };
+                (summary, "Demande annulée.".into())
             }
             None => ("Aucune demande en cours.".into(), "Aucune demande en cours.".into()),
         },

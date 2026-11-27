@@ -38,7 +38,16 @@ Only the latest version of the main branch receives security fixes.
   only to the **AI agent CLI you chose**, which forwards it to its vendor under its own terms.
   This happens: when you ask (spoken or typed command), at the end of the meeting (summary),
   and for correlation if it is enabled.
-- **Confidential meeting**: no AI call at all, neither search nor summary.
+- **Confidential meeting**: no AI call at all, neither search nor summary; its excerpts are
+  never used as context for questions about past meetings, and the local MCP server
+  (`steno mcp`, opened read-only) neither lists nor returns it.
+- **Asides**: the private transcript and the requests made in an aside appear neither in the
+  summary, nor in the export, nor in `steno mcp`, nor in the menu bar's recent requests; they
+  do not resume the meeting's agent session, are never replayed to a public request, a note
+  dictated in an aside stays private, and an aside's notifications show no text.
+- **Switching to confidential mid-meeting**: the meeting's pending jobs (summary, correlation,
+  export, requests) are cancelled, running agent runs are stopped, and automatic export never
+  writes a confidential meeting.
 - The **audio models** are downloaded from Hugging Face on first use; no data is sent during
   this download.
 - **Updates**: at startup and then every 6 hours, Sténo reads the latest published version
