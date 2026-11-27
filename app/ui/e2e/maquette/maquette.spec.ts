@@ -416,7 +416,7 @@ test.describe('réglages', () => {
   test('agent IA : modèle et réflexion par usage, enregistrés', async ({ page }) => {
     await open(page, '/settings?section=agent');
     // Mention de l'auteur, discrète, en bas des Réglages.
-    await expect(page.getByText('Sténo 0.1.0 · Développé par Nakile Solutions')).toBeVisible();
+    await expect(page.getByText(/^Sténo \d+\.\d+\.\d+ · Développé par Nakile Solutions$/)).toBeVisible();
     await expect(page.getByText('Modèle par niveau')).toHaveCount(0);
 
     const defaults = page.getByRole('radiogroup', { name: 'Agent par défaut' });
