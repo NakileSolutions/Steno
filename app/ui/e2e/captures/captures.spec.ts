@@ -96,8 +96,11 @@ test('captures', async ({ page, browser }) => {
   await shot(page, 'reglages-voix');
 
   // Réglages → Audio & transcription : section « Apps de visio » (liste par défaut du cœur).
+  // Rechargement complet : les variantes générées plus haut ne sont pas enregistrées.
   await go(page, '/settings?section=audio');
+  await page.reload();
   await expect(page.getByRole('heading', { name: 'Apps de visio' })).toBeVisible();
+  await expect(page.getByText('Modifications non enregistrées')).toHaveCount(0);
   await expect(page.getByText(/capte tout le son du navigateur/)).toBeVisible();
   await page.waitForTimeout(300);
   await shot(page, 'reglages-apps');
