@@ -1,79 +1,84 @@
-# Sécurité
+# Security
 
-Sténo écoute votre micro et le son de vos appels : la sécurité et la confidentialité sont au
-cœur du projet. Merci de signaler toute faille de façon responsable.
+Sténo listens to your microphone and to the audio of your calls: security and privacy are at
+the heart of the project. Please report any vulnerability responsibly.
 
-## Signaler une vulnérabilité
+## Reporting a vulnerability
 
-- **Ne publiez pas** la faille dans une issue publique.
-- Utilisez le signalement privé de GitHub (onglet **Security → Report a vulnerability** du
-  dépôt) ou écrivez à **dev@nakile.fr** avec l'objet « Sécurité Sténo ».
-- Décrivez la faille, la version (`steno --version` ou Réglages), les étapes pour la
-  reproduire et son impact.
+- **Do not disclose** the vulnerability in a public issue.
+- Use GitHub's private reporting (the repository's **Security → Report a vulnerability** tab)
+  or write to **dev@nakile.fr** with the subject "Sténo security".
+- Describe the vulnerability, the version (`steno --version` or Settings), the steps to
+  reproduce it, and its impact.
 
-Nous accusons réception sous 7 jours et visons un correctif sous 30 jours selon la gravité.
-Vous serez crédité dans les notes de version si vous le souhaitez.
+We acknowledge reports within 7 days and aim for a fix within 30 days depending on severity.
+You will be credited in the release notes if you wish.
 
-## Versions prises en charge
+## Supported versions
 
-Seule la dernière version de la branche principale reçoit des correctifs de sécurité.
+Only the latest version of the main branch receives security fixes.
 
-## Modèle de sécurité
+## Security model
 
-### Ce qui reste sur le Mac
+### What stays on your computer
 
-- **Audio** : capturé et transcrit localement (Neural Engine / GPU). Jamais envoyé sur le
-  réseau. Les fichiers temporaires (`~/Library/Caches/Steno/<réunion>`) sont supprimés après
-  le compte rendu, sauf rétention choisie (0 jour par défaut).
-- **Données** : base SQLite locale `~/Library/Application Support/Steno/steno.db` (droits
-  600), sauvegarde quotidienne locale (7 dernières). Aucun serveur Sténo, aucune télémétrie.
-- **Documents joints** au contexte d'une réunion : leur texte est extrait localement et gardé
-  dans la base ; le fichier d'origine n'est pas conservé.
+- **Audio**: captured and transcribed locally (Neural Engine / GPU on a Mac, CPU on Linux).
+  Never sent over the network. Temporary files (`~/Library/Caches/Steno/<meeting>` on macOS,
+  `~/.cache/Steno/<meeting>` on Linux) are deleted after the summary, unless you chose a
+  retention period (0 days by default).
+- **Data**: local SQLite database (`~/Library/Application Support/Steno/steno.db` on macOS,
+  `~/.local/share/Steno/steno.db` on Linux, mode 600), daily local backup (last 7). No Sténo
+  server, no telemetry.
+- **Documents attached** to a meeting's context: their text is extracted locally and kept in
+  the database; the original file is not kept.
 
-### Ce qui sort du Mac, et vers qui
+### What leaves your computer, and to whom
 
-- Seul du **texte** (extraits de transcription, notes, contexte, texte des documents joints)
-  est envoyé, et uniquement au **CLI d'agent IA que vous avez choisi**, qui le transmet à son
-  éditeur selon ses conditions. Cela arrive : à votre demande (commande vocale ou tapée), à la
-  fin de la réunion (compte rendu) et pour la corrélation si elle est activée.
-- **Réunion confidentielle** : aucun appel à l'IA, ni recherche ni compte rendu.
-- Les **modèles audio** sont téléchargés depuis Hugging Face au premier usage ; aucune donnée
-  n'est envoyée lors de ce téléchargement.
-- **Mises à jour** : au démarrage puis toutes les 6 h, Sténo lit la dernière version publiée
-  sur l'API publique de GitHub (`api.github.com`), sans authentification ni donnée personnelle.
-  Désactivable dans Réglages → Mises à jour. L'installation récupère le tag de la version dans
-  votre clone (`git fetch`) et recompile localement ; les tags publiés sont signés et protégés.
+- Only **text** (transcript excerpts, notes, context, text of attached documents) is sent, and
+  only to the **AI agent CLI you chose**, which forwards it to its vendor under its own terms.
+  This happens: when you ask (spoken or typed command), at the end of the meeting (summary),
+  and for correlation if it is enabled.
+- **Confidential meeting**: no AI call at all, neither search nor summary.
+- The **audio models** are downloaded from Hugging Face on first use; no data is sent during
+  this download.
+- **Updates**: at startup and then every 6 hours, Sténo reads the latest published version
+  from GitHub's public API (`api.github.com`), with no authentication and no personal data.
+  This can be turned off in Settings → Updates. Installing fetches the version's tag into your
+  clone (`git fetch`) and rebuilds locally; published tags are signed and protected.
 
-### L'agent ne fait que lire
+### The agent only reads
 
-- L'agent tourne en lecture seule : outils d'écriture refusés, commandes shell limitées à une
-  liste, lectures limitées aux dépôts que vous avez cochés.
-- Pour Claude Code, chaque appel d'outil passe par un crochet (`steno policy-hook`) qui
-  refuse les outils MCP d'écriture (`*send*`, `*create*`, `*comment*`, `executeWrite`…).
-- Un agent qui ne sait pas bloquer ses outils MCP voit ses connecteurs désactivés.
-- Les clés d'API présentes dans l'environnement ne sont pas transmises à l'agent (abonnement
-  uniquement), sauf activation explicite dans les réglages.
-- Le contenu des réunions est toujours présenté à l'agent comme des **données**, jamais comme
-  des consignes (protection contre l'injection d'instructions par un participant).
+- The agent runs read-only: write tools denied, shell commands limited to an allowlist, reads
+  limited to the repositories you ticked.
+- For Claude Code, every tool call goes through a hook (`steno policy-hook`) that denies write
+  MCP tools (`*send*`, `*create*`, `*comment*`, `executeWrite`…).
+- An agent that cannot block its MCP tools has its connectors disabled.
+- API keys present in the environment are not passed to the agent (subscription only), unless
+  explicitly enabled in the settings.
+- Meeting content is always presented to the agent as **data**, never as instructions
+  (protection against instruction injection by a participant).
 
-### Permissions macOS
+### macOS permissions
 
-| Permission | Usage |
+| Permission | Use |
 |---|---|
-| Micro | Transcrire votre voix et détecter le mot d'appel |
-| Audio du système (« Enregistrement de l'écran et de l'audio système ») | Entendre les autres participants, uniquement dans l'app de l'appel |
-| Accessibilité (facultatif) | Lire le titre de l'appel en cours |
-| Calendriers (facultatif) | Lire vos réunions à venir et leurs invités (lecture seule, rien n'est modifié) ; les noms des invités sont transmis à l'agent pour le compte rendu |
+| Microphone | Transcribe your voice and detect the wake word |
+| System audio ("Screen & System Audio Recording") | Hear the other participants, only in the call app |
+| Accessibility (optional) | Read the title of the current call |
+| Calendars (optional) | Read your upcoming meetings and their invitees (read-only, nothing is modified); invitee names are sent to the agent for the summary |
 
-Pour proposer la permission « audio du système » dans l'assistant, Sténo utilise une API
-privée de macOS (`TCC.framework`, chargée dynamiquement), comme d'autres outils de capture
-audio. Elle sert uniquement à demander ou vérifier cette permission.
+To offer the "system audio" permission in the setup assistant, Sténo uses a private macOS API
+(`TCC.framework`, loaded dynamically), like other audio capture tools. It is only used to
+request or check this permission.
 
-### Signature
+On Linux there is no system permission: the microphone and the call app's audio go through
+your session's sound server (PipeWire or PulseAudio).
 
-L'application est compilée sur votre machine, sans compte développeur Apple. `make install`
-crée une fois, dans votre trousseau de session, un certificat auto-signé « Steno Local Signing »
-(`scripts/local-signing.sh`) et signe l'app avec : macOS conserve ainsi ses autorisations d'une
-version à l'autre. Ce certificat ne quitte pas votre Mac et ne sert qu'aux apps compilées ici ;
-vous pouvez le supprimer dans Trousseaux d'accès (la signature redevient alors « ad hoc »).
-Compilez depuis une source de confiance et vérifiez le dépôt avant `make install`.
+### Signing
+
+The app is built on your machine, without an Apple developer account. On macOS,
+`make install` creates once, in your login keychain, a self-signed "Steno Local Signing"
+certificate (`scripts/local-signing.sh`) and signs the app with it, so macOS keeps its
+permissions from one version to the next. This certificate never leaves your Mac and is only
+used for apps built there; you can delete it in Keychain Access (the signature then reverts
+to "ad hoc"). Build from a trusted source and review the repository before `make install`.

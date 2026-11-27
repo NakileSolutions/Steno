@@ -1,28 +1,28 @@
-# Publier une version
+# Releasing a version
 
-Les utilisateurs compilent Sténo depuis les sources. Une version est donc un **tag signé**
-`vX.Y.Z` sur `main` : l'app le détecte (API publique de GitHub, toutes les 6 h) et propose de
-l'installer. L'installation amène le clone de l'utilisateur sur ce tag puis lance
-`make install`.
+Users build Sténo from source. A version is therefore a **signed tag** `vX.Y.Z` on `main`:
+the app detects it (GitHub public API, every 6 hours) and offers to install it. Installing
+moves the user's clone to that tag and then runs `make install`.
 
-1. Sur une branche, changez le numéro de version partout :
+1. On a branch, change the version number everywhere (the script uses BSD `sed`: run it on
+   macOS):
    ```sh
    scripts/bump-version.sh 0.2.0
    git commit -am "Version 0.2.0"
    ```
-   Ouvrez une pull request ; une fois la CI verte, fusionnez-la dans `main`.
-2. Créez et poussez le tag (signé, réservé aux administrateurs) :
+   Open a pull request; once CI is green, merge it into `main`.
+2. Create and push the tag (signed, administrators only):
    ```sh
    git checkout main && git pull
    git tag -s v0.2.0 -m "Sténo 0.2.0"
    git push origin v0.2.0
    ```
-3. Le workflow **Publication** vérifie que le tag correspond à la version du code et crée la
-   version GitHub, avec des notes générées depuis les pull requests. Complétez-les au besoin :
-   elles s'affichent dans Réglages → Mises à jour.
+3. The **Release** workflow checks that the tag matches the version in the code and creates
+   the GitHub release, with notes generated from the pull requests. Edit them if needed: they
+   are shown in Settings → Updates.
 
-Règles :
-- `main` n'accepte que des pull requests, avec CI verte et commits signés.
-- Un tag publié ne se déplace ni ne se supprime : en cas d'erreur, publiez la version suivante.
-- Versions `X.Y.Z` uniquement ; une pré-version (`v0.3.0-rc1`, marquée « pre-release ») n'est
-  pas proposée aux utilisateurs.
+Rules:
+- `main` only accepts pull requests, with green CI and signed commits.
+- A published tag is never moved or deleted: if something is wrong, release the next version.
+- `X.Y.Z` versions only; a pre-release (`v0.3.0-rc1`, marked "pre-release") is not offered to
+  users.
