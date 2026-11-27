@@ -288,6 +288,7 @@ fn run_install(dir: &Path, tag: &str, log: &Path) -> Result<()> {
     let out = Command::new("make")
         .arg("install")
         .current_dir(dir)
+        .env("PATH", build_path())
         .stdout(f.try_clone()?)
         .stderr(f.try_clone()?)
         .status()
@@ -297,6 +298,28 @@ fn run_install(dir: &Path, tag: &str, log: &Path) -> Result<()> {
     }
     writeln!(f, "=== terminé ===")?;
     Ok(())
+}
+
+/// PATH de la compilation : celui du processus, complété des emplacements habituels des outils
+/// (rustup, Cargo, Homebrew, Node). Lancée depuis l'app ou un terminal minimal, `make` doit
+/// trouver `cargo`, `rustc`, `npm` et `swift` comme lors de l'installation à la main.
+pub fn build_path() -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut dirs: Vec<String> = std::env::var("PATH").unwrap_or_default().split(':').filter(|d| !d.is_empty()).map(String::from).collect();
+    for extra in [
+        format!("{home}/.cargo/bin"),
+        "/opt/homebrew/opt/rustup/bin".into(),
+        "/opt/homebrew/bin".into(),
+        "/usr/local/bin".into(),
+        format!("{home}/.volta/bin"),
+        "/usr/bin".into(),
+        "/bin".into(),
+    ] {
+        if !dirs.contains(&extra) && Path::new(&extra).is_dir() {
+            dirs.push(extra);
+        }
+    }
+    dirs.join(":")
 }
 
 /// Vérification au démarrage puis toutes les 6 h ; installation automatique si demandée,
@@ -327,6 +350,15 @@ pub fn spawn(inner: Arc<Inner>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn path_de_compilation() {
+        let p = build_path();
+        assert!(p.split(':').any(|d| d == "/usr/bin"));
+        let n = p.split(':').count();
+        let uniq: std::collections::HashSet<_> = p.split(':').collect();
+        assert_eq!(uniq.len(), n, "pas de doublon ajouté");
+    }
 
     #[test]
     fn comparaison_des_versions() {
