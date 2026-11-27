@@ -662,3 +662,17 @@ async fn reunion_prevue_reprise_et_participants() {
     assert!(!c.upcoming(7).await.unwrap().planned.iter().any(|x| x.id == m.id));
     c.shutdown();
 }
+
+/// Régression : « Installer » depuis une commande synchrone (fil principal de l'app, sans
+/// moteur asynchrone) arrêtait l'app (panique de `tokio::spawn`). Le cœur doit refuser
+/// proprement.
+#[tokio::test(flavor = "multi_thread")]
+async fn installation_hors_moteur_asynchrone_sans_plantage() {
+    let c = core("installation", None);
+    c.inner().update.lock().unwrap().available = true;
+    c.inner().update.lock().unwrap().latest = Some("99.0.0".into());
+    let c2 = c.clone();
+    let res = std::thread::spawn(move || c2.install_update()).join().expect("pas de panique");
+    assert!(res.unwrap_err().to_string().contains("hors du moteur asynchrone"));
+    c.shutdown();
+}

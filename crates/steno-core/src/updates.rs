@@ -130,6 +130,13 @@ pub fn install_blocker(dir: Option<&Path>) -> Option<String> {
     let Some(dir) = dir else {
         return Some("dossier des sources introuvable (Sténo a-t-il été installé avec `make install` ?)".into());
     };
+    let missing = missing_tools(&build_path());
+    if !missing.is_empty() {
+        return Some(format!(
+            "outils manquants pour compiler : {} — installez-les, ou mettez à jour à la main (README)",
+            missing.join(", ")
+        ));
+    }
     match git(dir, &["status", "--porcelain", "--untracked-files=no"]) {
         Ok(s) if !s.is_empty() => Some("les sources contiennent des modifications locales : mettez à jour à la main".into()),
         Ok(_) => match git(dir, &["symbolic-ref", "-q", "--short", "HEAD"]) {
@@ -288,6 +295,7 @@ fn run_install(dir: &Path, tag: &str, log: &Path) -> Result<()> {
     let out = Command::new("make")
         .arg("install")
         .current_dir(dir)
+        .env("PATH", build_path())
         .stdout(f.try_clone()?)
         .stderr(f.try_clone()?)
         .status()
@@ -297,6 +305,74 @@ fn run_install(dir: &Path, tag: &str, log: &Path) -> Result<()> {
     }
     writeln!(f, "=== terminé ===")?;
     Ok(())
+}
+
+/// PATH de la compilation : celui du processus, complété des emplacements habituels des outils
+/// (rustup, Cargo, Homebrew, Node). Lancée depuis l'app ou un terminal minimal, `make` doit
+/// trouver `cargo`, `rustc`, `npm` et `swift` comme lors de l'installation à la main.
+pub fn build_path() -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut dirs: Vec<String> = vec![];
+    // PATH du shell de connexion (rustup, asdf, mise, nvm… configurés dans le profil), puis
+    // celui du processus.
+    for p in [login_shell_path(), std::env::var("PATH").unwrap_or_default()] {
+        for d in p.split(':').filter(|d| !d.is_empty()) {
+            if !dirs.iter().any(|x| x == d) {
+                dirs.push(d.to_string());
+            }
+        }
+    }
+    for extra in [
+        format!("{home}/.cargo/bin"),
+        "/opt/homebrew/opt/rustup/bin".into(),
+        "/opt/homebrew/bin".into(),
+        "/usr/local/bin".into(),
+        format!("{home}/.volta/bin"),
+        "/usr/bin".into(),
+        "/bin".into(),
+    ] {
+        if !dirs.contains(&extra) && Path::new(&extra).is_dir() {
+            dirs.push(extra);
+        }
+    }
+    dirs.join(":")
+}
+
+/// PATH du shell de connexion de l'utilisateur (lu une fois ; vide en cas d'échec).
+fn login_shell_path() -> String {
+    static P: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    P.get_or_init(|| {
+        let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/zsh".into());
+        let marker = "__STENO_PATH__";
+        Command::new(&shell)
+            .args(["-ilc", &format!("printf '{marker}%s{marker}' \"$PATH\"")])
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .and_then(|o| {
+                let out = String::from_utf8_lossy(&o.stdout).to_string();
+                let start = out.find(marker)? + marker.len();
+                let end = start + out[start..].find(marker)?;
+                Some(out[start..end].to_string())
+            })
+            .unwrap_or_default()
+    })
+    .clone()
+}
+
+/// Outils de compilation introuvables dans `path` (noms lisibles).
+pub fn missing_tools(path: &str) -> Vec<&'static str> {
+    let mut tools: Vec<(&str, &str)> = vec![("cargo", "Rust (cargo)"), ("npm", "Node.js (npm)"), ("make", "make")];
+    if cfg!(target_os = "macos") {
+        tools.push(("swift", "Swift (outils de développement Xcode)"));
+    }
+    let cwd = std::env::temp_dir();
+    tools
+        .into_iter()
+        .filter(|(bin, _)| which::which_in(bin, Some(path), &cwd).is_err())
+        .map(|(_, label)| label)
+        .collect()
 }
 
 /// Vérification au démarrage puis toutes les 6 h ; installation automatique si demandée,
@@ -327,6 +403,21 @@ pub fn spawn(inner: Arc<Inner>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn outils_manquants() {
+        assert_eq!(missing_tools("/dossier/inexistant").len(), if cfg!(target_os = "macos") { 4 } else { 3 });
+        assert!(missing_tools(&build_path()).iter().all(|t| !t.starts_with("make")), "make est présent sur la machine de test");
+    }
+
+    #[test]
+    fn path_de_compilation() {
+        let p = build_path();
+        assert!(p.split(':').any(|d| d == "/usr/bin"));
+        let n = p.split(':').count();
+        let uniq: std::collections::HashSet<_> = p.split(':').collect();
+        assert_eq!(uniq.len(), n, "pas de doublon ajouté");
+    }
 
     #[test]
     fn comparaison_des_versions() {
