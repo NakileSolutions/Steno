@@ -237,7 +237,11 @@ pub async fn run(core: &Core, live_policy_test: bool) -> Vec<DoctorItem> {
             Err(e) => item("Test réel « poste sur Slack »", "warn", format!("test impossible : {e}"), None),
         });
     }
-    v
+    let lang = s.lang();
+    let tr = |t: &str| crate::i18n_messages::localize(lang, t);
+    v.into_iter()
+        .map(|i| DoctorItem { name: tr(&i.name), message: tr(&i.message), fix: i.fix.as_deref().map(tr), ..i })
+        .collect()
 }
 
 #[cfg(test)]

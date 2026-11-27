@@ -120,7 +120,6 @@ impl CommandAssembler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::VoiceSettings;
 
     fn u(id: i64, t0: f64, t1: f64, text: &str) -> Utterance {
         Utterance { id, t0, t1, text: text.into() }

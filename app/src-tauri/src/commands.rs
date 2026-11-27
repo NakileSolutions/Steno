@@ -12,10 +12,22 @@ use tauri::{AppHandle, State};
 
 type R<T> = Result<T, String>;
 
+/// Cœur de l'app, pour lire la langue des réglages au moment de traduire une erreur.
+static CORE: std::sync::OnceLock<steno_core::Core> = std::sync::OnceLock::new();
+
+/// Branche la traduction des erreurs des commandes sur les réglages du cœur.
+pub fn init(core: &steno_core::Core) {
+    let _ = CORE.set(core.clone());
+}
+
+/// Erreur rendue à l'interface, dans la langue des réglages.
 fn e(err: impl std::fmt::Display) -> String {
     let s = format!("{err:#}");
     tracing::warn!("commande en échec : {s}");
-    s
+    match CORE.get() {
+        Some(core) => steno_core::i18n_messages::localize(core.settings().lang(), &s),
+        None => s,
+    }
 }
 
 fn er(err: anyhow::Error) -> String {
@@ -78,7 +90,7 @@ pub fn list_meetings(st: State<'_, AppState>, filter: Option<MeetingFilter>) -> 
 
 #[tauri::command]
 pub fn get_meeting(st: State<'_, AppState>, id: String) -> R<MeetingDetail> {
-    st.core.db().meeting_detail(&id).map_err(er)?.ok_or_else(|| "réunion introuvable".into())
+    st.core.db().meeting_detail(&id).map_err(er)?.ok_or_else(|| e("réunion introuvable"))
 }
 
 #[tauri::command]
@@ -88,7 +100,7 @@ pub fn get_transcript(st: State<'_, AppState>, id: String, include_private: bool
 
 #[tauri::command]
 pub fn get_report_version(st: State<'_, AppState>, id: String, version: i64) -> R<Report> {
-    st.core.db().get_report_version(&id, version).map_err(er)?.ok_or_else(|| "version introuvable".into())
+    st.core.db().get_report_version(&id, version).map_err(er)?.ok_or_else(|| e("version introuvable"))
 }
 
 #[tauri::command]
@@ -230,7 +242,7 @@ pub async fn install_update(st: State<'_, AppState>) -> R<()> {
 #[tauri::command]
 pub fn restart_app(app: AppHandle, st: State<'_, AppState>) -> R<()> {
     if st.core.db().live_meeting().map_err(er)?.is_some() {
-        return Err("une réunion est en cours : redémarrez après la réunion".into());
+        return Err(e("une réunion est en cours : redémarrez après la réunion"));
     }
     st.core.shutdown();
     app.restart();
@@ -298,7 +310,7 @@ pub fn list_actions(st: State<'_, AppState>, filter: Option<ActionFilter>) -> R<
 #[tauri::command]
 pub fn set_action_status(st: State<'_, AppState>, id: i64, status: String) -> R<()> {
     if status != "open" && status != "done" {
-        return Err("statut inconnu".into());
+        return Err(e("statut inconnu"));
     }
     st.core.db().set_action_status(id, &status).map_err(er)
 }
@@ -393,7 +405,7 @@ pub fn list_repos(st: State<'_, AppState>) -> R<Vec<Repo>> {
 pub fn add_repo(st: State<'_, AppState>, path: String, label: Option<String>) -> R<Repo> {
     let p = std::path::Path::new(&path);
     if !p.is_dir() {
-        return Err(format!("dossier introuvable : {path}"));
+        return Err(e(format!("dossier introuvable : {path}")));
     }
     let abs = p.canonicalize().map_err(e)?;
     let label = label
@@ -467,7 +479,7 @@ pub async fn wake_test_record(st: State<'_, AppState>, seconds: u32) -> R<WakeTe
     let fut = st.core.wake_test_record(seconds);
     let text = tokio::time::timeout(std::time::Duration::from_secs(seconds as u64 + 30), fut)
         .await
-        .map_err(|_| "le micro n'a rien renvoyé à temps".to_string())?
+        .map_err(|_| e("le micro n'a rien renvoyé à temps"))?
         .map_err(er)?;
     Ok(WakeText { text })
 }

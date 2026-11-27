@@ -95,7 +95,7 @@ async fn execute(inner: &Inner, job: Job) {
             if kind == "correlate" || kind == "report" {
                 inner.emit(CoreEvent::Notify {
                     title: if kind == "report" { inner.tr("⚠️ Compte rendu en échec", "⚠️ Summary failed") } else { inner.tr("⚠️ Corrélation en échec", "⚠️ Correlation failed") },
-                    body: crate::text::truncate(&msg, 200),
+                    body: crate::text::truncate(&crate::i18n_messages::localize(inner.lang(), &msg), 200),
                     route: job.meeting_id.as_ref().map(|m| format!("/meetings/{m}")),
                 });
             }
@@ -254,7 +254,7 @@ async fn run_request(inner: &Inner, job: &Job) -> Result<()> {
             if status == "error" {
                 inner.emit(CoreEvent::Notify {
                     title: inner.tr("⚠️ Demande en échec", "⚠️ Request failed"),
-                    body: crate::text::truncate(&msg, 200),
+                    body: crate::text::truncate(&crate::i18n_messages::localize(inner.lang(), &msg), 200),
                     route: None,
                 });
             }

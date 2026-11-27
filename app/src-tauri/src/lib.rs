@@ -162,6 +162,7 @@ pub fn run() {
             // L'assistant s'ouvre tant qu'il n'a pas été terminé ou passé (`complete_onboarding`),
             // même si l'app a été relancée entre-temps.
             let first_run = !core.onboarded()?;
+            commands::init(&core);
             app.manage(AppState { core: core.clone() });
             let c = core.clone();
             tauri::async_runtime::spawn(async move { c.start_background() });

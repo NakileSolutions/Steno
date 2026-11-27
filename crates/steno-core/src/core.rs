@@ -244,7 +244,15 @@ impl Inner {
             f(&mut s);
             s.clone()
         };
-        self.emit(CoreEvent::Live(st));
+        self.emit(CoreEvent::Live(self.localized_live(st)));
+    }
+
+    /// État du direct publié : dernière erreur dans la langue des réglages.
+    pub(crate) fn localized_live(&self, mut st: LiveState) -> LiveState {
+        if let Some(e) = &st.last_error {
+            st.last_error = Some(crate::i18n_messages::localize(self.lang(), e));
+        }
+        st
     }
 
     pub fn send_live(&self, cmd: LiveCmd) -> bool {
@@ -437,7 +445,7 @@ impl Core {
                 s.meeting = Some(fresh);
             }
         }
-        s
+        self.inner.localized_live(s)
     }
 
     /// Démarre une réunion manuellement.
