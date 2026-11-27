@@ -1,5 +1,5 @@
 // Contrôleur du mode protocole : reçoit les commandes, pilote la session de capture,
-// relaie la surveillance de Teams et les permissions.
+// relaie la surveillance des apps de visio (`watch` → `call`) et les permissions.
 
 import CoreAudio
 import Foundation
@@ -9,9 +9,10 @@ actor Controller {
     private let output: Output
     private let models: SpeechModels
     private let permissions = PermissionsTracker()
-    private let monitor = TeamsMonitor()
+    private let monitor = CallMonitor()
     private var session: CaptureSession?
-    private var latestTeamsProcesses: [AudioObjectID] = []
+    /// `start.apps` de la session en cours (vide = toutes les apps surveillées).
+    private var captureRequest: [String] = []
     private var shuttingDown = false
 
     init(output: Output, backend: SpeechBackend = FluidAudioBackend()) {
@@ -19,7 +20,7 @@ actor Controller {
         self.models = SpeechModels(backend: backend)
     }
 
-    /// Démarrage : `ready`, `permissions`, surveillance de Teams, préchargement des modèles.
+    /// Démarrage : `ready`, `permissions`, surveillance des apps, préchargement des modèles.
     func boot() async {
         output.send(.ready(version: SidecarInfo.version, asr: models.asrName))
         output.send(.permissions(permissions.snapshot()))
@@ -31,11 +32,11 @@ actor Controller {
                                recoverable: false))
         }
 
-        monitor.onCallChange = { active, title in
-            output.send(.teamsCall(active: active, title: title))
+        monitor.onCallChange = { app, active, title in
+            output.send(.call(active: active, app: app.id, title: title))
         }
         monitor.onSnapshot = { [weak self] snapshot in
-            Task { await self?.teamsSnapshotChanged(snapshot) }
+            Task { await self?.snapshotChanged(snapshot) }
         }
         monitor.start()
 
@@ -62,6 +63,11 @@ actor Controller {
     func handle(_ command: Command) async {
         guard !shuttingDown else { return }
         switch command {
+        case let .watch(apps):
+            // Le relevé fait aussitôt par le moniteur met à jour le tap si une capture tourne.
+            monitor.setApps(apps)
+            Log.info("apps surveillées : \(apps.isEmpty ? "aucune" : apps.map(\.id).joined(separator: ", "))")
+
         case let .start(options):
             await start(options)
 
@@ -103,9 +109,15 @@ actor Controller {
         )
         let s = CaptureSession(config: config, output: output, permissions: permissions, models: models)
         session = s
-        let processes = latestTeamsProcesses.isEmpty ? monitor.currentSnapshot().processObjects : latestTeamsProcesses
-        await s.start(teamsProcesses: processes)
-        Log.info("capture démarrée (silence \(options.silenceMs) ms, vocabulaire \(options.vocabulary.count) mots, audio \(options.keepAudio ? "conservé" : "non conservé"))")
+        captureRequest = options.apps
+        // Relevé frais : le dernier relevé du minuteur peut dater de 2 s ou précéder un `watch`.
+        let snapshot = monitor.scanNow()
+        let selection = CaptureAppSelection.resolve(requested: captureRequest, watched: snapshot.apps.map(\.app))
+        if !selection.unknown.isEmpty {
+            Log.warn("start.apps : app(s) non surveillée(s) ignorée(s) : \(selection.unknown.joined(separator: ", "))")
+        }
+        await s.start(tapSource: tapSource(for: snapshot))
+        Log.info("capture démarrée (apps \(selection.apps.map(\.id).joined(separator: ", ")), silence \(options.silenceMs) ms, vocabulaire \(options.vocabulary.count) mots, audio \(options.keepAudio ? "conservé" : "non conservé"))")
         output.send(.state(.listening))
     }
 
@@ -178,13 +190,17 @@ actor Controller {
         }
     }
 
-    // MARK: Teams
+    // MARK: Apps surveillées
 
-    private func teamsSnapshotChanged(_ snapshot: TeamsSnapshot) {
-        guard snapshot.processObjects != latestTeamsProcesses else { return }
-        latestTeamsProcesses = snapshot.processObjects
-        Log.debug("processus Teams : \(snapshot.processObjects)")
-        session?.updateTeamsProcesses(snapshot.processObjects)
+    private func snapshotChanged(_ snapshot: CallSnapshot) {
+        // La session ignore une source identique à la précédente.
+        session?.updateTapSource(tapSource(for: snapshot))
+    }
+
+    /// Processus à taper : ceux des apps de `start.apps` (ou de toutes les apps surveillées).
+    private func tapSource(for snapshot: CallSnapshot) -> TapSource {
+        let apps = CaptureAppSelection.resolve(requested: captureRequest, watched: snapshot.apps.map(\.app)).apps
+        return TapSource(appNames: apps.map(\.name), processes: snapshot.processObjects(forApps: apps.map(\.id)))
     }
 
     // MARK: Arrêt

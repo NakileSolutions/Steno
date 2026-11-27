@@ -55,7 +55,7 @@
     <div class="arow app" class:off={!app.enabled} data-app={app.id}>
       <span class="aic" aria-hidden="true"><Icon name={app.browser ? 'external' : 'phone'} size={15} /></span>
       <span class="grow">
-        <span class="an">{app.name}{#if !isBuiltinCallApp(app.id)}<span class="badge outline">Ajoutée</span>{/if}</span>
+        <span class="an"><span class="ellipsis">{app.name}</span>{#if !isBuiltinCallApp(app.id)}<span class="badge outline">Ajoutée</span>{/if}</span>
         <span class="bundles" title={app.bundles.join('\n')}>{app.bundles.join(' · ')}</span>
         {#if app.browser}
           <span class="awarn small"><Icon name="warn" size={12} />Attention : capte tout le son du navigateur, y compris les autres onglets.</span>

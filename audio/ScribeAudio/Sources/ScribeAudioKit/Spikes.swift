@@ -1,6 +1,7 @@
 // Modes « spike » en ligne de commande (hors protocole, sortie lisible sur stdout).
 //
-//   scribe-audio --spike-record <secondes> <dossier>   → me.wav + them.wav (spike S1)
+//   scribe-audio --spike-record <secondes> <dossier> [--apps teams,slack]
+//                                                      → me.wav + them.wav (spike S1)
 //   scribe-audio --spike-transcribe <fichier.wav>      → transcription + temps par phrase (spike S2)
 
 import AVFoundation
@@ -11,8 +12,9 @@ import Foundation
 enum Spikes {
     // MARK: S1 — capture
 
-    static func record(seconds: Double, directory: URL) async -> Int32 {
-        print("== Spike S1 : capture micro + Teams pendant \(Int(seconds)) s ==")
+    static func record(seconds: Double, directory: URL, apps: [WatchedApp] = WatchedApp.defaults) async -> Int32 {
+        let names = apps.map(\.name).joined(separator: ", ")
+        print("== Spike S1 : capture micro + \(names) pendant \(Int(seconds)) s ==")
         let permissions = PermissionsTracker()
         let mic = await PermissionsTracker.requestMicrophoneIfNeeded()
         let snap = permissions.snapshot()
@@ -35,15 +37,26 @@ enum Spikes {
         let meter = LevelMeter()
         let peak = PeakTracker()
 
-        let teams = TeamsMonitor.scan()
+        let snapshot = CallMonitor.scan(apps: apps)
+        for entry in snapshot.apps {
+            guard !entry.processObjects.isEmpty else {
+                print("\(entry.app.name) : aucun processus audio trouvé")
+                continue
+            }
+            print("\(entry.app.name) : \(entry.processObjects.count) processus audio \(entry.processObjects), micro utilisé : \(entry.inputActive ? "oui" : "non")")
+            print("  titre de l'appel (accessibilité) : \(CallWindowTitle.read(app: entry.app, pids: entry.appPIDs) ?? "—")")
+        }
+        let processes = snapshot.processObjects(forApps: apps.map(\.id))
+        let selfObject = HAL.processObject(forPID: getpid()).map { [$0] } ?? []
         let target: ProcessTap.Target
-        if teams.processObjects.isEmpty {
-            print("Teams : aucun processus audio trouvé → tap global (tout le son du Mac sauf scribe-audio).")
-            target = .systemExcluding(HAL.processObject(forPID: getpid()).map { [$0] } ?? [])
+        if CaptureSession.TapMode.fromEnvironment == .global {
+            print("SCRIBE_TAP_MODE=global → tap global (tout le son du Mac sauf scribe-audio).")
+            target = .systemExcluding(selfObject)
+        } else if processes.isEmpty {
+            print("Aucun processus audio pour \(names) → tap global (tout le son du Mac sauf scribe-audio).")
+            target = .systemExcluding(selfObject)
         } else {
-            print("Teams : \(teams.processObjects.count) processus audio \(teams.processObjects), micro utilisé par Teams : \(teams.inputActive ? "oui" : "non")")
-            print("Titre de réunion (accessibilité) : \(TeamsWindowTitle.read(pids: teams.appPIDs) ?? "—")")
-            target = .processes(teams.processObjects)
+            target = .processes(processes)
         }
 
         let micCapture = MicCapture(voiceProcessing: true) { samples, rate in
@@ -94,7 +107,7 @@ enum Spikes {
         print("me.wav   : \(String(format: "%.1f", meWriter.durationSeconds)) s, crête \(String(format: "%.1f", AudioLevel.dbfs(rms: Double(peaks.me)))) dBFS")
         print("them.wav : \(String(format: "%.1f", themWriter.durationSeconds)) s, crête \(String(format: "%.1f", AudioLevel.dbfs(rms: Double(peaks.them)))) dBFS")
         if peaks.them <= 1e-6 {
-            print("ATTENTION : them.wav est silencieux. Teams jouait-il du son ? Permission « Enregistrement audio du système » accordée ?")
+            print("ATTENTION : them.wav est silencieux. \(names) jouait-il du son ? Permission « Enregistrement audio du système » accordée ?")
         }
         print("Fichiers : \(directory.path)")
         return 0
@@ -168,19 +181,20 @@ enum Spikes {
 
     // MARK: Outils de diagnostic
 
-    /// Liste les processus connus du HAL (pour repérer les processus audio de Teams, spike S1).
-    static func listAudioProcesses() -> Int32 {
+    /// Liste les processus connus du HAL et l'app reconnue pour chacun (liste par défaut, ou
+    /// `--apps`), pour repérer les processus audio des apps de visio (spike S1).
+    static func listAudioProcesses(apps: [WatchedApp] = WatchedApp.defaults) -> Int32 {
         let objects = (try? HAL.processObjectList()) ?? []
-        print("Processus audio (HAL) : \(objects.count)")
-        print("objet   pid     entrée sortie  Teams  bundle")
-        let teams = Set(TeamsMonitor.scan().processObjects)
+        print("Processus audio (HAL) : \(objects.count) — apps reconnues : \(apps.map(\.id).joined(separator: ", "))")
+        print("objet   pid     entrée sortie  app        bundle")
+        let owners = CallMonitor.scan(apps: apps).appByProcess
         for object in objects {
             let pid = HAL.processPID(object).map { String($0) } ?? "?"
             let bundle = HAL.processBundleID(object) ?? "—"
             let input = HAL.processIsRunningInput(object) ? "oui" : "non"
             let output = HAL.processIsRunningOutput(object) ? "oui" : "non"
-            let isTeams = teams.contains(object) ? "oui" : "non"
-            print([pad(String(object), 7), pad(pid, 7), pad(input, 6), pad(output, 7), pad(isTeams, 6), bundle]
+            let app = owners[object]?.id ?? "—"
+            print([pad(String(object), 7), pad(pid, 7), pad(input, 6), pad(output, 7), pad(app, 10), bundle]
                 .joined(separator: " "))
         }
         return 0
@@ -247,5 +261,27 @@ final class PeakTracker {
         lock.lock()
         defer { lock.unlock() }
         return (me, them)
+    }
+}
+
+// MARK: - Argument `--apps`
+
+extension WatchedApp {
+    /// Apps du catalogue désignées par `--apps teams,slack` (sans casse). `unknown` liste les
+    /// identifiants inconnus ; une liste vide donne la liste par défaut.
+    static func fromCatalog(argument: String) -> (apps: [WatchedApp], unknown: [String]) {
+        var apps: [WatchedApp] = []
+        var unknown: [String] = []
+        for raw in argument.split(separator: ",") {
+            let id = raw.trimmingCharacters(in: .whitespaces).lowercased()
+            guard !id.isEmpty else { continue }
+            if let app = catalog.first(where: { $0.id == id }) {
+                if !apps.contains(app) { apps.append(app) }
+            } else {
+                unknown.append(id)
+            }
+        }
+        if apps.isEmpty, unknown.isEmpty { apps = defaults }
+        return (apps, unknown)
     }
 }

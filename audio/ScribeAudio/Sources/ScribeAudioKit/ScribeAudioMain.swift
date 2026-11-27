@@ -15,15 +15,20 @@ public enum ScribeAudioMain {
 
     Usage :
       scribe-audio                                   mode protocole (JSON lines sur stdin/stdout)
-      scribe-audio --spike-record <secondes> <dossier>
+      scribe-audio --spike-record <secondes> <dossier> [--apps teams,slack]
                                                      enregistre me.wav et them.wav (spike S1)
       scribe-audio --spike-transcribe <fichier.wav>  transcrit un fichier, temps par phrase (spike S2)
-      scribe-audio --list-audio-processes            liste les processus audio vus par Core Audio
+      scribe-audio --list-audio-processes [--apps teams,slack]
+                                                     liste les processus audio vus par Core Audio
+                                                     et l'app reconnue pour chacun
       scribe-audio --prefetch-models                 télécharge et prépare les modèles (make install)
       scribe-audio --version
 
+    Apps connues de --apps : \(WatchedApp.catalog.map(\.id).joined(separator: ", ")) (par défaut : teams).
+    En mode protocole, la liste des apps vient du cœur (commande watch).
+
     Variables d'environnement :
-      SCRIBE_TAP_MODE=global   tap sur tout le son du Mac (hors Scribe) au lieu de Teams seul
+      SCRIBE_TAP_MODE=global   tap sur tout le son du Mac (hors Scribe) au lieu des apps de visio
       SCRIBE_VAD=energy        VAD par énergie au lieu de Silero
       SCRIBE_MODELS_DIR=<dir>  dossier des modèles (sinon cache de FluidAudio)
       SCRIBE_AUDIO_DEBUG=1     journaux détaillés sur stderr
@@ -52,13 +57,14 @@ public enum ScribeAudioMain {
             exit(0)
 
         case "--spike-record":
-            guard args.count == 3, let seconds = Double(args[1]), seconds > 0 else {
+            guard args.count >= 3, let seconds = Double(args[1]), seconds > 0 else {
                 fputs(usage + "\n", stderr)
                 exit(64)
             }
+            let apps = appsOption(Array(args.dropFirst(3)))
             let dir = URL(fileURLWithPath: (args[2] as NSString).expandingTildeInPath, isDirectory: true)
             Task {
-                let code = await Spikes.record(seconds: seconds, directory: dir)
+                let code = await Spikes.record(seconds: seconds, directory: dir, apps: apps)
                 exit(code)
             }
 
@@ -74,7 +80,7 @@ public enum ScribeAudioMain {
             }
 
         case "--list-audio-processes":
-            exit(Spikes.listAudioProcesses())
+            exit(Spikes.listAudioProcesses(apps: appsOption(Array(args.dropFirst()))))
 
         case "--prefetch-models":
             Task {
@@ -91,6 +97,23 @@ public enum ScribeAudioMain {
         // file principale ; le travail se fait dans les tâches et les files dédiées.
         RunLoop.main.run()
         exit(0)
+    }
+
+    /// Option facultative `--apps teams,slack` (seule option admise après les arguments
+    /// positionnels) ; quitte avec le code 64 si elle est mal formée ou désigne une app inconnue.
+    private static func appsOption(_ rest: [String]) -> [WatchedApp] {
+        if rest.isEmpty { return WatchedApp.defaults }
+        guard rest.count == 2, rest[0] == "--apps" else {
+            fputs("Arguments inattendus : \(rest.joined(separator: " "))\n\n" + usage + "\n", stderr)
+            exit(64)
+        }
+        let parsed = WatchedApp.fromCatalog(argument: rest[1])
+        guard parsed.unknown.isEmpty else {
+            let known = WatchedApp.catalog.map(\.id).joined(separator: ", ")
+            fputs("App(s) inconnue(s) : \(parsed.unknown.joined(separator: ", ")). Apps connues : \(known).\n", stderr)
+            exit(64)
+        }
+        return parsed.apps
     }
 
     // MARK: Mode protocole
