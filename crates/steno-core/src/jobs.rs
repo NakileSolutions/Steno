@@ -1,5 +1,6 @@
 //! File de tâches persistante (PLAN §5.2) : `request`, `report`, `correlate`, `diarize`,
-//! `export`. Les tâches IA sont limitées à `agent.max_parallel` en parallèle.
+//! `export`, `control` (stop / cancel typed in another process).
+//! Les tâches IA sont limitées à `agent.max_parallel` en parallèle.
 
 use crate::agents::{SessionMode, ToolAccess};
 use crate::core::Inner;
@@ -12,7 +13,7 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 const AI_KINDS: &[&str] = &["request", "report", "correlate"];
-const OTHER_KINDS: &[&str] = &["diarize", "export"];
+const OTHER_KINDS: &[&str] = &["control", "diarize", "export"];
 
 /// Lance la boucle de traitement en tâche de fond.
 pub fn spawn_runner(inner: Arc<Inner>) {
@@ -68,12 +69,13 @@ pub async fn drain(inner: Arc<Inner>) -> Result<usize> {
     Ok(n)
 }
 
-async fn execute(inner: &Inner, job: Job) {
+pub(crate) async fn execute(inner: &Inner, job: Job) {
     let id = job.id;
     let kind = job.kind.clone();
     tracing::info!("tâche {id} ({kind}) démarrée");
     let res = match kind.as_str() {
         "request" => run_request(inner, &job).await,
+        "control" => run_control(inner, &job),
         "report" => run_report(inner, &job).await,
         "correlate" => {
             let mid = job.meeting_id.clone().unwrap_or_default();
@@ -136,14 +138,19 @@ async fn run_request(inner: &Inner, job: &Job) -> Result<()> {
         emit_request(inner, &rid);
         return Ok(());
     }
-    inner.db.set_request_running(&rid)?;
-    emit_request(inner, &rid);
-    let started = std::time::Instant::now();
+    // Register the cancellation token before marking the request running: a cancellation
+    // either finds the token or lands first, and then the guarded update refuses to run it.
     let cancel = CancellationToken::new();
     inner.cancels.lock().unwrap().insert(rid.clone(), cancel.clone());
+    if !inner.db.set_request_running(&rid)? {
+        inner.cancels.lock().unwrap().remove(&rid);
+        return Ok(());
+    }
+    emit_request(inner, &rid);
+    let started = std::time::Instant::now();
     let s = inner.settings();
     let intent = Intent::parse(&req.intent).unwrap_or(Intent::Search);
-    let adapter_caps = inner.adapter()?.capabilities();
+    let adapter_caps = inner.adapter_for_tier(intent.tier())?.capabilities();
     let now = chrono::Local::now().format("%H:%M").to_string();
     let result = match intent {
         Intent::Recap => {
@@ -261,6 +268,30 @@ async fn run_request(inner: &Inner, job: &Job) -> Result<()> {
             Err(e)
         }
     }
+}
+
+/// « arrête l'écoute » / « annule » typed in another process (`steno ask`): run here, where
+/// the live session and the agents' cancellation tokens are.
+fn run_control(inner: &Inner, job: &Job) -> Result<()> {
+    let rid = job.payload.get("request_id").and_then(|v| v.as_str()).context("request_id manquant")?.to_string();
+    let Some(req) = inner.db.get_request(&rid)? else { return Ok(()) };
+    let Some(intent) = Intent::parse(&req.intent) else { return Ok(()) };
+    if req.status != "queued" || !inner.db.set_request_running(&rid)? {
+        return Ok(());
+    }
+    let (summary, answer) = match crate::core::run_control(inner, intent, req.meeting_id.as_deref()) {
+        Ok(Some(r)) => r,
+        Ok(None) => return Ok(()),
+        Err(e) => {
+            inner.db.finish_request(&rid, "error", None, None, &[], Some(&format!("{e:#}")))?;
+            emit_request(inner, &rid);
+            return Err(e);
+        }
+    };
+    inner.db.finish_request(&rid, "done", Some(&summary), Some(&answer), &[], None)?;
+    emit_request(inner, &rid);
+    inner.emit(CoreEvent::Notify { title: "Sténo".into(), body: summary, route: None });
+    Ok(())
 }
 
 fn emit_request(inner: &Inner, id: &str) {

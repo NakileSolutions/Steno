@@ -109,9 +109,13 @@ impl Db {
     }
 
     /// Exécute une fonction dans une transaction.
+    ///
+    /// `BEGIN IMMEDIATE`: the app and the CLI share the database, and a deferred transaction
+    /// that reads then writes fails with `SQLITE_BUSY_SNAPSHOT` without honouring
+    /// `busy_timeout` when the other process wrote in between.
     pub fn tx<R>(&self, f: impl FnOnce(&rusqlite::Transaction) -> rusqlite::Result<R>) -> Result<R> {
         let mut conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let tx = conn.transaction()?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let r = f(&tx)?;
         tx.commit()?;
         Ok(r)

@@ -200,8 +200,9 @@ pub fn remove_section(md: &str, heading_prefix: &str) -> String {
 fn bullets(body: &str) -> Vec<String> {
     body.lines()
         .map(|l| l.trim())
-        .filter(|l| l.starts_with("- ") || l.starts_with("* ") || l.starts_with("• "))
-        .map(|l| l[2..].trim().to_string())
+        // `strip_prefix`, not `l[2..]`: "•" is 3 bytes in UTF-8.
+        .filter_map(|l| l.strip_prefix("- ").or_else(|| l.strip_prefix("* ")).or_else(|| l.strip_prefix("• ")))
+        .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty() && !matches!(l.as_str(), "Aucune" | "Aucune." | "(aucune)" | "—" | "-"))
         .collect()
 }
@@ -543,6 +544,15 @@ mod tests {
         let without = remove_section(SAMPLE, "Questions ouvertes");
         assert!(!without.contains("Pourquoi 500"));
         assert!(without.contains("## Points techniques"));
+    }
+
+    #[test]
+    fn markdown_fallback_with_unicode_bullets() {
+        // "•" is 3 bytes in UTF-8: slicing at byte 2 used to panic.
+        let r = parse_markdown("## Décisions\n• Garder le planning Nova\n* Livrer jeudi\n\n## Actions\n• Lina — Relire la note — lundi\n");
+        assert_eq!(r.decisions, vec!["Garder le planning Nova", "Livrer jeudi"]);
+        assert_eq!(r.actions[0].owner.as_deref(), Some("Lina"));
+        assert_eq!(r.actions[0].due.as_deref(), Some("lundi"));
     }
 
     #[test]

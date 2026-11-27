@@ -64,6 +64,22 @@ CREATE TABLE runtime (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
 - `requests.status` : `queued | running | done | error | cancelled | refused`.
 - `runtime` clé `app_heartbeat` : mise à jour toutes les 5 s par l'app. La CLI considère
   que l'app tourne si le battement a moins de 15 s ; sinon elle exécute la tâche elle-même.
+  A single process owns the heartbeat: a core does not overwrite another process's fresh
+  heartbeat (`steno serve` next to the app), takes it over once it is stale, and only
+  marks it stopped on shutdown if it owns it. A core starting while another process's
+  heartbeat is fresh leaves the meeting marked `live` alone (it belongs to that process);
+  otherwise it closes it (crash recovery).
+- `jobs.type = 'control'`: « arrête l'écoute » or « annule » asked from a process that does
+  not own the heartbeat (`steno ask`) while another one does. The request stays `queued`
+  and the owner runs it (live session, agents' cancellation tokens). Not an AI job: it
+  never waits behind `agent.max_parallel`.
+- `jobs.status`: a `request` job abandoned after 3 attempts also moves its request to
+  `error`. A request is only set `running` from `queued` or `running` (never after a
+  cancellation).
+- `runtime` key `settings_rev`: new random value on every settings save. A running core
+  checks it every 5 s and reloads the settings (`steno://settings`) when another process
+  (`steno settings import`) saved them.
+- Write transactions use `BEGIN IMMEDIATE` (the app and the CLI share the database).
 
 ---
 

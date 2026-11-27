@@ -26,11 +26,17 @@ pub struct CoreOptions {
     pub agent_override: Option<Arc<dyn AgentAdapter>>,
 }
 
+/// `runtime` key changed on every settings save (see `Inner::reload_settings_if_changed`).
+const SETTINGS_REV: &str = "settings_rev";
+
 /// État partagé entre l'app, la file de tâches et la session en direct.
 pub struct Inner {
     pub db: Db,
     events: broadcast::Sender<CoreEvent>,
     settings: RwLock<Settings>,
+    /// Revision of the saved settings this process last loaded or wrote (`settings_rev` in
+    /// `runtime`): another process (the CLI) changing it means the settings must be reloaded.
+    settings_rev: Mutex<Option<String>>,
     pub hook_exe: Option<PathBuf>,
     pub jobs_notify: Notify,
     pub cancels: Mutex<HashMap<String, CancellationToken>>,
@@ -64,6 +70,27 @@ impl Inner {
 
     pub fn settings(&self) -> Settings {
         self.settings.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    fn apply_settings(&self, s: Settings) {
+        *self.settings.write().unwrap_or_else(|e| e.into_inner()) = s.clone();
+        self.send_live(LiveCmd::SettingsChanged);
+        self.emit(CoreEvent::SettingsChanged(Box::new(s)));
+    }
+
+    /// Reloads the settings when another process (`steno settings import`) saved them, so
+    /// the next save from the UI does not overwrite them. True if they were reloaded.
+    pub fn reload_settings_if_changed(&self) -> Result<bool> {
+        let rev = self.db.get_runtime(SETTINGS_REV)?.map(|(v, _)| v);
+        {
+            let mut seen = self.settings_rev.lock().unwrap_or_else(|e| e.into_inner());
+            if *seen == rev {
+                return Ok(false);
+            }
+            *seen = rev;
+        }
+        self.apply_settings(Settings::load(&self.db)?);
+        Ok(true)
     }
 
     pub fn adapter(&self) -> Result<Arc<dyn AgentAdapter>> {
@@ -289,12 +316,14 @@ pub struct Core {
 impl Core {
     pub fn new(db: Db, opts: CoreOptions) -> Result<Core> {
         let settings = Settings::load(&db)?;
+        let settings_rev = db.get_runtime(SETTINGS_REV)?.map(|(v, _)| v);
         let (tx, _) = broadcast::channel(1024);
         Ok(Core {
             inner: Arc::new(Inner {
                 db,
                 events: tx,
                 settings: RwLock::new(settings),
+                settings_rev: Mutex::new(settings_rev),
                 hook_exe: opts.hook_exe,
                 jobs_notify: Notify::new(),
                 cancels: Mutex::new(HashMap::new()),
@@ -329,10 +358,13 @@ impl Core {
     /// session en direct (sidecar).
     pub fn start_background(&self) {
         let _ = self.inner.db.recover_jobs();
+        // Read before our own heartbeat overwrites it: another running process (the app while
+        // `steno serve` starts) owns the meeting still marked live.
+        let other_alive = self.inner.db.other_process_running().unwrap_or(false);
         crate::jobs::spawn_runner(self.inner.clone());
         crate::maintenance::spawn(self.inner.clone());
         crate::updates::spawn(self.inner.clone());
-        let handle = crate::live::spawn(self.inner.clone());
+        let handle = crate::live::spawn(self.inner.clone(), !other_alive);
         *self.inner.live.lock().unwrap() = Some(handle);
     }
 
@@ -383,9 +415,10 @@ impl Core {
     pub fn save_settings(&self, s: Settings) -> Result<Settings> {
         let s = s.validated()?;
         s.save(&self.inner.db)?;
-        *self.inner.settings.write().unwrap() = s.clone();
-        self.inner.send_live(LiveCmd::SettingsChanged);
-        self.inner.emit(CoreEvent::SettingsChanged(Box::new(s.clone())));
+        let rev = uuid::Uuid::new_v4().to_string();
+        self.inner.db.set_runtime(SETTINGS_REV, &rev)?;
+        *self.inner.settings_rev.lock().unwrap() = Some(rev);
+        self.inner.apply_settings(s.clone());
         Ok(s)
     }
 
@@ -569,6 +602,14 @@ impl Core {
     // ------------------------------------------------------------------ demandes
 
     /// Demande tapée (ou CLI). `meeting_id` absent : réunion en cours s'il y en a une.
+    /// `Stop` or `Cancel` when the text starts with such a command verb.
+    pub fn control_intent(&self, query: &str) -> Option<Intent> {
+        crate::wake::Detector::new(&self.settings().voice)
+            .detect_aside(query.trim())
+            .filter(|d| d.verb.is_some() && matches!(d.intent, Intent::Stop | Intent::Cancel))
+            .map(|d| d.intent)
+    }
+
     pub fn ask(&self, query: &str, meeting_id: Option<&str>, origin: &str) -> Result<Request> {
         let q = query.trim();
         if q.is_empty() {
@@ -589,6 +630,10 @@ impl Core {
 
     /// Question sur l'historique des réunions.
     pub fn ask_history(&self, query: &str, origin: &str) -> Result<Request> {
+        // « arrête l'écoute », « annule » are commands, not questions about past meetings.
+        if self.control_intent(query).is_some() {
+            return self.ask(query, None, origin);
+        }
         create_request(&self.inner, None, origin, Intent::History, query.trim(), None, &[])
     }
 
@@ -938,23 +983,12 @@ pub(crate) fn create_request(
         r.answer_md = Some(answer);
     };
     match intent {
-        Intent::Cancel => {
-            match inner.db.last_active_request(meeting_id)? {
-                Some(last) => {
-                    cancel_request(inner, &last.id)?;
-                    finish(&mut r, "done", format!("Demande annulée : {}", crate::text::truncate(&last.query, 80)), "Demande annulée.".into());
-                }
-                None => finish(&mut r, "done", "Aucune demande en cours.".into(), "Aucune demande en cours.".into()),
-            }
-        }
-        Intent::Stop => {
-            let live = inner.db.live_meeting()?;
-            match live {
-                Some(_) => {
-                    inner.send_live(LiveCmd::StopRequested);
-                    finish(&mut r, "done", "⏹ Écoute arrêtée.".into(), "Écoute arrêtée. Le compte rendu est en préparation.".into());
-                }
-                None => finish(&mut r, "done", "Aucune écoute en cours.".into(), "Aucune écoute en cours.".into()),
+        // Another process (the app) owns the live session and the running agents: the request
+        // stays queued and a `control` job hands it over (see `jobs::run_control`).
+        Intent::Cancel | Intent::Stop if inner.db.other_process_running()? => {}
+        Intent::Cancel | Intent::Stop => {
+            if let Some((summary, answer)) = run_control(inner, intent, meeting_id)? {
+                finish(&mut r, "done", summary, answer);
             }
         }
         Intent::Note => {
@@ -1007,7 +1041,10 @@ pub(crate) fn create_request(
         }
     }
     inner.emit(CoreEvent::Request(r.clone()));
-    if r.status == "queued" {
+    if r.status == "queued" && matches!(intent, Intent::Cancel | Intent::Stop) {
+        // Not an AI job: never waits behind `agent.max_parallel` (the search it cancels).
+        inner.db.enqueue_job("control", r.meeting_id.as_deref(), &serde_json::json!({ "request_id": r.id }))?;
+    } else if r.status == "queued" {
         inner.db.enqueue_job("request", r.meeting_id.as_deref(), &serde_json::json!({ "request_id": r.id }))?;
         inner.jobs_notify.notify_one();
         inner.emit(CoreEvent::Notify {
@@ -1019,6 +1056,28 @@ pub(crate) fn create_request(
         inner.emit(CoreEvent::Notify { title: "Sténo".into(), body: sum.clone(), route: None });
     }
     Ok(r)
+}
+
+/// Runs « annule » (the last active request) or « arrête l'écoute » in this process.
+/// Returns the request's summary and answer; `None` for any other intent.
+pub(crate) fn run_control(inner: &Inner, intent: Intent, meeting_id: Option<&str>) -> Result<Option<(String, String)>> {
+    Ok(Some(match intent {
+        Intent::Cancel => match inner.db.last_active_request(meeting_id)? {
+            Some(last) => {
+                cancel_request(inner, &last.id)?;
+                (format!("Demande annulée : {}", crate::text::truncate(&last.query, 80)), "Demande annulée.".into())
+            }
+            None => ("Aucune demande en cours.".into(), "Aucune demande en cours.".into()),
+        },
+        Intent::Stop => match inner.db.live_meeting()? {
+            Some(_) => {
+                inner.send_live(LiveCmd::StopRequested);
+                ("⏹ Écoute arrêtée.".into(), "Écoute arrêtée. Le compte rendu est en préparation.".into())
+            }
+            None => ("Aucune écoute en cours.".into(), "Aucune écoute en cours.".into()),
+        },
+        _ => return Ok(None),
+    }))
 }
 
 pub(crate) fn cancel_request(inner: &Inner, id: &str) -> Result<()> {
@@ -1039,6 +1098,86 @@ pub(crate) fn cancel_request(inner: &Inner, id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `steno serve` started while the app records: the meeting still marked live is not
+    /// closed under the app's feet; after a crash (no other process), it is.
+    #[tokio::test]
+    async fn live_meeting_closed_only_without_another_process() {
+        let core = Core::new(Db::open_in_memory().unwrap(), Default::default()).unwrap();
+        core.db()
+            .insert_meeting(&Meeting {
+                id: "m1".into(),
+                title: Some("Point Nova".into()),
+                title_source: Some("user".into()),
+                started_at: now_iso(),
+                ended_at: None,
+                status: "live".into(),
+                confidential: false,
+                agent_provider: None,
+                agent_session_id: None,
+                correlation: None,
+                call_app: None,
+            })
+            .unwrap();
+        let wait = || tokio::time::sleep(std::time::Duration::from_millis(300));
+        let h = crate::live::spawn(core.inner.clone(), false);
+        wait().await;
+        assert!(core.db().live_meeting().unwrap().is_some());
+        h.send(LiveCmd::Shutdown);
+        let h = crate::live::spawn(core.inner.clone(), true);
+        wait().await;
+        assert!(core.db().live_meeting().unwrap().is_none());
+        h.send(LiveCmd::Shutdown);
+    }
+
+    /// `steno ask "annule"` / `"arrête l'écoute"` while the app runs: the CLI queues the
+    /// command and the app runs it, where the agents' cancellation tokens and the live
+    /// session are.
+    #[tokio::test]
+    async fn control_commands_from_another_process_are_forwarded() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("steno.db");
+        let app = Core::new(Db::open(&path).unwrap(), Default::default()).unwrap();
+        let cli = Core::new(Db::open(&path).unwrap(), Default::default()).unwrap();
+        // Without the app, the CLI runs the command itself.
+        let r = cli.ask_history("arrête l'écoute", "cli").unwrap();
+        assert_eq!((r.intent.as_str(), r.status.as_str()), ("stop", "done"));
+        // A search the app is running.
+        let search = create_request(&app.inner, None, "ui", Intent::Search, "Où en est Nova ?", None, &[]).unwrap();
+        let token = CancellationToken::new();
+        app.inner.cancels.lock().unwrap().insert(search.id.clone(), token.clone());
+        app.db().set_runtime("app_heartbeat", "999999999").unwrap();
+        let cancel = cli.ask_history("annule", "cli").unwrap();
+        assert_eq!((cancel.intent.as_str(), cancel.status.as_str()), ("cancel", "queued"), "handed over to the app");
+        assert!(!token.is_cancelled());
+        let job = app.db().claim_job(&["control"]).unwrap().expect("control job");
+        crate::jobs::execute(&app.inner, job).await;
+        assert!(token.is_cancelled(), "the app cancelled its running agent");
+        assert_eq!(app.db().get_request(&search.id).unwrap().unwrap().status, "cancelled");
+        let cancel = app.db().get_request(&cancel.id).unwrap().unwrap();
+        assert_eq!(cancel.status, "done");
+        assert!(cancel.summary.unwrap().contains("Où en est Nova"));
+    }
+
+    /// `steno settings import` while the app runs: the app picks the new settings up instead
+    /// of overwriting them on its next save.
+    #[tokio::test]
+    async fn settings_saved_by_another_process_are_reloaded() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("steno.db");
+        let app = Core::new(Db::open(&path).unwrap(), Default::default()).unwrap();
+        let cli = Core::new(Db::open(&path).unwrap(), Default::default()).unwrap();
+        assert!(!app.inner.reload_settings_if_changed().unwrap());
+        let mut rx = app.subscribe();
+        let mut s = cli.settings();
+        s.voice.wake_word = "Greffier".into();
+        cli.save_settings(s).unwrap();
+        assert!(app.inner.reload_settings_if_changed().unwrap());
+        assert_eq!(app.settings().voice.wake_word, "Greffier");
+        assert!(matches!(rx.try_recv(), Ok(CoreEvent::SettingsChanged(_))));
+        assert!(!app.inner.reload_settings_if_changed().unwrap(), "only once");
+        assert!(!cli.inner.reload_settings_if_changed().unwrap(), "its own save");
+    }
 
     #[test]
     fn refus_de_publication() {
