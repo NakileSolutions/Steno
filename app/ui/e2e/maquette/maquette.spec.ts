@@ -418,7 +418,7 @@ test.describe('réglages', () => {
     await pickAgent(summary, 'Claude Code');
     await summary.getByRole('button', { name: 'opus', exact: true }).click();
     await expect(summary.getByLabel('Modèle', { exact: true })).toHaveValue('opus');
-    await expect(summary.getByText('alias : dernière version')).toBeVisible();
+    await expect(summary.locator('span.sub', { hasText: 'alias : dernière version' })).toBeVisible();
     await summary.getByLabel('Réflexion').selectOption({ label: 'Élevée' });
     await summary.getByRole('button', { name: 'Tester' }).click();
     await expect(summary.getByRole('status')).toContainText('modèle opus, réflexion élevée');
@@ -451,6 +451,48 @@ test.describe('réglages', () => {
     await expect(quick.getByRole('button', { name: 'Agent : Codex' })).toBeVisible();
     await expect(quick.getByLabel('Modèle', { exact: true })).toHaveValue('gpt-maison-rapide');
     await expect(page.getByText('Modifications non enregistrées')).toHaveCount(0);
+  });
+
+  test('micro : choisir les AirPods, enregistrer, recharger ; micro débranché signalé', async ({ page }) => {
+    await open(page, '/settings?section=audio');
+    const mic = page.getByRole('radiogroup', { name: 'Micro' });
+    await expect(mic.getByText('Micro par défaut du système (Micro du MacBook Pro)')).toBeVisible();
+    await expect(mic.getByRole('radio')).toHaveCount(4);
+    await expect(mic.getByRole('radio').first()).toBeChecked();
+    await expect(page.getByText(/même pendant l’écoute/)).toBeVisible();
+    await mic.getByText('AirPods Pro', { exact: true }).click();
+    await expect(mic.locator('[data-device="AirPodsPro-UID:input"] input')).toBeChecked();
+    await page.getByRole('button', { name: 'Enregistrer' }).click();
+    await expect(page.getByText('Réglages enregistrés.')).toBeVisible();
+
+    await page.reload();
+    await expect(mic.locator('[data-device="AirPodsPro-UID:input"] input')).toBeChecked();
+    await expect(page.getByText(/débranché/)).toHaveCount(0);
+
+    // Débranchement simulé : avertissement discret, puis la puce dans En direct.
+    await page.evaluate(() => (window as unknown as { __scribeMock: { unplug(id: string): void } }).__scribeMock.unplug('AirPodsPro-UID:input'));
+    await mic.getByRole('button', { name: 'Rafraîchir' }).click();
+    await expect(page.getByText('AirPods Pro — débranché, micro par défaut utilisé')).toBeVisible();
+    await expect(mic.getByRole('radio')).toHaveCount(3);
+
+    await nav(page).getByRole('link', { name: 'En direct', exact: true }).click();
+    await main(page).getByRole('button', { name: 'Démarrer l’écoute' }).click();
+    await expect(main(page).getByText('micro par défaut', { exact: true })).toBeVisible();
+    await main(page).getByRole('button', { name: 'Arrêter l’écoute' }).click();
+  });
+
+  test('voix : sortie du retour sonore', async ({ page }) => {
+    await open(page, '/settings?section=voice');
+    const out = page.getByLabel('Jouer sur');
+    await expect(out).toBeVisible();
+    await expect(out.locator('option')).toHaveText(['Sortie par défaut (AirPods Pro)', 'AirPods Pro', 'Haut-parleurs du MacBook Pro']);
+    const fb = page.getByRole('radiogroup', { name: 'Retour sonore' });
+    await fb.getByRole('radio', { name: 'Casque uniquement' }).click();
+    await expect(page.getByText('Joué seulement si la sortie par défaut est un casque.')).toBeVisible();
+    await out.selectOption({ label: 'Haut-parleurs du MacBook Pro' });
+    await expect(page.getByText('Joué seulement si la sortie par défaut est un casque.')).toHaveCount(0);
+    await fb.getByRole('radio', { name: 'Aucun' }).click();
+    await expect(page.getByLabel('Jouer sur')).toHaveCount(0);
   });
 
   test('agent IA : changer d’agent remet à vide ce qui n’existe plus', async ({ page }) => {

@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { api } from '../../lib/api';
-  import type { Settings, VariantCheck, VoiceVerbs, WakeCheck } from '../../lib/types';
+  import { defaultOutputLabel, isDeviceMissing } from '../../lib/audio';
+  import type { AudioDevice, Settings, VariantCheck, VoiceVerbs, WakeCheck } from '../../lib/types';
   import { debounce, stripLeadingIcon } from '../../lib/format';
   import { toastError } from '../../lib/ui.svelte';
   import Icon from '../../lib/components/Icon.svelte';
@@ -15,6 +16,17 @@
   let generated = $state<VariantCheck | null>(null);
   let rejectedNow = $state<{ variant: string; reason: string } | null>(null);
   let testing = $state(false);
+  let outputs = $state<AudioDevice[]>([]);
+  let outputsLoaded = $state(false);
+
+  onMount(() => {
+    api
+      .listAudioDevices()
+      .then((d) => (outputs = d.outputs))
+      .catch(() => {})
+      .finally(() => (outputsLoaded = true));
+  });
+  const outputGone = $derived(isDeviceMissing(settings.voice.feedback_device, outputs));
 
   const runCheck = debounce(async (word: string, strict: boolean) => {
     try {
@@ -146,6 +158,25 @@
         <button role="radio" aria-checked={settings.voice.feedback === v} onclick={() => (settings.voice.feedback = v as Settings['voice']['feedback'])}>{l}</button>
       {/each}
     </div>
+    {#if settings.voice.feedback !== 'none'}
+      <div class="playon">
+        <label class="small muted" for="feedback-device">Jouer sur</label>
+        <select
+          id="feedback-device"
+          class="input"
+          value={settings.voice.feedback_device ?? ''}
+          onchange={(e) => (settings.voice.feedback_device = e.currentTarget.value || null)}
+          disabled={!outputs.length}
+        >
+          <option value="">{defaultOutputLabel(outputs)}</option>
+          {#each outputs as d (d.id)}<option value={d.id}>{d.name}</option>{/each}
+          {#if outputGone}<option value={settings.voice.feedback_device}>Sortie choisie — débranchée, sortie par défaut utilisée</option>{/if}
+        </select>
+      </div>
+      {#if !outputs.length && outputsLoaded}<p class="tiny faint">Liste disponible dans l’app sur Mac.</p>{/if}
+      {#if settings.voice.feedback === 'headset' && !settings.voice.feedback_device}<p class="tiny faint">Joué seulement si la sortie par défaut est un casque.</p>{/if}
+      {#if outputGone}<p class="tiny gonec">Sortie choisie débranchée : le signal est joué sur la sortie par défaut.</p>{/if}
+    {/if}
   </div>
 </div>
 
@@ -161,6 +192,8 @@
 {/if}
 
 <style>
+  .playon { display: grid; grid-template-columns: auto minmax(0, 300px); align-items: center; gap: 10px; }
+  .gonec { color: var(--warn); }
   .wake { width: 220px; font-weight: 600; }
   .checks { display: flex; flex-direction: column; gap: 3px; min-height: 20px; }
   .msg { display: flex; align-items: flex-start; gap: 6px; font-size: 12.5px; line-height: 1.4; }

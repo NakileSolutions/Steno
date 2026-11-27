@@ -2,6 +2,7 @@
   import type { Settings } from '../../lib/types';
   import TagInput from '../../lib/components/TagInput.svelte';
   import CallApps from './CallApps.svelte';
+  import InputDevice from './InputDevice.svelte';
 
   let { settings = $bindable() }: { settings: Settings } = $props();
   const SHORTCUTS = [
@@ -10,6 +11,8 @@
     { id: 'quick_note', label: 'Note rapide' },
   ] as const;
 </script>
+
+<InputDevice bind:settings={settings} />
 
 <CallApps bind:settings={settings} />
 

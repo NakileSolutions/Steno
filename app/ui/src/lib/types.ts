@@ -166,6 +166,16 @@ export type AgentInfo = {
 /** Modèle proposé par `list_models` (la saisie libre reste possible). */
 export type ModelInfo = { id: string; name: string; note: string | null };
 
+/** Périphérique audio (UID Core Audio stable d'un branchement à l'autre). */
+export type AudioDevice = {
+  id: string;
+  name: string;
+  /** Périphérique par défaut du système. */
+  default: boolean;
+  transport: 'builtin' | 'usb' | 'bluetooth' | 'virtual' | 'aggregate' | 'other';
+};
+export type AudioDevices = { inputs: AudioDevice[]; outputs: AudioDevice[] };
+
 export type Connector = {
   id: number;
   provider: string;
@@ -261,10 +271,16 @@ export type Settings = {
     variants: string[];
     verbs: VoiceVerbs;
     feedback: 'none' | 'system' | 'headset';
+    /** UID de la sortie où jouer le signal ; `null` = sortie par défaut. */
+    feedback_device: string | null;
   };
   audio: {
     /** Proposer de démarrer l'écoute quand un appel commence dans une app surveillée (notification seulement). */
     auto_detect_calls: boolean;
+    /** UID du micro choisi ; `null` = micro par défaut du système. */
+    input_device: string | null;
+    /** Nom du micro au moment du choix (affiché s'il est débranché). */
+    input_device_name: string | null;
     /** Apps de visio surveillées. */
     call_apps: CallApp[];
     silence_ms: number;

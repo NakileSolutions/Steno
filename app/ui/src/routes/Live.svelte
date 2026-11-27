@@ -3,6 +3,8 @@
   import { api, onEvent } from '../lib/api';
   import { live, clock, STATE_LABEL } from '../lib/live.svelte';
   import { callOffer, isListening, meetingCallChip } from '../lib/listening';
+  import { isDeviceMissing, missingInputLabel } from '../lib/audio';
+  import type { AudioDevice } from '../lib/types';
   import { prefs, stopHint } from '../lib/prefs.svelte';
   import { href } from '../lib/router.svelte';
   import type { Request, Segment, Speaker } from '../lib/types';
@@ -23,6 +25,13 @@
   const themLabel = $derived(meetingCallChip(meeting?.call_app, prefs.callApps) ?? 'Visio');
   /** Puce de l'app de l'appel (Teams, Slack…), si l'écoute a démarré sur un appel. */
   const appChip = $derived(meetingCallChip(meeting?.call_app, prefs.callApps));
+  // Micro choisi débranché : le sidecar a repris le micro par défaut (liste relue à chaque réunion).
+  let inputs = $state<AudioDevice[]>([]);
+  $effect(() => {
+    if (!meeting?.id || !prefs.inputDevice) return;
+    api.listAudioDevices().then((d) => (inputs = d.inputs)).catch(() => {});
+  });
+  const micGone = $derived(isDeviceMissing(prefs.inputDevice, inputs));
   const elapsed = $derived.by(() => {
     if (!meeting) return '0:00';
     const end = meeting.ended_at ? new Date(meeting.ended_at).getTime() : clock.now;
@@ -168,6 +177,7 @@
           <p class="sub">
             <span class="st {s.state}">{STATE_LABEL[s.state]}</span>
             {#if appChip}<span class="chip"><Icon name="phone" size={11} />{appChip}</span>{/if}
+            {#if micGone}<span class="chip micgone" title={missingInputLabel(prefs.inputDeviceName, prefs.inputDevice)}><Icon name="mic" size={11} />micro par défaut</span>{/if}
             {#if s.pending_requests}<span class="pend"><span class="spin" aria-hidden="true"></span>{s.pending_requests} demande{s.pending_requests > 1 ? 's' : ''} en cours</span>{/if}
             {#if s.sidecar !== 'running'}<span class="warn">Audio : {s.sidecar}</span>{/if}
           </p>
@@ -354,6 +364,8 @@
     box-shadow: inset 0 0 0 1px var(--line);
   }
   .chip :global(.icon) { color: var(--text-3); }
+  .chip.micgone { color: var(--warn); }
+  .chip.micgone :global(.icon) { color: var(--warn); }
   .pend { display: inline-flex; align-items: center; gap: 6px; color: var(--accent-text); font-weight: 500; }
   .warn { color: var(--warn); }
   .err { color: var(--err); display: flex; align-items: center; gap: 6px; }

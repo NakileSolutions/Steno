@@ -1,7 +1,7 @@
 // Données d'exemple du faux backend (mode navigateur). Fictives, en français.
 
 import type {
-  Action, AgentInfo, Connector, Decision, Draft, Meeting, ModelInfo, Note, Repo, Report, ReportRef,
+  Action, AgentInfo, AudioDevices, Connector, Decision, Draft, Meeting, ModelInfo, Note, Repo, Report, ReportRef,
   Request, Segment, Settings, Speaker,
 } from './types';
 import { defaultCallApps } from './listening';
@@ -490,9 +490,12 @@ export function defaultSettings(): Settings {
         stop: ["arrête l'écoute", "arrête d'écouter", 'arrête la transcription', 'termine la réunion', 'fin de la réunion'],
       },
       feedback: 'system',
+      feedback_device: null,
     },
     audio: {
       auto_detect_calls: true,
+      input_device: null,
+      input_device_name: null,
       call_apps: defaultCallApps(),
       silence_ms: 1000,
       vocabulary: ['ms-booking', 'ms-stations', 'ms-pricing', 'ORION', 'Brindille'],
@@ -539,6 +542,21 @@ export function seedModels(provider: string): ModelInfo[] {
     default:
       return [];
   }
+}
+
+/** Périphériques simulés (mêmes données que le simulateur du cœur). */
+export function seedAudioDevices(): AudioDevices {
+  return {
+    inputs: [
+      { id: 'BuiltInMicrophoneDevice', name: 'Micro du MacBook Pro', default: true, transport: 'builtin' },
+      { id: 'AirPodsPro-UID:input', name: 'AirPods Pro', default: false, transport: 'bluetooth' },
+      { id: 'ScarlettSolo-UID', name: 'Scarlett Solo USB', default: false, transport: 'usb' },
+    ],
+    outputs: [
+      { id: 'AirPodsPro-UID:output', name: 'AirPods Pro', default: true, transport: 'bluetooth' },
+      { id: 'BuiltInSpeakerDevice', name: 'Haut-parleurs du MacBook Pro', default: false, transport: 'builtin' },
+    ],
+  };
 }
 
 export function seedConnectors(): Connector[] {

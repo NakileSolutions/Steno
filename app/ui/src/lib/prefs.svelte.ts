@@ -10,12 +10,17 @@ export const prefs = $state({
   stopVerbs: [DEFAULT_STOP_VERB] as string[],
   toggle: 'Ctrl+Alt+S',
   callApps: DEFAULT_CALL_APPS.map((a) => ({ ...a })) as CallApp[],
+  /** Micro choisi (`null` = micro par défaut du système) et son nom au moment du choix. */
+  inputDevice: null as string | null,
+  inputDeviceName: null as string | null,
 });
 
 export function setPrefs(s: Settings): void {
   prefs.wake = s.voice.wake_word || 'Scribe';
   prefs.stopVerbs = s.voice.verbs.stop?.length ? [...s.voice.verbs.stop] : [DEFAULT_STOP_VERB];
   prefs.toggle = s.audio.shortcuts.toggle || 'Ctrl+Alt+S';
+  prefs.inputDevice = s.audio.input_device ?? null;
+  prefs.inputDeviceName = s.audio.input_device_name ?? null;
   if (Array.isArray(s.audio.call_apps)) prefs.callApps = s.audio.call_apps.map((a) => ({ ...a }));
 }
 

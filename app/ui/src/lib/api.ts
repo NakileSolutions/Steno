@@ -6,7 +6,7 @@
 //  - sinon (navigateur seul) : le faux backend en mémoire `mock.ts`.
 
 import type {
-  Action, ActionFilter, AgentInfo, Connector, Decision, DoctorItem, EventMap, EventName,
+  Action, ActionFilter, AgentInfo, AudioDevices, Connector, Decision, DoctorItem, EventMap, EventName,
   LiveState, Meeting, MeetingDetail, MeetingFilter, MeetingSummary, ModelInfo, Note, Repo, Report,
   Request, SearchHit, Segment, Settings, TestAgentResult, VariantCheck, WakeCheck, WakeDetect,
 } from './types';
@@ -266,6 +266,10 @@ export const api = {
   updateRepo: (repo: Repo) => call<Repo>('update_repo', { repo }),
   removeRepo: (id: number) => call<null>('remove_repo', { id }),
   pickFolder: () => call<string | null>('pick_folder'),
+
+  // Périphériques audio (dernière liste reçue du sidecar ; vide sans sidecar)
+  listAudioDevices: () =>
+    call<AudioDevices>('list_audio_devices').then((d) => ({ inputs: d?.inputs ?? [], outputs: d?.outputs ?? [] })),
 
   // Voix
   checkWakeWord: (word: string, strict: boolean) => call<WakeCheck>('check_wake_word', { word, strict }),

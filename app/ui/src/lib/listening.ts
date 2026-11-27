@@ -144,7 +144,11 @@ export function normalizeLiveState(s: LiveState): LiveState {
 
 /** Réglages d'un cœur plus ancien (`auto_detect_teams`, sans `call_apps`) ramenés au contrat actuel. */
 export function normalizeSettings(input: Settings): Settings {
-  const s = normalizeAgentSettings(input);
+  let s = normalizeAgentSettings(input);
+  // Périphériques (cœur plus ancien) : `null` = défaut du système.
+  if (s.audio && (s.audio.input_device === undefined || s.audio.input_device_name === undefined))
+    s = { ...s, audio: { ...s.audio, input_device: s.audio.input_device ?? null, input_device_name: s.audio.input_device_name ?? null } };
+  if (s.voice && s.voice.feedback_device === undefined) s = { ...s, voice: { ...s.voice, feedback_device: null } };
   const audio = s.audio as Settings['audio'] & { auto_detect_teams?: boolean };
   if (audio.auto_detect_calls !== undefined && Array.isArray(audio.call_apps) && audio.auto_detect_teams === undefined) return s;
   const { auto_detect_teams, ...rest } = audio;

@@ -8,7 +8,7 @@ import type {
   VariantCheck, WakeCheck, WakeDetect,
 } from './types';
 import {
-  LIVE_SCRIPT, TEAMS_TITLE, defaultSettings, iso, nextIds, seedAgents, seedConnectors,
+  LIVE_SCRIPT, TEAMS_TITLE, defaultSettings, iso, nextIds, seedAgents, seedAudioDevices, seedConnectors,
   seedHistoryRequests, seedMeetings, seedModels, seedRepos, type MeetingStore,
 } from './mock-data';
 import { detectWake, fold } from './wake';
@@ -65,6 +65,8 @@ export function createMockBackend(): Backend {
   let connectors = seedConnectors();
   let repos = seedRepos();
   const agents = seedAgents();
+  const audioDevices = seedAudioDevices();
+  const unplugged = new Set<string>();
   let reqSeq = 100;
   let wakeTestCount = 0;
 
@@ -624,6 +626,10 @@ export function createMockBackend(): Backend {
       return clone(settings);
     },
     detect_agents: () => clone(agents),
+    list_audio_devices: () => ({
+      inputs: audioDevices.inputs.filter((d) => !unplugged.has(d.id)),
+      outputs: audioDevices.outputs.filter((d) => !unplugged.has(d.id)),
+    }),
     list_models: async (a) => {
       await sleep(250);
       return seedModels(String(a.provider));
@@ -783,6 +789,11 @@ export function createMockBackend(): Backend {
       live.call = app ? { active: true, app, app_name: appName(app), title } : { active: false, app: null, app_name: null, title: null };
       emitLive();
       return true;
+    },
+    /** Simule le débranchement (ou le rebranchement avec `false`) d'un périphérique audio. */
+    unplug(id: string, out = true): void {
+      if (out) unplugged.add(id);
+      else unplugged.delete(id);
     },
     /** Raccourci : appel Teams (ou fin d'appel avec `false`). */
     teams(active: boolean, title: string | null = TEAMS_TITLE): boolean {
