@@ -77,12 +77,14 @@ export type BuildInput<T extends PaletteItem> = {
   /** Réunions trouvées (titre connu localement et recherche plein texte du backend). */
   meetings: T[];
   actions: T[];
+  /** Repli toujours proposé en fin de liste quand il y a une requête (« Rechercher partout »…). */
+  fallback?: T[];
   limits?: Partial<Record<PaletteGroupId, number>>;
 };
 
 /**
  * Groupes affichés. Sans requête : « Récemment ouvert » puis « Actions ».
- * Avec une requête : récentes correspondantes, réunions trouvées (sans doublon), actions.
+ * Avec une requête : récentes correspondantes, réunions trouvées (sans doublon), actions, puis le repli.
  * Les groupes vides sont omis.
  */
 export function buildGroups<T extends PaletteItem>(input: BuildInput<T>): PaletteGroup<T>[] {
@@ -100,6 +102,7 @@ export function buildGroups<T extends PaletteItem>(input: BuildInput<T>): Palett
     }
   }
   const actions = filterItems(input.actions, q).slice(0, lim.actions);
+  if (q && input.fallback) actions.push(...input.fallback);
   const groups: PaletteGroup<T>[] = [
     { id: 'recent', label: GROUP_LABEL.recent, items: recent },
     { id: 'meetings', label: GROUP_LABEL.meetings, items: meetings },

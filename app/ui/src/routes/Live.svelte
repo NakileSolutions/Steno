@@ -6,12 +6,13 @@
   import { prefs, stopHint } from '../lib/prefs.svelte';
   import { href } from '../lib/router.svelte';
   import type { Request, Segment, Speaker } from '../lib/types';
-  import { duration, timeS } from '../lib/format';
+  import { clockDuration, timeS } from '../lib/format';
   import { toastError } from '../lib/ui.svelte';
   import { initial, speakerColor, speakerName } from '../lib/components/speakers';
   import Logo from '../lib/Logo.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import Meter from '../lib/components/Meter.svelte';
+  import Waveform from '../lib/components/Waveform.svelte';
   import RequestCard from '../lib/components/RequestCard.svelte';
 
   const s = $derived(live.s);
@@ -20,6 +21,13 @@
   const offer = $derived(callOffer(s, prefs.callApps));
   /** Nom du canal « eux » : l'app de l'appel en cours. */
   const themLabel = $derived(meetingCallChip(meeting?.call_app, prefs.callApps) ?? 'Visio');
+  /** Puce de l'app de l'appel (Teams, Slack…), si l'écoute a démarré sur un appel. */
+  const appChip = $derived(meetingCallChip(meeting?.call_app, prefs.callApps));
+  const elapsed = $derived.by(() => {
+    if (!meeting) return '0:00';
+    const end = meeting.ended_at ? new Date(meeting.ended_at).getTime() : clock.now;
+    return clockDuration(Math.max(0, Math.round((end - new Date(meeting.started_at).getTime()) / 1000)));
+  });
 
   let segments = $state<Segment[]>([]);
   let speakers = $state<Speaker[]>([]);
@@ -149,17 +157,17 @@
 
 {#if meeting && s.state !== 'idle'}
   <div class="live">
-    <header class="lbar">
+    <header class="lbar hero-live" class:rec={s.state === 'listening'}>
       <div class="row ttl">
         <span class="recdot {s.state}" aria-hidden="true"><span class="dot {s.state === 'listening' ? 'live' : s.state}"></span></span>
         <div class="grow">
-          <h1 class="ellipsis">{meeting.title ?? 'Réunion sans titre'}</h1>
           <p class="sub">
             <span class="st {s.state}">{STATE_LABEL[s.state]}</span>
-            <span class="tnum">{duration(meeting.started_at, meeting.ended_at, clock.now)}</span>
+            {#if appChip}<span class="chip"><Icon name="phone" size={11} />{appChip}</span>{/if}
             {#if s.pending_requests}<span class="pend"><span class="spin" aria-hidden="true"></span>{s.pending_requests} demande{s.pending_requests > 1 ? 's' : ''} en cours</span>{/if}
             {#if s.sidecar !== 'running'}<span class="warn">Audio : {s.sidecar}</span>{/if}
           </p>
+          <h1 class="ellipsis">{meeting.title ?? 'Réunion sans titre'}</h1>
         </div>
         {#if s.state !== 'processing'}
           <label class="check conf" title="Aucun appel à l’IA pour cette réunion">
@@ -169,6 +177,12 @@
           <button class="btn danger stopbtn" onclick={stop} disabled={busy}><span class="sq" aria-hidden="true"></span>Arrêter l’écoute</button>
         {/if}
       </div>
+
+      <div class="row wavebar">
+        <Waveform me={s.levels.me} them={s.levels.them} active={s.state === 'listening'} />
+        <time class="clock tnum" aria-label="Durée {elapsed}">{elapsed}</time>
+      </div>
+
       {#if active}
         <div class="row ctl">
           <div class="meters">
@@ -292,50 +306,92 @@
 
 <style>
   .live { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-  .lbar { padding: 18px 28px 14px; border-bottom: 1px solid var(--line); background: var(--surface); flex: none; display: flex; flex-direction: column; gap: 14px; }
-  .ttl { gap: 14px; }
-  .recdot { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--live-soft); flex: none; }
-  .recdot.paused { background: var(--warn-soft); }
-  .recdot.processing { background: var(--accent-soft); }
+  .lbar {
+    position: relative;
+    padding: 20px 28px 14px;
+    border-bottom: 1px solid var(--line);
+    background:
+      radial-gradient(70% 140% at 100% 0%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%),
+      radial-gradient(50% 120% at 0% 0%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 70%),
+      var(--surface);
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .lbar.rec {
+    background:
+      radial-gradient(70% 140% at 100% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%),
+      radial-gradient(40% 120% at 0% 0%, color-mix(in srgb, var(--live) 6%, transparent), transparent 70%),
+      var(--surface);
+  }
+  .ttl { gap: 14px; align-items: center; }
+  .recdot { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: var(--live-soft); flex: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--live) 18%, transparent); }
+  .recdot.paused { background: var(--warn-soft); box-shadow: none; }
+  .recdot.processing { background: var(--accent-soft); box-shadow: none; }
   .recdot .dot { width: 10px; height: 10px; }
-  .ttl h1 { font-size: var(--fs-h2); letter-spacing: -0.015em; }
-  .sub { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-size: var(--fs-meta); color: var(--text-2); }
-  .sub > * + *::before { content: '·'; color: var(--text-3); margin-right: 8px; }
-  .st { font-weight: 600; }
+  .ttl h1 { font: 650 21px/1.25 var(--font-display); letter-spacing: -0.02em; margin-top: 2px; }
+  .sub { display: flex; align-items: center; gap: 8px; font-size: var(--fs-meta); color: var(--text-2); }
+  .st { font-weight: 650; font-size: var(--fs-micro); letter-spacing: 0.06em; text-transform: uppercase; }
   .st.listening { color: var(--live); }
-  .pend { display: inline-flex; align-items: center; gap: 6px; }
-  .pend::before { margin-right: 2px !important; }
+  .st.paused { color: var(--warn); }
+  .st.processing { color: var(--accent-text); }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 20px;
+    padding: 0 8px;
+    border-radius: var(--r-pill);
+    font-size: var(--fs-micro);
+    font-weight: 500;
+    color: var(--text-2);
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .chip :global(.icon) { color: var(--text-3); }
+  .pend { display: inline-flex; align-items: center; gap: 6px; color: var(--accent-text); font-weight: 500; }
   .warn { color: var(--warn); }
   .err { color: var(--err); display: flex; align-items: center; gap: 6px; }
   .conf { gap: 8px; font-size: var(--fs-ui); color: var(--text-2); padding: 0 6px; height: 30px; }
   .conf :global(.icon) { color: var(--text-3); }
   .stopbtn { gap: 8px; }
   .sq { width: 9px; height: 9px; border-radius: 2px; background: currentColor; }
-  .ctl { gap: 20px; }
-  .meters { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; flex: 1; max-width: 560px; }
+  .wavebar { gap: 22px; align-items: center; padding: 2px 0 0 52px; }
+  .clock {
+    font: 300 30px/1 var(--font-display);
+    letter-spacing: -0.02em;
+    color: var(--text);
+    min-width: 92px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .ctl { gap: 20px; padding-left: 52px; }
+  .meters { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; flex: 1; max-width: 520px; }
   .aside { touch-action: none; user-select: none; margin-left: auto; }
   .aside.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; box-shadow: 0 0 0 4px var(--accent-soft-2); }
-  .stophint { display: flex; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--fs-meta); margin-top: -4px; }
+  .stophint { display: flex; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--fs-meta); margin-top: -2px; padding-left: 52px; }
 
   .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr minmax(320px, 380px); }
   .tx { position: relative; min-height: 0; display: flex; flex-direction: column; background: var(--surface); }
-  .txs { flex: 1; min-height: 0; padding: 14px 28px 32px; }
+  .txs { flex: 1; min-height: 0; padding: 6px 28px 40px; }
   .segs { list-style: none; margin: 0; padding: 0; max-width: 860px; }
   .seg {
     display: grid;
     grid-template-columns: 58px 32px 1fr;
-    column-gap: 10px;
-    padding-top: 14px;
+    column-gap: 12px;
+    padding-top: 22px;
     align-items: start;
-    animation: appear 180ms var(--ease) both;
+    animation: seg-in 240ms var(--ease-out) both;
   }
-  .seg.cont { padding-top: 0; }
+  .seg.cont { padding-top: 4px; }
+  @keyframes seg-in { from { opacity: 0; transform: translateY(6px); } }
   .ts { font-size: var(--fs-micro); color: var(--text-3); padding-top: 0; line-height: 24px; text-align: right; opacity: 0.9; transition: opacity var(--t-fast) var(--ease); }
   .seg.cont .ts { opacity: 0; }
   .seg:hover .ts { opacity: 1; }
   .av { padding-top: 0; }
   .who { display: block; font-weight: 600; font-size: var(--fs-meta); color: var(--c); line-height: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .text { font-size: var(--fs-body); line-height: 1.55; color: var(--text); padding: 1px 0; }
+  .text { font-size: var(--fs-body); line-height: 1.62; color: var(--text); padding: 1px 0; }
   .seg.private .text { color: var(--text-2); font-style: italic; }
   .seg.cmd .text {
     margin: 3px 0;
@@ -395,6 +451,10 @@
   .askbox input { flex: 1; min-width: 0; height: 28px; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; }
   .askbox input::placeholder { color: var(--text-3); }
   .feed { flex: 1; min-height: 0; padding: 14px 16px 24px; display: flex; flex-direction: column; gap: 10px; }
+  /* Les demandes arrivent en douceur ; celles en cours respirent à peine. */
+  .feed :global(article.req) { animation: req-in 320ms var(--ease-out) both; }
+  .feed :global(article.req.pending) { box-shadow: 0 0 0 1px var(--accent-line), 0 6px 20px -10px color-mix(in srgb, var(--accent) 60%, transparent); }
+  @keyframes req-in { from { opacity: 0; transform: translateY(-8px) scale(0.98); } }
   .none { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 36px 0; }
   .none-ic { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); color: var(--text-3); }
   .spin { width: 10px; height: 10px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }

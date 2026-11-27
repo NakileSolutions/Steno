@@ -53,6 +53,13 @@ describe('buildGroups', () => {
     expect(flatten(g).map((x) => x.id)).toEqual(['m2', 'm3']);
   });
 
+  it('le repli vient en dernier, seulement avec une requête', () => {
+    const fallback = [it_('search-all', 'Rechercher partout')];
+    expect(flatten(buildGroups({ query: '', recent: [], meetings: [], actions, fallback })).map((x) => x.id)).toEqual(['go-search', 'start']);
+    const g = buildGroups({ query: 'demarrer', recent: [], meetings: [], actions, fallback });
+    expect(flatten(g).map((x) => x.id)).toEqual(['start', 'search-all']);
+  });
+
   it('limite la taille des groupes', () => {
     const many = Array.from({ length: 30 }, (_, i) => it_(`a${i}`, `Action ${i}`));
     const g = buildGroups({ query: 'action', recent: [], meetings: [], actions: many, limits: { actions: 5 } });

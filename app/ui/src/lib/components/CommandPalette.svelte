@@ -122,7 +122,6 @@
   const toggleKey = $derived(formatShortcut(prefs.toggle));
 
   const actions = $derived.by((): Item[] => {
-    const q = query.trim();
     const items: Item[] = [
       {
         id: 'listen',
@@ -134,10 +133,10 @@
       },
       {
         id: 'ask',
-        title: q ? `Demander au Scribe : « ${q} »` : 'Nouvelle demande au Scribe',
+        title: 'Nouvelle demande au Scribe',
         keywords: 'question agent ia demander chercher',
         icon: 'ask',
-        run: () => newRequest(q),
+        run: () => newRequest(''),
       },
       ...MAIN_SECTIONS.map((s, i) => ({
         id: `go:${s.id}`,
@@ -170,27 +169,39 @@
 
   const recentItems = $derived.by((): Item[] => {
     const byId = new Map(mergeById(all, recent.list).map((m) => [m.id, m]));
-    const ids = opened.ids.length ? opened.ids : recent.list.map((m) => m.id);
-    return ids.map((id) => byId.get(id)).filter((m): m is MeetingSummary => !!m).map(meetingItem);
+    return opened.ids.map((id) => byId.get(id)).filter((m): m is MeetingSummary => !!m).map(meetingItem);
   });
 
   const meetingItems = $derived.by((): Item[] => {
     const q = query.trim();
     if (!q) return [];
     const byTitle = filterItems(all.map(meetingItem), q);
-    const items = mergeById(byTitle, found.map(meetingItem)).slice(0, 7);
-    items.push({
-      id: 'search-all',
-      title: `Rechercher « ${q} » dans toutes les réunions`,
-      subtitle: 'Transcriptions et comptes rendus',
-      icon: 'search',
-      hint: '↵',
-      run: () => navigate(`/search?q=${encodeURIComponent(q)}`, { transition: true }),
-    });
-    return items;
+    return mergeById(byTitle, found.map(meetingItem)).slice(0, 8);
   });
 
-  const groups = $derived(buildGroups({ query, recent: recentItems, meetings: meetingItems, actions }));
+  /** Replis proposés pour toute requête : la poser au Scribe, ou la chercher partout. */
+  const fallback = $derived.by((): Item[] => {
+    const q = query.trim();
+    if (!q) return [];
+    return [
+      {
+        id: 'ask-q',
+        title: `Demander au Scribe : « ${q} »`,
+        subtitle: listening ? 'Demande pendant la réunion en cours' : 'Question sur l’historique des réunions',
+        icon: 'ask',
+        run: () => newRequest(q),
+      },
+      {
+        id: 'search-all',
+        title: `Rechercher « ${q} » dans toutes les réunions`,
+        subtitle: 'Transcriptions et comptes rendus',
+        icon: 'search',
+        run: () => navigate(`/search?q=${encodeURIComponent(q)}`, { transition: true }),
+      },
+    ];
+  });
+
+  const groups = $derived(buildGroups({ query, recent: recentItems, meetings: meetingItems, actions, fallback }));
   const flat = $derived(flatten(groups));
   const activeItem = $derived(flat[Math.min(active, flat.length - 1)]);
   const optId = (it: Item) => `cmdk-${it.id.replace(/[^\w-]/g, '_')}`;
@@ -239,7 +250,7 @@
 >
   {#if open}
     <div class="box">
-      <div class="field">
+      <div class="qfield">
         <Icon name="search" size={18} stroke={1.8} />
         <input
           bind:this={input}
@@ -276,7 +287,7 @@
                 onclick={() => run(it)}
                 onkeydown={() => {}}
               >
-                <span class="oic" class:live={it.icon === 'live'}><Icon name={it.icon ?? 'chevron'} size={15} /></span>
+                <span class="oic" class:live={it.id.startsWith('m:') && it.icon === 'live'}><Icon name={it.icon ?? 'chevron'} size={15} /></span>
                 <span class="otext">
                   <span class="otitle ellipsis">{it.title}</span>
                   {#if it.subtitle}<span class="osub ellipsis">{it.subtitle}</span>{/if}
@@ -342,7 +353,7 @@
     overflow: hidden;
   }
 
-  .field {
+  .qfield {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -352,7 +363,7 @@
     color: var(--text-3);
     flex: none;
   }
-  .field input {
+  .qfield input {
     flex: 1;
     min-width: 0;
     height: 100%;
@@ -363,21 +374,17 @@
     font: 400 16px/1 var(--font);
     letter-spacing: -0.005em;
   }
-  .field input::placeholder { color: var(--text-3); }
+  .qfield input::placeholder { color: var(--text-3); }
   .esc { font-family: var(--font); font-size: 10.5px; height: 20px; padding: 0 6px; }
 
-  .list { flex: 1; min-height: 0; padding: 6px 8px 8px; scroll-padding: 34px 0 8px; }
+  .list { flex: 1; min-height: 0; padding: 6px 8px 8px; scroll-padding: 8px 0; }
   .group + .group { margin-top: 4px; }
   .glabel {
-    position: sticky;
-    top: -6px;
-    z-index: 1;
     padding: 10px 10px 6px;
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.04em;
     color: var(--text-3);
-    background: linear-gradient(var(--surface) 70%, transparent);
   }
   .opt {
     display: flex;

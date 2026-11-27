@@ -162,14 +162,46 @@
 </div>
 
 <style>
-  /* Aspect « popover » macOS : en-tête compact, cartes arrondies sur fond neutre.
-     (La fenêtre n'est pas transparente : pas de coins arrondis sur le cadre lui-même.) */
+  /* Aspect « popover » macOS. Dans Tauri sur macOS, la fenêtre fournit la matière « popover » et les
+     coins de 12 px : la racine est transparente et les surfaces légèrement translucides.
+     Ailleurs (navigateur, maquette), le panneau est encadré d'un conteneur arrondi façon popover,
+     posé sur un fond de bureau, avec un verre simulé. */
   .tray {
+    --tray-surface: color-mix(in srgb, var(--surface) 86%, transparent);
     display: flex;
     flex-direction: column;
-    height: 100vh;
-    background: var(--bg);
+    height: calc(100vh - 16px);
+    margin: 8px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    backdrop-filter: blur(30px) saturate(180%);
+    box-shadow:
+      0 0 0 0.5px rgba(0, 0, 0, 0.22),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.45),
+      0 2px 6px rgba(20, 22, 40, 0.1),
+      0 18px 44px -8px rgba(20, 22, 40, 0.35);
     overflow: hidden;
+  }
+  @media (prefers-color-scheme: dark) {
+    .tray {
+      background: color-mix(in srgb, var(--bg) 78%, transparent);
+      box-shadow:
+        0 0 0 0.5px rgba(0, 0, 0, 0.7),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.09),
+        0 2px 6px rgba(0, 0, 0, 0.3),
+        0 18px 44px -8px rgba(0, 0, 0, 0.6);
+    }
+  }
+  :global(html.native-vibrancy) .tray {
+    --tray-surface: color-mix(in srgb, var(--surface) 62%, transparent);
+    height: 100vh;
+    margin: 0;
+    border-radius: 0;
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
   }
   .th {
     display: flex;
@@ -204,7 +236,7 @@
     flex-direction: column;
     gap: 12px;
     border-radius: 12px;
-    background: var(--surface);
+    background: var(--tray-surface);
     border: 1px solid var(--line);
     box-shadow: var(--shadow-md);
   }
@@ -232,7 +264,7 @@
     padding: 0 8px 0 11px;
     border: 1px solid var(--line-strong);
     border-radius: 10px;
-    background: var(--surface);
+    background: var(--tray-surface);
     color: var(--text-3);
     box-shadow: var(--shadow-xs);
     transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
@@ -252,12 +284,13 @@
     box-sizing: border-box;
     padding: 9px 11px;
     border-radius: 10px;
-    background: var(--surface);
+    background: var(--tray-surface);
     border: 1px solid var(--line);
     transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
     animation: appear var(--t) var(--ease) both;
   }
-  .ritem:hover { border-color: var(--line-strong); box-shadow: var(--shadow-md); }
+  .ritem:hover { border-color: var(--line-strong); box-shadow: var(--shadow-md); background: var(--surface); }
+  .ritem:active { transform: scale(0.99); }
   .ritem:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
   .q { font-weight: 600; font-size: 12.5px; }
   .sum {

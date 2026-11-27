@@ -223,6 +223,24 @@ html.native-vibrancy {
   }
 }
 
+/* Panneau de barre de menu hors de Tauri : fond de bureau doux sous le popover simulé. */
+html.tray:not(.native-vibrancy),
+html.tray:not(.native-vibrancy) body {
+  background:
+    radial-gradient(90% 60% at 10% 0%, #c9d2ff 0%, transparent 60%),
+    radial-gradient(80% 70% at 100% 100%, #f5d7c8 0%, transparent 60%),
+    linear-gradient(160deg, #e7e9f3, #dcdfe9);
+}
+@media (prefers-color-scheme: dark) {
+  html.tray:not(.native-vibrancy),
+  html.tray:not(.native-vibrancy) body {
+    background:
+      radial-gradient(90% 60% at 10% 0%, #2c3466 0%, transparent 60%),
+      radial-gradient(80% 70% at 100% 100%, #3a2a3e 0%, transparent 60%),
+      linear-gradient(160deg, #161926, #0f1118);
+  }
+}
+
 /* ---------- Transitions entre vues (View Transitions API) ---------- */
 ::view-transition-old(root),
 ::view-transition-new(root) {

@@ -42,6 +42,118 @@ test.describe('navigation', () => {
   });
 });
 
+test.describe('barre latérale façon Arc', () => {
+  const width = async (page: Page) => (await main(page).boundingBox())!.width;
+
+  test('réduire (⌘\\ et bouton), aperçu au survol, état mémorisé', async ({ page }) => {
+    await open(page);
+    await page.mouse.move(800, 450);
+    const w0 = await width(page);
+    await expect(page.getByRole('button', { name: 'Replier la barre latérale' })).toHaveAttribute('aria-expanded', 'true');
+
+    // ⌘\ : la barre disparaît complètement (pas de bande d'icônes), le contenu prend toute la largeur.
+    await page.locator('body').press('ControlOrMeta+Backslash');
+    await expect(nav(page)).toBeHidden();
+    await expect.poll(() => width(page)).toBeGreaterThan(w0 + 200);
+    const show = page.getByRole('button', { name: 'Afficher la barre latérale' });
+    await expect(show).toHaveAttribute('aria-expanded', 'false');
+
+    // Bouton flottant : redéploie ; bouton de la barre : réduit.
+    await show.click();
+    await expect(nav(page)).toBeVisible();
+    await expect.poll(() => width(page)).toBeLessThan(w0 + 1);
+    await page.getByRole('button', { name: 'Replier la barre latérale' }).click();
+    await expect(nav(page)).toBeHidden();
+    const wide = await width(page);
+
+    // Survol du bord gauche : la barre glisse par-dessus le contenu, sans le rétrécir.
+    await page.mouse.move(400, 450);
+    await page.mouse.move(3, 450);
+    await expect(nav(page)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Épingler la barre latérale' })).toBeVisible();
+    expect(await width(page)).toBe(wide);
+    // Elle se rétracte quand la souris s'en va…
+    await page.mouse.move(900, 450);
+    await expect(nav(page)).toBeHidden();
+
+    // …et cliquer un élément de l'aperçu navigue puis le referme.
+    await page.mouse.move(3, 450);
+    await expect(nav(page)).toBeVisible();
+    await nav(page).getByRole('link', { name: 'Recherche', exact: true }).click();
+    await expect(page).toHaveURL(/#\/search/);
+    await expect(nav(page)).toBeHidden();
+
+    // Mémorisé au rechargement.
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Afficher la barre latérale' })).toBeVisible();
+    await expect(nav(page)).toBeHidden();
+
+    // Épingler depuis l'aperçu : la barre redevient déployée durablement.
+    await page.mouse.move(400, 450);
+    await page.mouse.move(3, 450);
+    await page.getByRole('button', { name: 'Épingler la barre latérale' }).click();
+    await page.mouse.move(900, 450);
+    await expect(page.getByRole('button', { name: 'Replier la barre latérale' })).toHaveAttribute('aria-expanded', 'true');
+    await page.waitForTimeout(400);
+    await expect(nav(page)).toBeVisible();
+    await page.reload();
+    await expect(nav(page)).toBeVisible();
+  });
+
+  test('au clavier : le bouton flottant reste atteignable', async ({ page }) => {
+    await open(page);
+    await page.getByRole('button', { name: 'Replier la barre latérale' }).focus();
+    await page.keyboard.press('Enter');
+    const show = page.getByRole('button', { name: 'Afficher la barre latérale' });
+    await expect(show).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Replier la barre latérale' })).toBeFocused();
+    await expect(nav(page)).toBeVisible();
+  });
+});
+
+test.describe('palette de commandes', () => {
+  test('⌘K : chercher une réunion, l’ouvrir, Échap ferme', async ({ page }) => {
+    await open(page);
+    await page.locator('body').press('ControlOrMeta+k');
+    const dlg = page.getByRole('dialog', { name: 'Palette de commandes' });
+    await expect(dlg).toBeVisible();
+    const box = dlg.getByRole('combobox', { name: 'Rechercher une réunion ou une commande' });
+    await expect(box).toBeFocused();
+    await expect(dlg.getByRole('group', { name: 'Actions' }).getByRole('option', { name: /Démarrer l’écoute/ })).toBeVisible();
+
+    await box.fill('Brindille');
+    const opt = dlg.getByRole('option', { name: /Revue d'architecture — export Brindille/ });
+    await expect(opt).toBeVisible();
+    await expect(opt).toHaveAttribute('aria-selected', 'true');
+    await box.press('Enter');
+    await expect(dlg).toBeHidden();
+    await expect(page).toHaveURL(/#\/meetings\/revue-archi-brindille/);
+    const detail = page.getByRole('region', { name: 'Détail de la réunion' });
+    await expect(detail.getByRole('heading', { name: "Revue d'architecture — export Brindille" })).toBeVisible();
+
+    // Récemment ouvert ; ↑↓ déplacent la sélection ; Échap ferme.
+    await page.locator('body').press('ControlOrMeta+k');
+    await expect(dlg.getByRole('group', { name: 'Récemment ouvert' }).getByRole('option', { name: /Revue d'architecture/ })).toHaveAttribute('aria-selected', 'true');
+    await box.press('ArrowDown');
+    await expect(dlg.getByRole('option', { name: /Démarrer l’écoute/ })).toHaveAttribute('aria-selected', 'true');
+    await box.press('ArrowUp');
+    await box.press('ArrowUp');
+    await expect(dlg.getByRole('option').last()).toHaveAttribute('aria-selected', 'true');
+    await box.press('Escape');
+    await expect(dlg).toBeHidden();
+
+    // Depuis la barre latérale : aller à une section des réglages.
+    await nav(page).getByRole('button', { name: /Rechercher…/ }).click();
+    await expect(dlg).toBeVisible();
+    await box.fill('voix');
+    await expect(dlg.getByRole('option', { name: /Réglages › Voix/ })).toHaveAttribute('aria-selected', 'true');
+    await box.press('Enter');
+    await expect(page).toHaveURL(/#\/settings\?section=voice/);
+    await expect(page.locator('#wake')).toBeVisible();
+  });
+});
+
 test.describe('réunions', () => {
   test('liste, détail et onglets', async ({ page }) => {
     await open(page);
@@ -55,6 +167,16 @@ test.describe('réunions', () => {
     const tabs = detail.getByRole('tablist', { name: 'Sections de la réunion' });
     await expect(tabs.getByRole('tab', { name: /Compte rendu/ })).toHaveAttribute('aria-selected', 'true');
     await expect(detail.getByText('Liens avec le code et les outils').first()).toBeVisible();
+    // Compte rendu : « En bref » mis en avant, décisions et actions en cartes (cases à cocher).
+    await expect(detail.getByRole('region', { name: 'En bref' })).toContainText('APP-1251 bloqué');
+    await expect(detail.getByRole('region', { name: /Décisions/ })).toContainText('pagination par 500');
+    const acts = detail.getByRole('region', { name: /Actions/ });
+    const box = acts.getByRole('checkbox', { name: 'Ajouter la reprise sur erreur dans ms-booking' });
+    await expect(box).not.toBeChecked();
+    await box.check();
+    await expect(box).toBeChecked();
+    await box.uncheck();
+    await expect(box).not.toBeChecked();
 
     await tabs.getByRole('tab', { name: /Transcription/ }).click();
     await expect(page).toHaveURL(/tab=transcript/);

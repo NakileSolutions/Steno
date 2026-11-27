@@ -8,6 +8,15 @@ import { go, main, nav, openMeeting, passOnboarding } from '../reel/helpers';
 
 const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../docs/screenshots');
 
+/** Une seule capture, dans un seul thème, sans déplacer la souris (aperçu au survol). */
+async function shotOne(page: Page, name: string, scheme: 'light' | 'dark') {
+  await expect(page.locator('.toast')).toHaveCount(0, { timeout: 10_000 });
+  await page.emulateMedia({ colorScheme: scheme });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(OUT, `${name}-${scheme === 'light' ? 'clair' : 'sombre'}.png`), animations: 'disabled' });
+  await page.emulateMedia({ colorScheme: 'light' });
+}
+
 async function shot(page: Page, name: string) {
   await expect(page.locator('.toast')).toHaveCount(0, { timeout: 10_000 });
   for (const [scheme, suffix] of [['light', 'clair'], ['dark', 'sombre']] as const) {
@@ -67,6 +76,30 @@ test('captures', async ({ page, browser }) => {
   await expect(detail.getByLabel('Version du compte rendu')).toContainText('corrélée', { timeout: 90_000 });
   await page.waitForTimeout(500);
   await shot(page, 'detail-compte-rendu');
+
+  // Barre latérale réduite (⌘\), puis aperçu flottant au survol du bord gauche.
+  await page.mouse.move(900, 500);
+  await page.keyboard.press('ControlOrMeta+Backslash');
+  await expect(nav(page)).toBeHidden();
+  await page.waitForTimeout(400);
+  await shotOne(page, 'sidebar-reduite', 'light');
+  await page.mouse.move(3, 450);
+  await expect(nav(page)).toBeVisible();
+  await page.mouse.move(120, 600);
+  await page.waitForTimeout(400);
+  await shotOne(page, 'sidebar-apercu', 'light');
+  await page.getByRole('button', { name: 'Épingler la barre latérale' }).click();
+  await page.mouse.move(900, 500);
+  await expect(page.getByRole('button', { name: 'Replier la barre latérale' })).toBeVisible();
+
+  // Palette de commandes (⌘K).
+  await page.locator('body').press('ControlOrMeta+k');
+  const palette = page.getByRole('dialog', { name: 'Palette de commandes' });
+  await expect(palette.getByRole('group', { name: 'Récemment ouvert' })).toBeVisible();
+  await page.waitForTimeout(300);
+  await shotOne(page, 'palette-commandes', 'dark');
+  await page.keyboard.press('Escape');
+  await expect(palette).toBeHidden();
 
   await detail.getByRole('tab', { name: /Transcription/ }).click();
   await expect(detail.locator('ol.segs li').first()).toBeVisible();

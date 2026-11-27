@@ -4,6 +4,7 @@
   import { time, shortDate } from '../../lib/format';
   import { copyText, downloadText, slug, toast, toastError } from '../../lib/ui.svelte';
   import { initial, speakerColor, speakerName } from '../../lib/components/speakers';
+  import { isEmptyBody, splitReport } from '../../lib/report';
   import Markdown from '../../lib/components/Markdown.svelte';
   import Icon from '../../lib/components/Icon.svelte';
 
@@ -89,6 +90,16 @@
     }
   }
 
+  // Mise en page : « En bref » en tête, Décisions et Actions en cartes, le reste en document.
+  const parts = $derived(report ? splitReport(report.markdown) : null);
+  const brief = $derived(parts?.brief && !isEmptyBody(parts.brief.body) ? parts.brief : null);
+  const decisions = $derived(parts?.decisions && !isEmptyBody(parts.decisions.body) ? parts.decisions : null);
+  const mdActions = $derived(parts?.actions && !isEmptyBody(parts.actions.body) ? parts.actions : null);
+  /** Actions extraites (cases à cocher) : seulement pour la version courante du compte rendu. */
+  const liveActions = $derived(!version && detail.actions.length ? detail.actions : null);
+  const openCount = $derived(detail.actions.filter((a) => a.status !== 'done').length);
+  const countItems = (md: string) => md.split('\n').filter((l) => /^\s*([-*+]|\d+\.)\s+\S/.test(l)).length;
+
   const KIND: Record<string, string> = { code: 'Code', jira: 'Jira', confluence: 'Confluence', datadog: 'Datadog', gitlab: 'GitLab' };
 </script>
 
@@ -118,25 +129,57 @@
     <p class="faint small gen"><Icon name="ask" size={12} /><span class="ellipsis">Généré {report.provider ? `par ${report.provider}` : ''} à <span class="tnum">{time(report.generated_at)}</span>{report.model ? ` · ${report.model}` : ''}</span></p>
 
     <article class="report" class:stale={!!pending}>
-      <Markdown source={report.markdown} />
-    </article>
+      {#if brief}
+        <section class="brief" aria-labelledby="rp-brief">
+          <h2 class="brief-h" id="rp-brief"><Icon name="ask" size={14} stroke={1.8} />{brief.heading}</h2>
+          <div class="brief-body"><Markdown source={brief.body} /></div>
+        </section>
+      {/if}
 
-    {#if detail.actions.length}
-      <section class="block">
-        <h2 class="bh">Actions extraites <span class="bc">{detail.actions.length}</span></h2>
-        <ul class="actions card">
-          {#each detail.actions as a (a.id)}
-            <li class:done={a.status === 'done'}>
-              <label class="check">
-                <input class="tick" type="checkbox" checked={a.status === 'done'} onchange={(e) => toggleAction(a.id, e.currentTarget.checked)} />
-                <span class="grow">{a.text}</span>
-              </label>
-              <span class="who small">{#if a.owner}<span class="avatar xs" style="--c: {speakerColor(a.owner)}" aria-hidden="true">{initial(speakerName(a.owner, detail.speakers))}</span>{/if}{a.owner ? speakerName(a.owner, detail.speakers) : '—'}{#if a.due}<span class="due tnum">{shortDate(a.due)}</span>{/if}</span>
-            </li>
-          {/each}
-        </ul>
-      </section>
-    {/if}
+      {#if decisions}
+        <section class="rcard dec" aria-labelledby="rp-dec">
+          <h2 class="rc-h" id="rp-dec">
+            <span class="rc-ic"><Icon name="flag" size={14} stroke={1.8} /></span>
+            Décisions
+            {#if countItems(decisions.body)}<span class="bc">{countItems(decisions.body)}</span>{/if}
+          </h2>
+          <div class="rc-body"><Markdown source={decisions.body} /></div>
+        </section>
+      {/if}
+
+      {#if liveActions}
+        <section class="rcard act" aria-labelledby="rp-act">
+          <h2 class="rc-h" id="rp-act">
+            <span class="rc-ic"><Icon name="checkcircle" size={14} stroke={1.8} /></span>
+            Actions
+            <span class="bc" title="{openCount} à faire sur {liveActions.length}">{liveActions.length - openCount}/{liveActions.length}</span>
+          </h2>
+          <ul class="actions">
+            {#each liveActions as a (a.id)}
+              <li class:done={a.status === 'done'}>
+                <label class="check">
+                  <input class="tick" type="checkbox" checked={a.status === 'done'} onchange={(e) => toggleAction(a.id, e.currentTarget.checked)} />
+                  <span class="grow">{a.text}</span>
+                </label>
+                <span class="who small">{#if a.owner}<span class="avatar xs" style="--c: {speakerColor(a.owner)}" aria-hidden="true">{initial(speakerName(a.owner, detail.speakers))}</span>{/if}{a.owner ? speakerName(a.owner, detail.speakers) : '—'}{#if a.due}<span class="due tnum">{shortDate(a.due)}</span>{/if}</span>
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {:else if mdActions}
+        <section class="rcard act" aria-labelledby="rp-act">
+          <h2 class="rc-h" id="rp-act">
+            <span class="rc-ic"><Icon name="checkcircle" size={14} stroke={1.8} /></span>
+            Actions
+          </h2>
+          <div class="rc-body md-actions"><Markdown source={mdActions.body} /></div>
+        </section>
+      {/if}
+
+      {#if parts?.rest}
+        <div class="doc"><Markdown source={parts.rest} /></div>
+      {/if}
+    </article>
 
     {#if detail.refs.length}
       <section class="block">
@@ -219,11 +262,98 @@
   .report { transition: opacity var(--t) var(--ease); }
   .report.stale { opacity: 0.55; }
   .report :global(.md > h1:first-child) { display: none; }
+
+  /* « En bref » : mis en avant, un cran au-dessus. */
+  .brief {
+    position: relative;
+    padding: 18px 22px 16px;
+    margin-bottom: 18px;
+    border-radius: 14px;
+    background:
+      radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 60%),
+      color-mix(in srgb, var(--accent) 4%, var(--surface));
+    box-shadow: inset 0 0 0 1px var(--accent-line), var(--shadow-sm);
+    overflow: hidden;
+  }
+  .brief-h {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 8px;
+    font-size: var(--fs-micro);
+    font-weight: 650;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--accent-text);
+  }
+  .brief-body :global(.md) { font-size: 15.5px; line-height: 1.62; letter-spacing: -0.006em; }
+  .brief-body :global(.md ul) { padding-left: 20px; margin-bottom: 0; }
+  .brief-body :global(.md li) { margin: 4px 0; }
+  .brief-body :global(.md p:last-child) { margin-bottom: 0; }
+
+  /* Décisions et Actions : cartes */
+  .rcard {
+    margin-bottom: 14px;
+    border-radius: 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+  .rc-h {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 12px 16px 10px;
+    font-size: var(--fs-ui);
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    border-bottom: 1px solid var(--line);
+  }
+  .rc-ic { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; flex: none; }
+  .dec .rc-ic { color: var(--accent-text); background: var(--accent-soft); }
+  .act .rc-ic { color: var(--ok); background: var(--ok-soft); }
+  .rc-body :global(.md) { font-size: var(--fs-body); }
+  .rc-body :global(.md > ul), .rc-body :global(.md > ol) { list-style: none; margin: 0; padding: 0; }
+  .rc-body :global(.md > ul > li), .rc-body :global(.md > ol > li) {
+    position: relative;
+    margin: 0;
+    padding: 10px 16px 10px 40px;
+    border-top: 1px solid var(--line);
+    line-height: 1.5;
+  }
+  .rc-body :global(.md > ul > li:first-child), .rc-body :global(.md > ol > li:first-child) { border-top: 0; }
+  .dec .rc-body :global(.md > ul > li::before) {
+    content: '';
+    position: absolute;
+    left: 19px;
+    top: 17px;
+    width: 7px;
+    height: 7px;
+    border-radius: 2px;
+    transform: rotate(45deg);
+    background: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft-2);
+  }
+  .md-actions :global(.md > ul > li::before) {
+    content: '';
+    position: absolute;
+    left: 16px;
+    top: 12px;
+    width: 14px;
+    height: 14px;
+    border-radius: 5px;
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text) 28%, transparent);
+  }
+  .rc-body :global(.md > p) { padding: 12px 16px; margin: 0; }
+  .rc-body :global(.md > table) { margin: 0; border: 0; border-radius: 0; }
+  .doc { margin-top: 30px; }
   .block { margin-top: 34px; }
   .bh { display: flex; align-items: center; gap: 8px; font-size: var(--fs-h3); margin-bottom: 10px; }
   .bc { font-size: var(--fs-micro); font-weight: 600; color: var(--text-3); background: var(--surface-2); border-radius: var(--r-pill); padding: 1px 7px; font-variant-numeric: tabular-nums; }
   .actions, .refs { list-style: none; margin: 0; padding: 4px 0; overflow: hidden; }
-  .actions li { display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-top: 1px solid var(--line); transition: background var(--t-fast) var(--ease); }
+  .actions { padding: 0; }
+  .actions li { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line); transition: background var(--t-fast) var(--ease); }
   .actions li:first-child, .refs li:first-child { border-top: 0; }
   .actions li:hover { background: var(--hover); }
   .actions li .check { flex: 1; gap: 12px; align-items: center; }
