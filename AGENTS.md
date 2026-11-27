@@ -123,6 +123,10 @@ On a fresh Mac: `cd app/ui && npx playwright install chromium` once.
   failure (it breaks the call app's audio).
 - Canary: loaded on the GPU (on the ANE, loading hangs for over 30 minutes).
 - Diarization: wait for the sidecar to have fully stopped, or the WAV is read empty.
+- Core Audio IOProc blocks run synchronously on the HAL IO thread even when given a dispatch
+  queue: no allocation, lock or log there (`RealtimeSampleBridge`). AVAudioEngine raises
+  Objective-C exceptions that Swift's `do/catch` misses: wrap engine calls in
+  `ObjCException.catching`.
 - Linux: no TCC; permissions are reported `granted` as soon as the sound server answers
   (see `crates/steno-audio-linux/README.md`).
 - The `captures` Playwright project rewrites `docs/screenshots/` (`screenshots` skill).

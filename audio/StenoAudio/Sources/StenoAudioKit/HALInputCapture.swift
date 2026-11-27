@@ -14,16 +14,17 @@ final class HALInputCapture {
 
     let device: AudioDeviceID
     private let onSamples: SampleHandler
-    private let ioQueue = DispatchQueue(label: "steno.audio.mic.io", qos: .userInteractive)
+    private var bridge: RealtimeSampleBridge?
     private var procID: AudioDeviceIOProcID?
-    // Manipulés sur `ioQueue` après le démarrage.
     private var sampleRate: Double = 0
-    private var windowStart: TimeInterval?
-    private var windowFrames = 0
 
     init(device: AudioDeviceID, onSamples: @escaping SampleHandler) {
         self.device = device
         self.onSamples = onSamples
+    }
+
+    deinit {
+        stop()
     }
 
     private(set) var channelCount = 0
@@ -40,27 +41,43 @@ final class HALInputCapture {
         sampleRate = format.mSampleRate
         channelCount = Int(format.mChannelsPerFrame)
 
-        var proc: AudioDeviceIOProcID?
-        var status = AudioDeviceCreateIOProcIDWithBlock(&proc, device, ioQueue) { [weak self] _, inputData, _, _, _ in
-            self?.handle(inputData)
+        // First buffer only (interleaved: every channel averaged; non-interleaved: channel 0),
+        // mixed on the IO thread into a lock-free ring (no allocation, lock or log there) and
+        // processed on the bridge's queue (see `RealtimeSampleBridge`).
+        guard let bridge = RealtimeSampleBridge(label: "steno.audio.mic.io", firstBuffer: 0, bufferCount: 1) else {
+            throw MicError.restartFailed("allocation of the sample ring failed")
         }
+        var proc: AudioDeviceIOProcID?
+        var status = AudioDeviceCreateIOProcIDWithBlock(&proc, device, nil, bridge.ioBlock)
         guard status == noErr, let proc else {
             throw CoreAudioError(status: status, operation: "création de l'IOProc du micro")
         }
-        procID = proc
+        let tracker = SampleRateTracker(rate: sampleRate, label: "microphone")
+        let onSamples = onSamples
+        bridge.start { samples, dropped in
+            if dropped > 0 { Log.warn("microphone: \(dropped) frames dropped (processing too slow)") }
+            let rate = tracker.add(frames: samples.count)
+            if !samples.isEmpty { onSamples(samples, rate) }
+        }
         status = AudioDeviceStart(device, proc)
         guard status == noErr else {
             AudioDeviceDestroyIOProcID(device, proc)
-            procID = nil
+            bridge.stop()
             throw CoreAudioError(status: status, operation: "démarrage du micro")
         }
+        procID = proc
+        self.bridge = bridge
     }
 
     func stop() {
-        guard let procID else { return }
-        AudioDeviceStop(device, procID)
-        AudioDeviceDestroyIOProcID(device, procID)
-        self.procID = nil
+        if let procID {
+            AudioDeviceStop(device, procID)
+            AudioDeviceDestroyIOProcID(device, procID)
+        }
+        procID = nil
+        // After the IOProc is gone: nothing writes to the ring any more.
+        bridge?.stop()
+        bridge = nil
     }
 
     /// Format virtuel du premier flux d'entrée (Float32 en pratique).
@@ -87,47 +104,4 @@ final class HALInputCapture {
         return format
     }
 
-    private func handle(_ inputData: UnsafePointer<AudioBufferList>) {
-        let list = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
-        guard let buffer = list.first, let data = buffer.mData else { return }
-        // Entrelacé : un tampon à N canaux ; non entrelacé : un tampon par canal (on prend le 1er).
-        let channels = max(1, Int(buffer.mNumberChannels))
-        let frames = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size / channels
-        guard frames > 0 else { return }
-        let p = data.assumingMemoryBound(to: Float.self)
-        var mono = [Float](repeating: 0, count: frames)
-        if channels == 1 {
-            for i in 0..<frames { mono[i] = p[i] }
-        } else {
-            let scale = 1 / Float(channels)
-            for f in 0..<frames {
-                var s: Float = 0
-                for c in 0..<channels { s += p[f * channels + c] }
-                mono[f] = s * scale
-            }
-        }
-        checkRate(frames: frames)
-        onSamples(mono, sampleRate)
-    }
-
-    /// Garde-fou : un casque Bluetooth qui bascule de profil change de fréquence sans prévenir.
-    private func checkRate(frames: Int) {
-        let now = ProcessInfo.processInfo.systemUptime
-        guard let start = windowStart else {
-            windowStart = now
-            windowFrames = 0
-            return
-        }
-        windowFrames += frames
-        let elapsed = now - start
-        guard elapsed >= 3 else { return }
-        let measured = Double(windowFrames) / elapsed
-        windowStart = now
-        windowFrames = 0
-        guard sampleRate > 0, abs(measured - sampleRate) / sampleRate > 0.15,
-              let snapped = ProcessTap.standardRate(near: measured)
-        else { return }
-        Log.warn("micro : \(Int(measured)) échantillons/s reçus pour \(Int(sampleRate)) Hz annoncés : passage à \(Int(snapped)) Hz")
-        sampleRate = snapped
-    }
 }

@@ -2,11 +2,12 @@
 //
 // - Micro : AVCaptureDevice.authorizationStatus(for: .audio).
 // - Accessibilité : AXIsProcessTrusted() (sans invite).
-// - Audio système : aucune API publique pour l'interroger. On reste à `unknown`, sauf :
+// - Audio système : aucune API publique pour l'interroger. TCC (private API, `SystemAudioTCC`)
+//   when available, otherwise `unknown`, except:
 //     * la création du tap échoue avec une erreur de permission → `denied` ;
 //     * le tap a déjà livré de l'audio non silencieux → `granted` (preuve par l'usage).
-//   À VÉRIFIER (spike S1/S4) : quand la permission est refusée, macOS peut créer le tap
-//   sans erreur et livrer du silence ; dans ce cas l'état reste `unknown`.
+//   When access is denied, macOS creates the tap without error and delivers silence:
+//   `CaptureSession.start` checks TCC and reports `system_audio_denied` itself.
 //
 // Rappel TCC : quand Steno.app lance le sidecar, c'est l'app (processus « responsable »)
 // qui porte les permissions. Voir README.
@@ -102,7 +103,9 @@ final class PermissionsTracker {
 /// capture audio. Si les symboles manquent, on retombe sur la preuve par l'usage.
 enum SystemAudioTCC {
     private static let service = "kTCCServiceAudioCapture" as CFString
-    private typealias PreflightFn = @convention(c) (CFString, CFDictionary?) -> Int
+    /// `TCCAccessPreflight` returns a C `int` (32 bits): typed `CInt`, not the 64-bit `Int`,
+    /// whose upper half would be garbage.
+    private typealias PreflightFn = @convention(c) (CFString, CFDictionary?) -> CInt
     private typealias RequestFn = @convention(c) (CFString, CFDictionary?, @escaping @convention(block) (Bool) -> Void) -> Void
 
     private static let handle: UnsafeMutableRawPointer? =

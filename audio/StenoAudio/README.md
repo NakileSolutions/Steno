@@ -336,7 +336,9 @@ End of stdin stops the sidecar.
 | `ChannelPipeline.swift` | per channel: stream gaps, WAV, VAD, segmenter, ASR, vocabulary |
 | `CallMonitor.swift` | watched apps (every 2 s): processes per app, debounced call state per app, window reading (accessibility) |
 | `CallTitleHeuristics.swift` | pure call-title heuristics (Teams, Slack, Zoom, Meet, default) |
-| `ProcessTap.swift` | Core Audio process tap + private aggregate + IOProc |
+| `ProcessTap.swift` | Core Audio process tap + private aggregate (around the default output) + IOProc |
+| `RealtimeAudio.swift` | real-time path: IOProc → lock-free ring → processing queue (`RealtimeSampleBridge`), sample rate tracking, Objective-C exception catching |
+| `Sources/StenoAudioRT/` | C / Objective-C: lock-free sample ring written from the IO thread, `@try/@catch` wrapper for AVAudioEngine |
 | `MicCapture.swift` | `AVAudioEngine` microphone with AEC, microphone selection, fallback and resumption, restart on device change |
 | `AudioDevices.swift` | devices: HAL reading, transport classification, filtering, sorting (pure functions), debounced listeners, setting the device of an AVAudioEngine node |
 | `FeedbackPlayer.swift` | `play` sound cue: (pure) synthesis and separate playback engine |
@@ -358,6 +360,26 @@ Notable choices:
   since `start`, on a monotonic clock. When the tap disappears (Teams restarts, sleep), the
   gap is detected and filled (silence in the WAV, clock advanced): `t0`/`t1` and `them.wav`
   stay aligned with `start`, which lets the core match diarization against segments.
+- Gaps are filled completely, however long (an app closed for an hour): the WAV advances by as
+  much as the segmenter clock, so `retranscribe` and diarization cut at the right place. The WAV
+  header is rewritten every 5 s of audio: a sidecar killed before `close` still leaves a readable
+  file. The core waits 7 s for the sidecar to exit after `shutdown` (it gives itself 5 s to flush),
+  and a broken stdout triggers the same clean shutdown.
+- Real-time path: `AudioDeviceCreateIOProcIDWithBlock` calls its block synchronously from the HAL
+  IO thread, even with a dispatch queue. The IOProcs (tap and direct microphone capture) therefore
+  only mix down to mono into a pre-allocated lock-free ring; a timer drains it every 20 ms on a
+  regular queue (rate check, resampling, logs, pipeline).
+- The tap aggregate is built around the default output (`kAudioHardwarePropertyDefaultOutputDevice`,
+  the one the call plays on), not the sound-effects output, which often stays on the Mac speakers
+  while the call is on AirPods. Only the tap's buffers are mixed (the last ones in the aggregate's
+  input; a sub-device with a microphone comes first).
+- AVAudioEngine raises Objective-C exceptions (AirPods switching between A2DP and HFP while the
+  graph is built): every engine call goes through `ObjCException.catching`, so they fall back to the
+  direct capture instead of aborting the sidecar. `set_input` gives voice processing a new chance;
+  the wake word test outside a meeting records without voice processing (no switch of Bluetooth
+  headsets to the hands-free profile).
+- `start` asks TCC whether system audio access is denied and emits `system_audio_denied`: in that
+  case macOS creates the tap without error and only delivers silence.
 - A `me` utterance is `private` if the aside was active at any point during the utterance.
 - Call end is declared, app by app, after two consecutive negative readings (≈ 4 s); the 60 s
   grace period remains the core's responsibility.

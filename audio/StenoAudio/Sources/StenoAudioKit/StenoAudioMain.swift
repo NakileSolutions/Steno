@@ -147,6 +147,10 @@ public enum StenoAudioMain {
     private static func runProtocol() {
         let output = Output()
         let controller = Controller(output: output)
+        // Core gone: stop the capture cleanly (segments flushed, WAV files closed) before exiting.
+        output.onBroken = {
+            Task { await controller.shutdown(reason: "stdout closed") }
+        }
 
         let inputs = AsyncStream<Input>.makeStream(bufferingPolicy: .unbounded)
         let reader = Thread {

@@ -22,10 +22,17 @@ let package = Package(
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.18.4"),
     ],
     targets: [
+        // C / Objective-C helpers: lock-free sample ring for the Core Audio IO thread and
+        // Objective-C exception catching around AVAudioEngine.
+        .target(
+            name: "StenoAudioRT",
+            path: "Sources/StenoAudioRT"
+        ),
         // Toute la logique (testable) vit dans la bibliothèque.
         .target(
             name: "StenoAudioKit",
             dependencies: [
+                "StenoAudioRT",
                 .product(name: "FluidAudio", package: "FluidAudio"),
             ],
             path: "Sources/StenoAudioKit"
@@ -50,7 +57,7 @@ let package = Package(
         ),
         .testTarget(
             name: "StenoAudioTests",
-            dependencies: ["StenoAudioKit"],
+            dependencies: ["StenoAudioKit", "StenoAudioRT"],
             path: "Tests/StenoAudioTests"
         ),
     ]

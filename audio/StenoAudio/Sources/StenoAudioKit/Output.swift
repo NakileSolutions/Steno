@@ -9,6 +9,11 @@ final class Output {
     private let writer: (Data) -> Bool
     private var broken = false
 
+    /// Called once (from the output queue) when stdout breaks. Set before the first `send`. The
+    /// protocol mode shuts down cleanly from it (WAV headers patched) instead of exiting at once.
+    /// Without it, the process exits.
+    var onBroken: (() -> Void)?
+
     /// Écrit sur le descripteur `fd` (stdout par défaut).
     convenience init(fileDescriptor fd: Int32 = STDOUT_FILENO) {
         self.init(writer: { data in Output.writeAll(data, to: fd) })
@@ -28,7 +33,8 @@ final class Output {
                 if !writer(line) {
                     broken = true
                     Log.warn("stdout fermé : le cœur ne lit plus, arrêt du sidecar")
-                    exit(0)
+                    guard let onBroken else { exit(0) }
+                    onBroken()
                 }
             } catch {
                 Log.error("encodage JSON impossible : \(error)")

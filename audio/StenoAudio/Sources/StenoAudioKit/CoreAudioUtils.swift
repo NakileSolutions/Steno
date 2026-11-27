@@ -108,6 +108,19 @@ enum HAL {
 
     // MARK: Périphériques et taps
 
+    /// Output the user hears the call on (`kAudioHardwarePropertyDefaultOutputDevice`), falling
+    /// back to the sound-effects output. Not `DefaultSystemOutputDevice` first: "Play sound
+    /// effects through" often stays on the Mac speakers (48 kHz) while the call plays on AirPods
+    /// (16/24 kHz in hands-free mode).
+    static func defaultOutputDevice() throws -> AudioDeviceID {
+        if let id = try? read(systemObject, kAudioHardwarePropertyDefaultOutputDevice, default: unknownObject),
+           id != unknownObject
+        {
+            return id
+        }
+        return try defaultSystemOutputDevice()
+    }
+
     static func defaultSystemOutputDevice() throws -> AudioDeviceID {
         let id = try read(systemObject, kAudioHardwarePropertyDefaultSystemOutputDevice, default: unknownObject)
         guard id != unknownObject else {
@@ -178,6 +191,16 @@ final class HALPropertyListener {
     }
 
     deinit {
-        _ = AudioObjectRemovePropertyListenerBlock(object, &addr, queue, block)
+        // Removed from another queue: owners release their listeners inside `queue.sync` on the
+        // very queue the block was registered with, and removing a listener block from that
+        // queue can deadlock in Core Audio. The block only holds weak references to its owner,
+        // so a notification delivered in the meantime is harmless.
+        let object = object
+        var addr = addr
+        let queue = queue
+        let block = block
+        DispatchQueue.global(qos: .utility).async {
+            _ = AudioObjectRemovePropertyListenerBlock(object, &addr, queue, block)
+        }
     }
 }

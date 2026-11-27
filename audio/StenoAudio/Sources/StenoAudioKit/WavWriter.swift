@@ -10,9 +10,13 @@ final class WavWriter {
     private let handle: FileHandle
     private var dataBytes: UInt32 = 0
     private var closed = false
+    /// `dataBytes` when the header was last written.
+    private var headerBytes: UInt32 = 0
 
-    /// Au-delà, un trou n'est plus comblé (évite d'écrire des heures de silence après une veille).
-    static let maxGapFillSeconds: Double = 30 * 60
+    /// The header is rewritten with the current sizes every this many seconds of audio, so a
+    /// sidecar killed before `close` (SIGKILL, crash) leaves a readable file missing at most
+    /// that much audio.
+    static let headerRefreshSeconds: Double = 5
 
     init(url: URL, sampleRate: Int = AudioFormat.sampleRateInt) throws {
         self.url = url
@@ -44,11 +48,13 @@ final class WavWriter {
         try write(data)
     }
 
-    /// Ajoute `count` échantillons de silence (trous du flux).
+    /// Ajoute `count` échantillons de silence (trous du flux). Never capped: the segmenter clock
+    /// advances by the whole gap, and `retranscribe` / diarization cut the WAV at `t0`/`t1`, so
+    /// the file must advance by as much (about 115 MB per hour of gap; the 4 GiB WAV limit
+    /// still applies).
     func appendSilence(_ count: Int) throws {
         guard !closed, count > 0 else { return }
-        let capped = min(count, Int(Self.maxGapFillSeconds * Double(sampleRate)))
-        var remaining = capped
+        var remaining = count
         let chunk = Data(count: min(remaining, sampleRate) * 2)
         while remaining > 0 {
             let n = min(remaining, sampleRate)
@@ -74,6 +80,16 @@ final class WavWriter {
         guard UInt64(dataBytes) + UInt64(data.count) < UInt64(UInt32.max - 64) else { return }
         try handle.write(contentsOf: data)
         dataBytes += UInt32(data.count)
+        let refreshBytes = UInt32(Self.headerRefreshSeconds * Double(sampleRate)) * 2
+        if dataBytes - headerBytes >= refreshBytes { try refreshHeader() }
+    }
+
+    /// Rewrites the header with the current sizes, then goes back to the end of the file.
+    private func refreshHeader() throws {
+        try handle.seek(toOffset: 0)
+        try handle.write(contentsOf: Self.header(sampleRate: sampleRate, dataBytes: dataBytes))
+        try handle.seekToEnd()
+        headerBytes = dataBytes
     }
 
     static func header(sampleRate: Int, dataBytes: UInt32) -> Data {

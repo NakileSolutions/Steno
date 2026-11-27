@@ -131,6 +131,9 @@ final class MicCapture {
             self.usingFallback = false
             self.missingReported = false
             self.restartAttempts = 0
+            // A voice processing failure belongs to the previous microphone (AirPods in
+            // hands-free mode, for example): give echo cancellation a new chance with this one.
+            self.voiceProcessingFailed = false
             self.scheduleRestart(reason: "changement de micro (\(label))", delay: 0.05)
         }
     }
@@ -210,8 +213,12 @@ final class MicCapture {
 
     /// `device` nil = micro par défaut du système (rien n'est réglé sur le nœud d'entrée).
     private func buildAndStart(voiceProcessing: Bool, device: AudioDeviceID?) throws {
+        // AVAudioEngine reports some failures as Objective-C exceptions (a Bluetooth headset
+        // switching between A2DP and HFP while the graph is built, for example): every engine
+        // call goes through `ObjCException.catching`, so they become errors handled like the
+        // others (fallback to the direct HAL capture) instead of aborting the sidecar.
         let engine = AVAudioEngine()
-        let input = engine.inputNode
+        let input = try ObjCException.catching { engine.inputNode }
 
         // Ordre retenu : périphérique réglé AVANT le voice processing, puis relu après son
         // activation (qui remplace l'unité d'E/S par VoiceProcessingIO) et réglé de nouveau s'il
@@ -222,13 +229,15 @@ final class MicCapture {
         }
 
         if voiceProcessing {
-            // AEC : retire de la piste micro le son joué par les haut-parleurs.
-            try input.setVoiceProcessingEnabled(true)
-            // Ne pas baisser le volume des autres apps (Teams, Slack…) pendant la capture.
-            // À VÉRIFIER (spike S1) : effet réel du réglage sur le son de l'app de visio.
-            input.voiceProcessingOtherAudioDuckingConfiguration =
-                AVAudioVoiceProcessingOtherAudioDuckingConfiguration(enableAdvancedDucking: false,
-                                                                     duckingLevel: .min)
+            try ObjCException.catching {
+                // AEC : retire de la piste micro le son joué par les haut-parleurs.
+                try input.setVoiceProcessingEnabled(true)
+                // Ne pas baisser le volume des autres apps (Teams, Slack…) pendant la capture.
+                // À VÉRIFIER (spike S1) : effet réel du réglage sur le son de l'app de visio.
+                input.voiceProcessingOtherAudioDuckingConfiguration =
+                    AVAudioVoiceProcessingOtherAudioDuckingConfiguration(enableAdvancedDucking: false,
+                                                                         duckingLevel: .min)
+            }
             if let device, AudioDevices.currentDevice(of: input) != device {
                 Log.info("micro : périphérique perdu à l'activation du voice processing, nouveau réglage")
                 try AudioDevices.setCurrentDevice(device, on: input)
@@ -237,23 +246,27 @@ final class MicCapture {
         voiceProcessingActive = voiceProcessing
 
         // Le voice processing pilote entrée ET sortie : le graphe doit contenir la sortie.
-        _ = engine.mainMixerNode
-
-        let format = input.outputFormat(forBus: 0)
+        let format = try ObjCException.catching { () -> AVAudioFormat in
+            _ = engine.mainMixerNode
+            return input.outputFormat(forBus: 0)
+        }
         guard format.sampleRate > 0, format.channelCount > 0 else { throw MicError.noInputDevice }
 
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
-            guard let self else { return }
-            // Avec le voice processing, le canal 0 porte la voix traitée.
-            let mono = AudioBufferUtils.monoSamples(from: buffer, mix: .firstChannel)
-            if !mono.isEmpty { self.onSamples(mono, buffer.format.sampleRate) }
-        }
-
-        engine.prepare()
+        let onSamples = self.onSamples
         do {
-            try engine.start()
+            try ObjCException.catching {
+                // The format can change between `outputFormat` and here (Bluetooth profile
+                // switch): `installTap` then raises an Objective-C exception.
+                input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
+                    // Avec le voice processing, le canal 0 porte la voix traitée.
+                    let mono = AudioBufferUtils.monoSamples(from: buffer, mix: .firstChannel)
+                    if !mono.isEmpty { onSamples(mono, buffer.format.sampleRate) }
+                }
+                engine.prepare()
+                try engine.start()
+            }
         } catch {
-            input.removeTap(onBus: 0)
+            try? ObjCException.catching { input.removeTap(onBus: 0) }
             throw error
         }
         self.engine = engine
@@ -280,8 +293,14 @@ final class MicCapture {
         }
         configObserver = nil
         if let engine {
-            engine.inputNode.removeTap(onBus: 0)
-            engine.stop()
+            do {
+                try ObjCException.catching {
+                    engine.inputNode.removeTap(onBus: 0)
+                    engine.stop()
+                }
+            } catch {
+                Log.warn("microphone: stopping the engine failed (\(error))")
+            }
         }
         engine = nil
     }
@@ -334,11 +353,13 @@ final class MicCapture {
 enum MicRecorder {
     /// Enregistre `seconds` secondes de micro, rééchantillonnées en 16 kHz mono.
     /// `inputDevice` : UID du micro (nil = micro par défaut ; repli silencieux s'il est absent).
+    /// Without voice processing: nothing is playing outside a meeting, and voice processing would
+    /// switch every Bluetooth headset of the Mac to its low-quality hands-free profile.
     static func record(seconds: Double, inputDevice: String? = nil) async throws -> [Float] {
         let resampler = Resampler()
         let lock = NSLock()
         var collected: [Float] = []
-        let mic = MicCapture(voiceProcessing: true, inputDevice: inputDevice) { samples, rate in
+        let mic = MicCapture(voiceProcessing: false, inputDevice: inputDevice) { samples, rate in
             let out = resampler.process(samples, sampleRate: rate)
             lock.lock()
             collected += out
