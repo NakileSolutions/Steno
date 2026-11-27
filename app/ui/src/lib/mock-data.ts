@@ -120,7 +120,7 @@ function daily(): MeetingStore {
 
 **Sources**
 - [Datadog — logs \`service:ms-booking status:error\`](${DD}/logs?query=service%3Ams-booking%20status%3Aerror)
-- [StationClient.java:48](${GITLAB}/address/StationClient.java#L48)
+- [StationClient.java:48](${GITLAB}/station/StationClient.java#L48)
 - [APP-1251 — Batch de migration des stations](${JIRA}/APP-1251)`;
 
   const requests: Request[] = [
@@ -186,7 +186,7 @@ function daily(): MeetingStore {
   ];
 
   const refs: ReportRef[] = [
-    { id: nextIds.ref(), kind: 'code', ref: 'ms-booking/…/address/StationClient.java:48', title: "Délai d'attente du client ms-stations (2 s)", url: `${GITLAB}/address/StationClient.java#L48`, verified: true, note: null },
+    { id: nextIds.ref(), kind: 'code', ref: 'ms-booking/…/station/StationClient.java:48', title: "Délai d'attente du client ms-stations (2 s)", url: `${GITLAB}/station/StationClient.java#L48`, verified: true, note: null },
     { id: nextIds.ref(), kind: 'code', ref: 'ms-booking/…/batch/StationBatchJob.java:112', title: 'Chargement complet des stations (findAll)', url: `${GITLAB}/batch/StationBatchJob.java#L112`, verified: true, note: null },
     { id: nextIds.ref(), kind: 'jira', ref: 'APP-1251', title: 'Batch de migration des stations en échec en recette', url: `${JIRA}/APP-1251`, verified: true, note: null },
     { id: nextIds.ref(), kind: 'jira', ref: 'APP-1234', title: 'Migration de ms-booking vers le nouveau client HTTP', url: `${JIRA}/APP-1234`, verified: true, note: null },
@@ -290,16 +290,16 @@ function huddle(): MeetingStore {
   const md = `# Huddle #equipe-flotte
 
 ## En bref
-- Les déverrouillages des vélos cargo échouent pour les vélos cargo depuis la v2.13.
+- Le déverrouillage des vélos cargo échoue depuis la v2.13.
 - Le fournisseur des cadenas renvoie un code \`CARGO_UNLOCK_UNSUPPORTED\` : il faut déverrouiller en deux temps.
 
 ## Décisions
-- Contournement : déverrouillage en deux temps, en attendant le correctif du fournisseur des cadenas.
+- Contournement : déverrouillage en deux temps (cadenas puis batterie), en attendant le correctif du fournisseur.
 
 ## Actions — qui / quoi / échéance
 | Qui | Quoi | Échéance |
 |---|---|---|
-| Moi | Ajouter le déverrouillage en deux temps dans ms-pricing | vendredi |
+| Moi | Ajouter le déverrouillage en deux temps dans ms-fleet | vendredi |
 | Inès | Ouvrir un ticket chez le fournisseur des cadenas | aujourd'hui |`;
   return {
     meeting: {
@@ -307,12 +307,12 @@ function huddle(): MeetingStore {
       status: 'done', confidential: false, agent_provider: 'claude-code', correlation: 'on_demand', call_app: 'slack',
     },
     segments: buildSegments(id, start, [
-      [4, 'Eux-1', 'Je vous appelle vite fait : les déverrouillages des vélos cargo plantent sur les vélos cargo.'],
-      [21, 'Moi', 'Depuis quand ? On a livré la v2.13 de ms-pricing mardi.'],
+      [4, 'Eux-1', 'Je vous appelle vite fait : le déverrouillage des vélos cargo plante.'],
+      [21, 'Moi', 'Depuis quand ? On a livré la v2.13 de ms-fleet mardi.'],
       [36, 'Eux-1', 'Depuis mardi justement. Le fournisseur des cadenas répond CARGO_UNLOCK_UNSUPPORTED.'],
       [58, 'Moi', 'On peut déverrouiller en deux temps en attendant, c’est déjà prévu dans leur API.'],
       [80, 'Eux-1', 'D’accord, je leur ouvre un ticket aujourd’hui de mon côté.'],
-      [96, 'Moi', 'Je m’occupe du contournement dans ms-pricing, pour vendredi.'],
+      [96, 'Moi', 'Je m’occupe du contournement dans ms-fleet, pour vendredi.'],
     ]),
     speakers: [{ label: 'Moi', display_name: null }, { label: 'Eux-1', display_name: 'Inès' }],
     notes: [],
@@ -321,7 +321,7 @@ function huddle(): MeetingStore {
     refs: [],
     decisions: [{ id: nextIds.decision(), meeting_id: id, text: 'Déverrouillage en deux temps en attendant le correctif du fournisseur des cadenas.', created_at: iso(plus(start, 13 * 60)) }],
     actions: [
-      { id: nextIds.action(), meeting_id: id, owner: 'Moi', text: 'Ajouter le déverrouillage en deux temps dans ms-pricing', due: iso(dayAt(-3, 18, 0)).slice(0, 10), status: 'open' },
+      { id: nextIds.action(), meeting_id: id, owner: 'Moi', text: 'Ajouter le déverrouillage en deux temps dans ms-fleet', due: iso(dayAt(-3, 18, 0)).slice(0, 10), status: 'open' },
       { id: nextIds.action(), meeting_id: id, owner: 'Inès', text: 'Ouvrir un ticket chez le fournisseur des cadenas', due: iso(dayAt(1, 18, 0)).slice(0, 10), status: 'done' },
     ],
     drafts: [],
@@ -423,8 +423,8 @@ export const TEAMS_TITLE = 'Refinement ORION — sprint 48';
 
 /** Script joué en boucle pendant l'écoute simulée (après « Démarrer l'écoute »). */
 export const LIVE_SCRIPT: [speaker: string, text: string][] = [
-  ['Eux-1', 'On attaque le ticket APP-1260 : la validation des numéros de cadre dans ms-booking.'],
-  ['Moi', 'Scribe, cherche la règle de validation du numéro de cadre dans ms-booking.'],
+  ['Eux-1', 'On attaque le ticket APP-1260 : la validation des numéros de cadre dans ms-fleet.'],
+  ['Moi', 'Scribe, cherche la règle de validation du numéro de cadre dans ms-fleet.'],
   ['Eux-2', 'Aujourd’hui on accepte n’importe quelle chaîne de cinq caractères.'],
   ['Moi', 'Il faudrait au moins gérer les cadres importés et les anciens modèles.'],
   ['Eux-1', 'La description du ticket parle aussi des vélos cargo.'],

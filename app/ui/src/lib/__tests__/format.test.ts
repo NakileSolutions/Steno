@@ -84,7 +84,7 @@ describe('libellés', () => {
 
 describe('highlight', () => {
   it('échappe le HTML avant de surligner', () => {
-    expect(highlight('<b>ms-booking</b> & co', 'customer')).toBe('&lt;b&gt;ms-<mark>customer</mark>&lt;/b&gt; &amp; co');
+    expect(highlight('<b>ms-booking</b> & co', 'booking')).toBe('&lt;b&gt;ms-<mark>booking</mark>&lt;/b&gt; &amp; co');
   });
   it('surligne plusieurs termes, sans tenir compte de la casse', () => {
     expect(highlight('Export Brindille quotidien', 'brindille export')).toBe('<mark>Export</mark> <mark>Brindille</mark> quotidien');

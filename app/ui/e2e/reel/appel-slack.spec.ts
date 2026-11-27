@@ -23,7 +23,7 @@ test('un appel Slack est proposé, puis enregistré avec son app', async ({ page
   await expect(live.getByRole('heading', { name: 'Huddle dans #equipe-flotte' })).toBeVisible();
   await expect(live.getByRole('meter', { name: 'Slack' })).toBeVisible();
   const tx = live.getByRole('region', { name: 'Transcription en direct' });
-  await expect(tx.getByText(/j'ouvre un ticket chez le fournisseur des cadenas|j’ouvre un ticket chez le fournisseur des cadenas/)).toBeAttached({ timeout: 30_000 });
+  await expect(tx.getByText(/j'ouvre un ticket chez le fournisseur|j’ouvre un ticket chez le fournisseur/)).toBeAttached({ timeout: 30_000 });
   await live.getByRole('button', { name: 'Arrêter l’écoute' }).click();
   await expect(live.getByRole('button', { name: 'Arrêter l’écoute' })).toHaveCount(0);
 

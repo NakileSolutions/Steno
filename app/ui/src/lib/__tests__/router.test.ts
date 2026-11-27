@@ -16,7 +16,7 @@ describe('parseHash', () => {
   });
 
   it('ajoute la barre initiale et décode', () => {
-    expect(parseHash('#search?q=ms%20customer').query.q).toBe('ms booking');
+    expect(parseHash('#search?q=ms%20booking').query.q).toBe('ms booking');
     expect(parseHash('#settings').path).toBe('/settings');
     expect(parseHash('#/meetings/r%C3%A9union').parts[1]).toBe('réunion');
   });

@@ -198,8 +198,8 @@ export function createMockBackend(): Backend {
         req.summary = 'Deux réunions pertinentes trouvées.';
         req.tools_used = ['scribe.search_meetings', 'scribe.get_report'];
       } else if (/numéro de cadre/i.test(q)) {
-        req.answer_md = `La validation est faite dans \`FrameNumberValidator.java:23\` par l'expression \`^\\d{5}$\` : **aucune règle** pour les vélos cargo, les anciens modèles (2A/2B) ni les cadres importés.\n\n- Les cadres importés (971 à 976) passent la regex mais ne sont pas contrôlés contre le référentiel.\n- Aucune table de référence référence dans le dépôt.\n\n**Sources**\n- [FrameNumberValidator.java:23](https://gitlab.example.com/orion/ms-booking/-/blob/main/src/main/java/fr/orion/booking/validation/FrameNumberValidator.java#L23)\n- [APP-1260 — Validation des numéros de cadre](https://jira.example.com/browse/APP-1260)`;
-        req.summary = 'Regex ^\\d{5}$ dans FrameNumberValidator.java:23, sans vélos cargo ni anciens modèles.';
+        req.answer_md = `La validation est faite dans \`FrameNumberValidator.java:23\` par l'expression \`^[A-Z]{2}\\d{6}$\` : **aucune règle** pour les cadres importés ni les anciens modèles.\n\n- Les vélos cargo ont un préfixe à trois lettres et sont refusés.\n- Aucune table de référence des modèles dans le dépôt.\n\n**Sources**\n- [FrameNumberValidator.java:23](https://gitlab.example.com/orion/ms-fleet/-/blob/main/src/main/java/fr/orion/fleet/validation/FrameNumberValidator.java#L23)\n- [APP-1260 — Validation des numéros de cadre](https://jira.example.com/browse/APP-1260)`;
+        req.summary = 'Regex ^[A-Z]{2}\\d{6}$ dans FrameNumberValidator.java:23, sans cadres importés ni vélos cargo.';
         req.tools_used = ['code.grep', 'code.read', 'jira.get_issue'];
       } else {
         req.answer_md = `Voici ce que j'ai trouvé pour « ${q} » :\n\n- Aucun résultat probant dans les dépôts cochés.\n- Deux tickets Jira proches : [APP-1251](https://jira.example.com/browse/APP-1251), [APP-1234](https://jira.example.com/browse/APP-1234).\n\n**Sources**\n- [Recherche Jira](https://jira.example.com/issues/?jql=text~%22${encodeURIComponent(q)}%22)`;
