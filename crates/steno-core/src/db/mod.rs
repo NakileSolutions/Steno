@@ -48,7 +48,7 @@ impl Db {
     /// Ouvre (ou crée) la base au chemin donné et applique les migrations.
     pub fn open(path: &Path) -> Result<Db> {
         if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)
+            crate::paths::create_private_dir(dir)
                 .with_context(|| format!("impossible de créer {}", dir.display()))?;
         }
         let existed = path.exists();
@@ -70,7 +70,7 @@ impl Db {
                     current,
                     chrono::Local::now().format("%Y%m%d-%H%M%S")
                 ));
-                let _ = std::fs::create_dir_all(crate::paths::backups_dir());
+                let _ = crate::paths::create_private_dir(&crate::paths::backups_dir());
                 conn.execute("VACUUM INTO ?1", [backup.to_string_lossy().to_string()])
                     .context("sauvegarde avant migration")?;
             }

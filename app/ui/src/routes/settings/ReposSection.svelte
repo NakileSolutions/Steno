@@ -66,6 +66,7 @@
       <label class="globs">
         <span class="small muted">{t('Exclusions (un motif glob par ligne)')}</span>
         <textarea class="input mono" rows="2" bind:value={r.exclude_globs} onchange={() => update(r)} placeholder={'**/node_modules/**\n**/*.min.js'}></textarea>
+        <span class="small faint">{t('Fichiers que l’agent ne lit pas directement (Claude Code uniquement). Une recherche dans tout le dépôt ou l’historique Git peut encore les montrer.')}</span>
       </label>
     </div>
   {:else}

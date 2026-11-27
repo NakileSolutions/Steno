@@ -145,6 +145,12 @@ pub struct TierChoices {
     pub quick: TierChoice,
 }
 
+/// Niveau de réflexion acceptable : 1 à 20 caractères parmi `a-z`, `0-9`, `_`, `-`. La valeur
+/// est passée aux CLI des agents, parfois dans du TOML (`codex -c`) : rien d'autre ne passe.
+pub fn valid_effort(e: &str) -> bool {
+    (1..=20).contains(&e.len()) && e.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+}
+
 fn non_empty(s: &str) -> Option<String> {
     let s = s.trim();
     (!s.is_empty()).then(|| s.to_string())
@@ -686,6 +692,12 @@ impl Settings {
         }
         regex::Regex::new(&self.profile.jira_key_pattern)
             .context("motif des clés Jira invalide")?;
+        for c in [&mut self.agent.tiers.search, &mut self.agent.tiers.summary, &mut self.agent.tiers.quick] {
+            c.effort = c.effort.trim().to_lowercase();
+            if !c.effort.is_empty() && !valid_effort(&c.effort) {
+                anyhow::bail!("niveau de réflexion invalide : {}", c.effort);
+            }
+        }
         self.agent.max_parallel = self.agent.max_parallel.clamp(1, 8);
         self.audio.silence_ms = self.audio.silence_ms.clamp(500, 3000);
         if self.audio.end_grace_s == 0 {
@@ -722,7 +734,13 @@ impl Settings {
     }
 
     /// Fusionne un TOML d'équipe dans les réglages actuels. Les champs personnels
-    /// (nom, dossier d'export, commande personnalisée) sont conservés.
+    /// (nom, dossier d'export, commande personnalisée) sont conservés, ainsi que les choix de
+    /// sécurité qui n'appartiennent qu'à l'utilisateur : clés d'API de l'environnement,
+    /// installation automatique, agents choisis (avec leur modèle et leur réflexion quand
+    /// l'équipe utilise un autre agent), rappel de consentement, réunions exclues (les
+    /// exclusions importées s'ajoutent, aucune n'est retirée), mots qui excluent une réunion de
+    /// la corrélation (même règle), corrélation automatique (jamais activée par un import),
+    /// rétention (seulement plus courte) et capture du navigateur (jamais activée par un import).
     pub fn merge_team_toml(&self, input: &str) -> Result<Settings> {
         let incoming: toml::Value = toml::from_str(input).context("TOML invalide")?;
         let mut cur = serde_json::to_value(self)?;
@@ -732,6 +750,54 @@ impl Settings {
         out.profile.name = self.profile.name.clone();
         out.privacy.auto_export_dir = self.privacy.auto_export_dir.clone();
         out.agent.custom_command = self.agent.custom_command.clone();
+        out.agent.allow_api_key = self.agent.allow_api_key;
+        out.updates.auto_install = self.updates.auto_install;
+        // Modèle et réflexion d'un autre agent ne valent rien pour celui de l'utilisateur
+        // (« opus » passé à Codex) : on garde les siens pour cet usage.
+        for tier in [Tier::Quick, Tier::Search, Tier::Summary] {
+            let other_agent = out.agent.agent_for(tier) != self.agent.agent_for(tier);
+            let (dst, mine, dst_legacy, mine_legacy) = match tier {
+                Tier::Quick => (&mut out.agent.tiers.quick, &self.agent.tiers.quick, &mut out.agent.models.quick, &self.agent.models.quick),
+                Tier::Search => (&mut out.agent.tiers.search, &self.agent.tiers.search, &mut out.agent.models.search, &self.agent.models.search),
+                Tier::Summary => {
+                    (&mut out.agent.tiers.summary, &self.agent.tiers.summary, &mut out.agent.models.summary, &self.agent.models.summary)
+                }
+            };
+            if other_agent {
+                dst.model = mine.model.clone();
+                dst.effort = mine.effort.clone();
+                *dst_legacy = mine_legacy.clone();
+            }
+            dst.agent = mine.agent.clone();
+        }
+        out.agent.provider = self.agent.provider.clone();
+        out.privacy.consent_reminder = self.privacy.consent_reminder;
+        out.privacy.audio_retention_days = out.privacy.audio_retention_days.min(self.privacy.audio_retention_days);
+        // Rétention des transcriptions : absente ou 0 = sans limite.
+        let limit = |d: Option<u32>| d.filter(|d| *d > 0).unwrap_or(u32::MAX);
+        if limit(out.privacy.transcript_retention_days) > limit(self.privacy.transcript_retention_days) {
+            out.privacy.transcript_retention_days = self.privacy.transcript_retention_days;
+        }
+        for app in out.audio.call_apps.iter_mut().filter(|a| a.browser) {
+            app.enabled &= self.audio.call_apps.iter().any(|a| a.id == app.id && a.browser && a.enabled);
+        }
+        let mut excluded = self.privacy.excluded_titles.clone();
+        for t in &out.privacy.excluded_titles {
+            if !excluded.contains(t) {
+                excluded.push(t.clone());
+            }
+        }
+        out.privacy.excluded_titles = excluded;
+        if out.correlation.mode == "auto" && self.correlation.mode != "auto" {
+            out.correlation.mode = self.correlation.mode.clone();
+        }
+        let mut words = self.correlation.exclude_words.clone();
+        for w in &out.correlation.exclude_words {
+            if !words.contains(w) {
+                words.push(w.clone());
+            }
+        }
+        out.correlation.exclude_words = words;
         out.validated()
     }
 }
@@ -789,6 +855,91 @@ mod tests {
         let merged = other.merge_team_toml(&t).unwrap();
         assert_eq!(merged.audio.vocabulary, vec!["ms-booking".to_string()]);
         assert_eq!(merged.profile.name, "Sam");
+    }
+
+    #[test]
+    fn toml_equipe_sans_choix_de_securite() {
+        let cur = Settings::default();
+        let t = "[agent]\nallow_api_key = true\nmax_parallel = 3\n[updates]\nauto_install = true\n";
+        let merged = cur.merge_team_toml(t).unwrap();
+        assert!(!merged.agent.allow_api_key, "un TOML d'équipe n'active pas les clés d'API");
+        assert!(!merged.updates.auto_install, "ni l'installation automatique");
+        assert_eq!(merged.agent.max_parallel, 3, "le reste est appliqué");
+        let mut mine = Settings::default();
+        mine.agent.allow_api_key = true;
+        assert!(mine.merge_team_toml("[agent]\nallow_api_key = false\n").unwrap().agent.allow_api_key, "choix de l'utilisateur conservé");
+    }
+
+    #[test]
+    fn toml_equipe_sans_changer_les_agents_ni_les_exclusions() {
+        let mut cur = Settings::default();
+        cur.agent.provider = "codex".into();
+        cur.agent.tiers.summary.agent = "claude-code".into();
+        cur.privacy.excluded_titles = vec!["Point RH".into()];
+        cur.privacy.consent_reminder = true;
+        let t = "[agent]\nprovider = \"custom\"\n[agent.tiers.summary]\nagent = \"custom\"\nmodel = \"m\"\n\
+                 [privacy]\nexcluded_titles = [\"Comité\"]\nconsent_reminder = false\n\
+                 [correlation]\nmode = \"auto\"\n[profile]\nrole = \"Dev\\n## Consigne glissée\"\nteam = \"A\\r\\nB\"\n";
+        let m = cur.merge_team_toml(t).unwrap();
+        assert_eq!(m.agent.provider, "codex");
+        assert_eq!(m.agent.tiers.summary.agent, "claude-code");
+        assert_eq!(m.agent.tiers.summary.model, "", "modèle d'un autre agent jamais appliqué");
+        assert_eq!(m.privacy.excluded_titles, ["Point RH", "Comité"], "exclusions ajoutées, jamais retirées");
+        assert!(m.privacy.consent_reminder);
+        assert_eq!(m.correlation.mode, "on_demand", "corrélation automatique jamais activée par un import");
+        assert_eq!(m.profile.role, "Dev ## Consigne glissée");
+        assert_eq!(m.profile.team, "A B");
+        let m = cur.merge_team_toml("[correlation]\nexclude_words = [\"budget\"]\n").unwrap();
+        assert!(m.correlation.exclude_words.iter().any(|w| w == "RH") && m.correlation.exclude_words.iter().any(|w| w == "budget"));
+        assert!(cur.merge_team_toml("[correlation]\nexclude_words = []\n").unwrap().correlation.exclude_words.contains(&"1:1".to_string()));
+        cur.correlation.mode = "auto".into();
+        assert_eq!(cur.merge_team_toml("[correlation]\nmode = \"off\"\n").unwrap().correlation.mode, "off");
+    }
+
+    #[test]
+    fn toml_equipe_modele_retention_et_navigateur() {
+        // Exporté depuis Claude Code, importé par un utilisateur de Codex.
+        let mut cur = Settings::default();
+        cur.agent.provider = "codex".into();
+        cur.agent.tiers.summary.model = "gpt-5".into();
+        let t = "[agent]\nprovider = \"claude-code\"\n[agent.tiers.summary]\nmodel = \"opus\"\neffort = \"max\"\n";
+        let m = cur.merge_team_toml(t).unwrap();
+        assert_eq!((m.agent.provider.as_str(), m.agent.tiers.summary.model.as_str(), m.agent.tiers.summary.effort.as_str()), ("codex", "gpt-5", ""));
+        // Même agent : le choix de l'équipe s'applique.
+        cur.agent.provider = "claude-code".into();
+        let m = cur.merge_team_toml(t).unwrap();
+        assert_eq!((m.agent.tiers.summary.model.as_str(), m.agent.tiers.summary.effort.as_str()), ("opus", "max"));
+
+        let mut cur = Settings::default();
+        cur.privacy.transcript_retention_days = Some(90);
+        let m = cur.merge_team_toml("[privacy]\naudio_retention_days = 30\n").unwrap();
+        assert_eq!((m.privacy.audio_retention_days, m.privacy.transcript_retention_days), (0, Some(90)), "jamais plus longue");
+        let m = cur.merge_team_toml("[privacy]\ntranscript_retention_days = 30\n").unwrap();
+        assert_eq!(m.privacy.transcript_retention_days, Some(30), "plus courte : appliquée");
+        cur.privacy.audio_retention_days = 7;
+        assert_eq!(cur.merge_team_toml("[privacy]\naudio_retention_days = 0\n").unwrap().privacy.audio_retention_days, 0);
+
+        let mut team = Settings::default();
+        team.audio.call_apps.iter_mut().filter(|a| a.browser).for_each(|a| a.enabled = true);
+        assert!(team.audio.call_apps.iter().any(|a| a.browser && a.enabled));
+        let m = Settings::default().merge_team_toml(&toml::to_string(&team).unwrap()).unwrap();
+        assert!(!m.audio.call_apps.iter().any(|a| a.browser && a.enabled), "capture du navigateur jamais activée par un import");
+    }
+
+    #[test]
+    fn niveau_de_reflexion_valide() {
+        assert!(valid_effort("high") && valid_effort("x-high_2"));
+        for e in ["", "High", "high\"", "high value", "a=b", "é", "x".repeat(21).as_str()] {
+            assert!(!valid_effort(e), "{e:?}");
+        }
+        let mut s = Settings::default();
+        s.agent.tiers.summary.effort = " MAX ".into();
+        assert_eq!(s.validated().unwrap().agent.tiers.summary.effort, "max");
+        let mut s = Settings::default();
+        s.agent.tiers.search.effort = "high\"\nsandbox_mode=\"danger-full-access".into();
+        assert!(s.validated().is_err());
+        let t = "[agent.tiers.quick]\neffort = \"low\\\"\\nx=\\\"y\"\n";
+        assert!(Settings::default().merge_team_toml(t).is_err(), "TOML d'équipe validé aussi");
     }
 
     #[test]

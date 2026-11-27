@@ -122,9 +122,14 @@ static TABLE: &[(&str, &str)] = &[
     ("impossible de lancer l'agent", "cannot start the agent"),
     ("{} : délai dépassé", "{}: timed out"),
     ("{} a échoué (code {}) : {}", "{} failed (code {}): {}"),
+    (
+        "crochet de politique indisponible : exécution de Claude Code refusée",
+        "policy hook unavailable: Claude Code run refused",
+    ),
     // ------------------------------------------------------------ db/
     ("impossible de créer {}", "cannot create {}"),
     ("impossible d'ouvrir la base {}", "cannot open database {}"),
+    ("impossible d'ouvrir la base {} en lecture", "cannot open database {} for reading"),
     ("sauvegarde avant migration", "backup before migration"),
     ("migration de la base", "database migration"),
     // ------------------------------------------------------------ permissions.rs
@@ -159,6 +164,7 @@ static TABLE: &[(&str, &str)] = &[
     ("motif des clés Jira invalide", "invalid Jira key pattern"),
     ("TOML invalide", "invalid TOML"),
     ("réglages importés invalides", "invalid imported settings"),
+    ("niveau de réflexion invalide : {}", "invalid reasoning level: {}"),
     // ------------------------------------------------------------ jobs.rs
     ("type de tâche inconnu : {}", "unknown job type: {}"),
     ("request_id manquant", "missing request_id"),

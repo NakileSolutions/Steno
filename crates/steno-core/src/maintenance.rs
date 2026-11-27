@@ -45,7 +45,7 @@ pub fn daily_backup(inner: &Inner) -> Result<()> {
         return Ok(());
     }
     let dir = crate::paths::backups_dir();
-    std::fs::create_dir_all(&dir)?;
+    crate::paths::create_private_dir(&dir)?;
     let name = format!("steno-{}.db", chrono::Local::now().format("%Y-%m-%d"));
     let dest = dir.join(&name);
     if !dest.exists() {

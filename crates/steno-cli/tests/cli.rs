@@ -152,15 +152,40 @@ fn crochet_de_politique() {
     });
     let pf = dir.join("p.json");
     std::fs::write(&pf, pol.to_string()).unwrap();
-    let run = |call: serde_json::Value| -> (i32, String) {
-        let mut c = steno(h).args(["policy-hook", pf.to_str().unwrap()]).stdin(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
-        c.stdin.take().unwrap().write_all(call.to_string().as_bytes()).unwrap();
-        let mut err = String::new();
+    let run_raw = |policy: &Path, input: &str| -> (i32, String, String) {
+        let mut c = steno(h)
+            .args(["policy-hook", policy.to_str().unwrap()])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        c.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+        let (mut out, mut err) = (String::new(), String::new());
+        c.stdout.take().unwrap().read_to_string(&mut out).unwrap();
         c.stderr.take().unwrap().read_to_string(&mut err).unwrap();
-        (c.wait().unwrap().code().unwrap(), err)
+        (c.wait().unwrap().code().unwrap(), out, err)
+    };
+    let run = |call: serde_json::Value| -> (i32, String) {
+        let (code, _, err) = run_raw(&pf, &call.to_string());
+        (code, err)
     };
     let cwd = dir.display().to_string();
-    assert_eq!(run(serde_json::json!({"tool_name":"Bash","tool_input":{"command":"rg -n creneau"},"cwd":cwd})).0, 0);
+    let (code, out, _) = run_raw(&pf, &serde_json::json!({"tool_name":"Bash","tool_input":{"command":"rg -n creneau"},"cwd":cwd}).to_string());
+    assert_eq!((code, out.as_str()), (0, ""), "autorisé : code 0, rien sur la sortie standard");
+    for cmd in ["git log -p", "git diff", "grep -A2 -rn creneau .", "ls | grep x", "rg -o 'APP-[0-9]+'"] {
+        assert_eq!(run(serde_json::json!({"tool_name":"Bash","tool_input":{"command":cmd},"cwd":cwd})).0, 0, "{cmd}");
+    }
+    // Toute erreur est un refus bloquant (code 2), jamais un code que l'agent ignorerait.
+    assert_eq!(run_raw(&dir.join("absente.json"), "{}").0, 2);
+    assert_eq!(run_raw(&pf, "pas du json").0, 2);
+    for cmd in ["git push", "rg --pre=sh x", "find . -delete", "rg x | sort -o y"] {
+        assert_eq!(run(serde_json::json!({"tool_name":"Bash","tool_input":{"command":cmd},"cwd":cwd})).0, 2, "{cmd}");
+    }
+    let mut c = steno(h).arg("policy-hook").stdin(Stdio::null()).status().unwrap();
+    assert_eq!(c.code(), Some(2), "sans fichier de politique");
+    c = steno(h).args(["policy-hook", pf.to_str().unwrap()]).stdin(Stdio::null()).status().unwrap();
+    assert_eq!(c.code(), Some(2), "entrée vide");
     assert_eq!(run(serde_json::json!({"tool_name":"mcp__atlassian__getJiraIssue","tool_input":{},"cwd":cwd})).0, 0);
     let (code, err) = run(serde_json::json!({"tool_name":"mcp__slack__slack_send_message","tool_input":{},"cwd":cwd}));
     assert_eq!(code, 2);

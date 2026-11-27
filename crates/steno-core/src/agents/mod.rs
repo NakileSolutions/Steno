@@ -119,6 +119,8 @@ pub struct RunRequest {
     pub effort: Option<String>,
     pub session: SessionMode,
     pub repos: Vec<PathBuf>,
+    /// Motifs exclus des dépôts (`Repo.exclude_globs`), appliqués par le crochet de politique.
+    pub exclude_globs: Vec<String>,
     pub tools: ToolAccess,
     pub max_tool_calls: u32,
     pub timeout: Duration,
@@ -218,7 +220,8 @@ pub async fn prepare_run_dir(
     instructions: &Instructions,
     policy: &ReadOnlyPolicy,
 ) -> Result<()> {
-    std::fs::create_dir_all(run_dir.join(".steno"))?;
+    crate::paths::create_private_dir(&run_dir.join(".steno"))?;
+    crate::paths::create_private_dir(run_dir)?;
     adapter.sync_instructions(run_dir, instructions).await?;
     adapter.apply_policy(policy, run_dir).await?;
     Ok(())
@@ -237,7 +240,7 @@ pub fn write_run_policy(req: &RunRequest) -> Result<ReadOnlyPolicy> {
         ToolAccess::None => (false, vec![]),
         ToolAccess::ReadOnly { connectors } => (true, connectors.clone()),
     };
-    std::fs::create_dir_all(req.run_dir.join(".steno"))?;
+    crate::paths::create_private_dir(&req.run_dir.join(".steno"))?;
     let counter = req.run_dir.join(".steno").join(format!("count-{}", req.run_id));
     let _ = std::fs::remove_file(&counter);
     let p = ReadOnlyPolicy {
@@ -248,6 +251,7 @@ pub fn write_run_policy(req: &RunRequest) -> Result<ReadOnlyPolicy> {
         max_tool_calls: req.max_tool_calls,
         counter_file: Some(counter),
         allow_skills: req.skills && tools_enabled,
+        exclude_globs: req.exclude_globs.clone(),
     };
     p.write_to(&policy_file(&req.run_dir, &req.run_id))?;
     Ok(p)
@@ -307,10 +311,26 @@ pub fn parse_mcp_list(out: &str) -> Vec<McpServer> {
     v
 }
 
+/// Clés d'API retirées de l'environnement de tout agent (en plus des clés propres à chaque
+/// adaptateur), sauf autorisation explicite dans les réglages : leur seule présence fait passer
+/// un CLI de l'abonnement à la facturation à l'usage. Liste indicative, non exhaustive. Les
+/// identifiants de cloud (AWS, compte de service Google, Azure) restent : ils ne servent que si
+/// l'utilisateur a configuré Bedrock, Vertex ou Azure, et les retirer casserait ces installations.
+pub(crate) const SECRET_ENV: &[&str] = &[
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "OPENAI_API_KEY",
+    "CODEX_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "OPENROUTER_API_KEY",
+    "XAI_API_KEY",
+];
+
 /// Supprime des variables d'environnement (clés d'API) sauf autorisation explicite.
 pub(crate) fn strip_env(cmd: &mut tokio::process::Command, allow_api_key: bool, keys: &[&str]) {
     if !allow_api_key {
-        for k in keys {
+        for k in keys.iter().chain(SECRET_ENV) {
             cmd.env_remove(k);
         }
     }
@@ -425,6 +445,23 @@ mod tests {
         let v = parse_model_list("MODEL       CONTEXT\ngrok-4.7    2M\ngrok-4.5    256k\n");
         assert_eq!(v.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), ["grok-4.7", "grok-4.5"]);
         assert_eq!(v[0].name, "grok-4.7", "la taille de contexte n'est pas un nom");
+    }
+
+    #[test]
+    fn cles_d_api_retirees() {
+        let removed = |allow: bool| -> Vec<String> {
+            let mut c = tokio::process::Command::new("true");
+            strip_env(&mut c, allow, &["CLE_PROPRE_A_L_AGENT"]);
+            c.as_std().get_envs().filter(|(_, v)| v.is_none()).map(|(k, _)| k.to_string_lossy().to_string()).collect()
+        };
+        let r = removed(false);
+        for k in ["CLE_PROPRE_A_L_AGENT", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "XAI_API_KEY"] {
+            assert!(r.iter().any(|x| x == k), "{k} doit être retirée");
+        }
+        for k in ["AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "GOOGLE_APPLICATION_CREDENTIALS", "AZURE_OPENAI_API_KEY"] {
+            assert!(!r.iter().any(|x| x == k), "{k} reste (Bedrock, Vertex, Azure)");
+        }
+        assert!(removed(true).is_empty(), "clés autorisées dans les réglages");
     }
 
     #[test]

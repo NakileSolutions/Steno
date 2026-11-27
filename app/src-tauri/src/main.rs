@@ -3,12 +3,10 @@
 
 fn main() {
     // L'exécutable sert aussi de crochet « avant outil » pour les agents (politique lecture seule).
-    let args: Vec<String> = std::env::args().collect();
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
     if args.get(1).map(|a| a == "policy-hook").unwrap_or(false) {
-        let mut input = String::new();
-        let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
         let policy = args.get(2).map(std::path::PathBuf::from).unwrap_or_default();
-        std::process::exit(steno_core::policy::hook_main(&policy, &input));
+        std::process::exit(steno_core::policy::hook_entry(&policy));
     }
     steno_app_lib::run()
 }

@@ -176,6 +176,7 @@ mod tests {
             effort: Some("medium".into()),
             session: SessionMode::New("123e4567-e89b-12d3-a456-426614174000".into()),
             repos: vec![],
+            exclude_globs: vec![],
             tools: ToolAccess::ReadOnly { connectors: vec![] },
             max_tool_calls: 0,
             timeout: Duration::from_secs(5),

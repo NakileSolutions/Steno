@@ -142,6 +142,21 @@ impl Inner {
         })
     }
 
+    /// Motifs exclus (`Repo.exclude_globs`, un par ligne ou séparés par des virgules) des
+    /// dépôts lisibles d'une exécution.
+    fn exclude_globs_for(&self, repos: &[PathBuf]) -> Vec<String> {
+        let Ok(all) = self.db.list_repos() else { return vec![] };
+        let mut out: Vec<String> = vec![];
+        for r in all.iter().filter(|r| repos.iter().any(|p| p == std::path::Path::new(&r.path))) {
+            for g in r.exclude_globs.split(['\n', ',']).map(str::trim).filter(|g| !g.is_empty()) {
+                if !out.iter().any(|x| x == g) {
+                    out.push(g.to_string());
+                }
+            }
+        }
+        out
+    }
+
     fn meeting_lock(&self, key: &str) -> Arc<tokio::sync::Mutex<()>> {
         self.meeting_locks
             .lock()
@@ -220,6 +235,7 @@ impl Inner {
             session
         };
         let repos = repos.unwrap_or_default();
+        let exclude_globs = self.exclude_globs_for(&repos);
         let timeout = s.agent.timeout_for(tier);
         let req = RunRequest {
             run_dir,
@@ -229,6 +245,7 @@ impl Inner {
             effort: s.agent.effort_for(tier),
             session: session.clone(),
             repos,
+            exclude_globs,
             tools,
             max_tool_calls: budget,
             timeout,
@@ -891,9 +908,10 @@ impl Core {
                     prompt: crate::prompts::agent_test(),
                     tier: Tier::Quick,
                     model: model.filter(|m| !m.trim().is_empty()),
-                    effort: effort.filter(|e| !e.trim().is_empty()),
+                    effort: effort.map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()),
                     session: SessionMode::None,
                     repos: vec![],
+                    exclude_globs: vec![],
                     tools: ToolAccess::None,
                     max_tool_calls: 0,
                     timeout: std::time::Duration::from_secs(120),

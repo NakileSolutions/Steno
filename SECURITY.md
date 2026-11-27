@@ -51,10 +51,28 @@ Only the latest version of the main branch receives security fixes.
 - The agent runs read-only: write tools denied, shell commands limited to an allowlist, reads
   limited to the repositories you ticked.
 - For Claude Code, every tool call goes through a hook (`steno policy-hook`) that denies write
-  MCP tools (`*send*`, `*create*`, `*comment*`, `executeWrite`…).
+  MCP tools (`*send*`, `*create*`, `*comment*`, `executeWrite`…) and those of a server you did
+  not tick (exact name), options that run a program or write a file (`rg --pre`,
+  `find -exec` / `-delete`, `sort -o`, `git grep -O`, `git branch -d`…) or follow symbolic
+  links (`rg -L`, `grep -R`, `find -L`…), shell expansions and
+  redirections (`;`, `&`, `>`, `$`, `` ` ``, `(`…), and paths that leave the repositories once
+  symbolic links are resolved. Denial is exit code 2; an internal hook error also denies.
+  Without this hook, Claude Code is not started.
+- Files excluded in a repository's settings (`.env*`, `*.pem`…) are a filter on direct file
+  reads (a file that is read, named in a command or matched by a `Glob` pattern), not a
+  barrier: a recursive search or the Git history (`git log -p`, `git diff`) can still show
+  their content, shell wildcards (`*.pe?`, `key.pe[m]`) are not matched against them, and only
+  Claude Code applies them (Codex and OpenCode have no per-file filter).
+- A symbolic link committed inside a ticked repository that points outside it can still be
+  reached through a shell wildcard: only tick repositories you trust.
+- Data folders are mode 700; prompt and run settings files are mode 600.
 - An agent that cannot block its MCP tools has its connectors disabled.
-- API keys present in the environment are not passed to the agent (subscription only), unless
-  explicitly enabled in the settings.
+- API keys whose mere presence makes an agent bill the API instead of your subscription
+  (Anthropic, OpenAI, Gemini, xAI, OpenRouter, and OpenCode's providers) are not passed to the
+  agent, unless explicitly enabled in the settings; an imported team setting cannot enable
+  this. The list is best-effort. Cloud credentials (AWS, Google service account, Azure) are
+  left in place so Bedrock or Vertex setups keep working, and your custom command receives
+  your full environment.
 - Meeting content is always presented to the agent as **data**, never as instructions
   (protection against instruction injection by a participant).
 

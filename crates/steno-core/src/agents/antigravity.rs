@@ -141,6 +141,7 @@ mod tests {
             effort: Some("max".into()),
             session: SessionMode::Resume("c-1".into()),
             repos: vec![],
+            exclude_globs: vec![],
             tools: ToolAccess::None,
             max_tool_calls: 0,
             timeout: Duration::from_secs(5),

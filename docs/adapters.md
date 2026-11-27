@@ -24,6 +24,13 @@ Les options des CLI changent vite : à chaque mise à jour d'un agent, relancer
 - Les clés d'API présentes dans l'environnement (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
   `GEMINI_API_KEY`…) sont **retirées** de l'environnement de l'agent, sauf si « Autoriser
   l'utilisation d'une clé API » est coché : l'agent utilise donc l'abonnement du dev.
+- The removed list is best-effort: keys whose mere presence makes a CLI bill the API instead of
+  the subscription (OpenCode also loses its providers' keys). Cloud credentials (`AWS_*`,
+  `GOOGLE_APPLICATION_CREDENTIALS`, Azure) are kept, so Claude Code on Bedrock or Vertex keeps
+  working. The `custom` command receives the full environment.
+- Repository exclusions (`Repo.exclude_globs`) are enforced by the `PreToolUse` hook, so only
+  with Claude Code: Codex (read-only sandbox) and OpenCode can still read excluded files in a
+  ticked repository.
 - Le processus est lancé dans son propre groupe et tué entièrement au délai ou à l'annulation.
 - Niveaux : `quick` (note, récap, test), `search` (recherche croisée, corrélation, historique),
   `summary` (compte rendu). Modèle vide = modèle par défaut du CLI.
@@ -50,11 +57,15 @@ Lecture seule, en trois couches :
 2. `--disallowedTools` + `permissions.deny` (projet et `--settings`) : écriture, web, sous-agents.
 3. **Crochet `PreToolUse`** (`<exécutable Sténo> policy-hook <politique.json>`) appelé avant
    **chaque** outil : motifs MCP interdits, mots d'écriture dans le nom de l'outil
-   (`addOrEditJiraIssueComment`, `executeWrite`…), connecteurs non activés, commandes shell
-   hors liste (`;`, `>`, `$(`… refusés), chemins hors des dépôts cochés, budget d'appels
-   (15 en direct, 30 en corrélation). Code de sortie 2 = refus, raison renvoyée à l'agent.
+   (`addOrEditJiraIssueComment`, `executeWrite`…), connecteurs non activés (nom exact),
+   commandes shell hors liste (`;`, `>`, `$`, `(`… refusés), options qui lancent un programme
+   ou écrivent un fichier (`--pre`, `-exec`, `-delete`, `sort -o`, `git grep -O`…) ou qui
+   suivent les liens symboliques (`rg -L`, `grep -R`, `find -L`…), chemins hors des dépôts
+   cochés (liens symboliques résolus), fichiers exclus du dépôt lus directement,
+   budget d'appels (15 en direct, 30 en corrélation). Code de sortie 2 = refus, raison renvoyée
+   à l'agent ; 0 = autorisé. Toute erreur interne du crochet (panique comprise) sort en 2.
    Le crochet est le même binaire que l'app (`Steno.app/Contents/MacOS/steno-app policy-hook …`)
-   ou la CLI (`steno policy-hook …`).
+   ou la CLI (`steno policy-hook …`). Sans exécutable de crochet, Claude Code n'est pas lancé.
 
 Sortie : `system/init` (session, modèle), `assistant` (`tool_use` → outils utilisés), `user`
 (`tool_result` en erreur → outil refusé, retiré de `tools_used`), `result` (réponse finale).
@@ -132,12 +143,14 @@ refusés ; aucun serveur MCP n'est autorisé. Sortie `{"response": …, "stats":
 ## `opencode` (expérimental)
 
 ```
-opencode run --format json [-m fournisseur/modèle] [--session <id>] "<invite>"
+opencode run --format json --agent steno-lecture|steno-sans-outil [-m fournisseur/modèle]
+             [--session <id>] "<consigne courte>"     # invite sur stdin
 ```
 
 `opencode.json` dans le dossier d'exécution : `edit` et `webfetch` refusés, `bash` refusé
-sauf les commandes de lecture de `agent/policy.toml`. Sortie JSON en flux (parties `text`)
-ou texte brut.
+sauf les commandes de lecture de `agent/policy.toml`, tous les autres outils (MCP compris)
+coupés par `"*": false`. Agent `steno-sans-outil` (aucun outil) pour les tâches sans outil,
+`steno-lecture` pour les recherches. Sortie JSON en flux (parties `text`) ou texte brut.
 
 ## `custom`
 
