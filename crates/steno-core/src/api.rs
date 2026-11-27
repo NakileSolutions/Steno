@@ -19,7 +19,7 @@ pub const COMMANDS: &[&str] = &[
     "add_repo", "update_repo", "remove_repo", "pick_folder", "check_wake_word", "generate_variants",
     "check_variants", "wake_detect", "wake_test_record", "doctor", "delete_all_data", "log_ui_error",
     "get_permissions", "request_permission", "open_permission_settings", "complete_onboarding",
-    "delete_segment", "set_mic_muted", "save_export", "print_window", "pause_meeting", "resume_meeting",
+    "delete_segment", "set_mic_muted", "save_export", "print_window", "open_main", "pause_meeting", "resume_meeting",
     "get_meeting_context", "set_meeting_context", "add_context_file", "delete_context_file", "list_report_templates", "template_from_example",
     "steno_skill_status", "install_steno_skill",
     "report_now", "get_update_status", "check_update", "install_update", "restart_app",
@@ -63,7 +63,7 @@ async fn run(core: &Core, cmd: &str, args: Value) -> Result<Value, String> {
     match cmd {
         "live_state" => ok(core.live_state()),
         "start_meeting" => ok(core
-            .start_meeting_with(a.opt("title")?, a.opt("in_person")?.unwrap_or(false))
+            .start_meeting_with(a.opt("title")?, a.opt("inPerson")?.unwrap_or(false))
             .await
             .map_err(e)?),
         "stop_meeting" => ok(core.stop_meeting().await.map_err(e)?),
@@ -134,9 +134,9 @@ async fn run(core: &Core, cmd: &str, args: Value) -> Result<Value, String> {
             let format: Option<String> = a.opt("format")?;
             ok(core.export_meeting_as(&a.s("id")?, format.as_deref().unwrap_or("markdown")).map_err(e)?)
         }
-        // Fenêtre d'enregistrement et impression : seulement dans l'app (l'interface web
-        // télécharge le fichier ou appelle `window.print()` elle-même).
-        "save_export" | "print_window" => ok(Value::Null),
+        // Save dialog, printing and showing the main window: app only (the web UI downloads
+        // the file, calls `window.print()` or navigates by itself).
+        "save_export" | "print_window" | "open_main" => ok(Value::Null),
         "search" => ok(db.search(&a.s("query")?, 100).map_err(e)?),
         "list_actions" => ok(db.list_actions(&a.opt::<ActionFilter>("filter")?.unwrap_or_default()).map_err(e)?),
         "set_action_status" => {
@@ -249,5 +249,23 @@ mod tests {
         assert_eq!(s["voice"]["wake_word"], "Sténo");
         let d = dispatch(&core, "wake_detect", json!({"text": "Sténo, arrête l'écoute"})).await.unwrap();
         assert_eq!(d["intent"], "stop");
+    }
+
+    /// Saving settings notifies every window (`steno://settings`): the menu bar panel and the
+    /// native menu follow the language, wake word and shortcuts.
+    #[tokio::test]
+    async fn saving_settings_broadcasts_steno_settings() {
+        let core = Core::new(crate::Db::open_in_memory().unwrap(), Default::default()).unwrap();
+        let mut rx = core.subscribe();
+        let mut s = core.settings();
+        s.voice.wake_word = "Greffier".into();
+        dispatch(&core, "save_settings", json!({ "settings": s })).await.unwrap();
+        loop {
+            let ev = rx.try_recv().expect("steno://settings event expected");
+            if let Some(("steno://settings", payload)) = ev.to_wire() {
+                assert_eq!(payload["voice"]["wake_word"], "Greffier");
+                break;
+            }
+        }
     }
 }

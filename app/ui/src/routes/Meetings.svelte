@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { api, onEvent } from '../lib/api';
   import { router, href } from '../lib/router.svelte';
   import type { MeetingFilter, MeetingSummary, Upcoming } from '../lib/types';
@@ -59,9 +59,10 @@
   const loadSoon = debounce(load, 180);
 
   $effect(() => {
-    // Recharge à chaque changement de filtre (la requête texte avec anti-rebond).
+    // Reload on every filter change. The text query is not part of it: it goes through the
+    // debounce (`loadSoon`), otherwise every keystroke would run one more search.
     void [period, from, to, correlated, openActions];
-    load();
+    untrack(load);
   });
 
   // ---- À venir : réunions prévues et calendrier ----

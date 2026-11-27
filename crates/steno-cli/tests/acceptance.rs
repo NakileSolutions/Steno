@@ -686,3 +686,15 @@ async fn installation_hors_moteur_asynchrone_sans_plantage() {
     assert!(res.unwrap_err().to_string().contains("hors du moteur asynchrone"));
     c.shutdown();
 }
+
+/// "In-person meeting" from the UI: the `inPerson` argument is camelCase, as the Tauri command
+/// (`in_person: Option<bool>`) expects. The HTTP dispatcher must read the same name, otherwise
+/// the e2e tests hide a regression in the app.
+#[tokio::test(flavor = "multi_thread")]
+async fn in_person_meeting_through_dispatcher() {
+    let c = core("presentiel", None);
+    let m = steno_core::api::dispatch(&c, "start_meeting", serde_json::json!({ "inPerson": true })).await.unwrap();
+    assert_eq!(m["call_app"], "room", "{m}");
+    c.stop_meeting().await.unwrap();
+    c.shutdown();
+}

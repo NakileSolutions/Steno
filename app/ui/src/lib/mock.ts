@@ -531,7 +531,7 @@ export function createMockBackend(): Backend {
       if (due) {
         due.meeting.status = 'live';
         due.meeting.started_at = iso(start);
-        due.meeting.call_app = a.in_person ? 'room' : live.call.active ? live.call.app : null;
+        due.meeting.call_app = a.inPerson ? 'room' : live.call.active ? live.call.app : null;
         scriptPos = 0;
         live.state = 'listening';
         emitLive();
@@ -540,11 +540,11 @@ export function createMockBackend(): Backend {
       }
       const id = `reunion-${start.getTime()}`;
       const meeting: Meeting = {
-        id, title: (a.title as string) || (!a.in_person && live.call.active && live.call.title) || (a.in_person ? 'Réunion en présentiel' : 'Réunion'),
-        title_source: a.title ? 'user' : !a.in_person && live.call.active && live.call.title ? 'call_window' : null,
+        id, title: (a.title as string) || (!a.inPerson && live.call.active && live.call.title) || (a.inPerson ? 'Réunion en présentiel' : 'Réunion'),
+        title_source: a.title ? 'user' : !a.inPerson && live.call.active && live.call.title ? 'call_window' : null,
         started_at: iso(start), ended_at: null, status: 'live', confidential: false,
         agent_provider: settings.agent.provider, correlation: settings.correlation.mode,
-        call_app: a.in_person ? 'room' : live.call.active ? live.call.app : null,
+        call_app: a.inPerson ? 'room' : live.call.active ? live.call.app : null,
       };
       meetings.unshift({ meeting, segments: [], speakers: [{ label: 'Moi', display_name: null }], notes: [], requests: [], reports: [], refs: [], decisions: [], actions: [], drafts: [] });
       scriptPos = 0;
@@ -712,6 +712,7 @@ export function createMockBackend(): Backend {
     },
     save_export: () => null,
     print_window: () => null,
+    open_main: () => null,
     pause_meeting: () => {
       if (live.state !== 'listening') throw 'Aucune écoute en cours.';
       live.state = 'paused';
@@ -780,6 +781,7 @@ export function createMockBackend(): Backend {
       }
       storeSettings(settings);
       forgetDisabledCall();
+      emit('steno://settings', clone(settings));
       return clone(settings);
     },
     export_settings: () => toToml(settings),
@@ -787,6 +789,7 @@ export function createMockBackend(): Backend {
       settings = fromToml(String(a.toml));
       storeSettings(settings);
       forgetDisabledCall();
+      emit('steno://settings', clone(settings));
       return clone(settings);
     },
     detect_agents: () => clone(agents),
@@ -949,7 +952,7 @@ export function createMockBackend(): Backend {
       const s = find(String(a.id));
       if (s.meeting.status !== 'planned') throw 'Cette réunion n’est pas une réunion prévue.';
       s.meeting.started_at = iso(new Date());
-      return handlers.start_meeting({ in_person: !!a.inPerson });
+      return handlers.start_meeting({ inPerson: !!a.inPerson });
     },
     get_participants: (a) => clone(participants.get(String(a.id)) ?? []),
     set_participants: (a) => {

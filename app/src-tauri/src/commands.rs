@@ -244,7 +244,7 @@ pub fn restart_app(app: AppHandle, st: State<'_, AppState>) -> R<()> {
     if st.core.db().live_meeting().map_err(er)?.is_some() {
         return Err(e("une réunion est en cours : redémarrez après la réunion"));
     }
-    st.core.shutdown();
+    crate::shutdown_core(&app);
     app.restart();
 }
 
@@ -311,6 +311,13 @@ pub async fn save_export(app: AppHandle, st: State<'_, AppState>, id: String, fo
 #[tauri::command]
 pub fn print_window(window: tauri::WebviewWindow) -> R<()> {
     window.print().map_err(e)
+}
+
+/// Shows the main window (and the Dock icon) and opens `route` in it. Called by the menu bar
+/// panel, which cannot change the app's activation policy on its own.
+#[tauri::command]
+pub fn open_main(app: AppHandle, route: Option<String>) {
+    crate::tray::show_main(&app, route.as_deref());
 }
 
 #[tauri::command]

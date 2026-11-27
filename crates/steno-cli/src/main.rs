@@ -421,7 +421,7 @@ fn log_event(ev: &CoreEvent) {
         CoreEvent::Notify { title, body, .. } => println!("🔔 {title} — {body}"),
         CoreEvent::CommandDetected { .. } => println!("🔔 commande vocale détectée"),
         CoreEvent::Update(u) => println!("⬆ mise à jour : {} {}", u.state, u.message.clone().unwrap_or_default()),
-        CoreEvent::Live(_) | CoreEvent::MeetingsChanged | CoreEvent::SegmentDeleted { .. } => {}
+        CoreEvent::Live(_) | CoreEvent::MeetingsChanged | CoreEvent::SegmentDeleted { .. } | CoreEvent::SettingsChanged(_) => {}
     }
 }
 
