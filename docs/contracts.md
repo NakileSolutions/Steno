@@ -13,7 +13,7 @@ Sommaire :
 7. Backend HTTP (`scribe serve`) : tests e2e et développement sans Tauri
 
 > **Règle produit** : l'écoute ne démarre **jamais** automatiquement et ne s'arrête **jamais**
-> automatiquement. Un appel Teams détecté donne au plus une notification qui propose de
+> automatiquement. Un appel détecté (Teams, Slack, Zoom…) donne au plus une notification qui propose de
 > démarrer ; l'arrêt se fait par l'utilisateur (menu de la barre d'état, raccourci, app) ou à
 > la voix (« Scribe, arrête l'écoute », intention `stop`).
 
@@ -77,6 +77,7 @@ inconnus (compatibilité ascendante).
 ```json
 {"type":"ready","version":"0.1.0","asr":"parakeet-tdt-v3"}
 {"type":"permissions","microphone":"granted","system_audio":"unknown","accessibility":"denied"}
+{"type":"call","active":true,"app":"slack","title":"Huddle dans #equipe-flotte"}
 {"type":"teams_call","active":true,"title":"Daily ORION"}
 {"type":"segment","ts":"2026-11-26T10:41:12+01:00","t0":668.2,"t1":672.9,"channel":"me","text":"Scribe, cherche…","private":false}
 {"type":"level","me":-32.5,"them":-24.1}
@@ -91,14 +92,20 @@ inconnus (compatibilité ascendante).
   et en réponse à `{"cmd":"permissions"}`.
 - `t0` / `t1` : secondes depuis le `start` (horloge de la session de capture).
 - `segment.private` : `true` pendant un aparté (seulement pour `channel = "me"`).
-- `teams_call.title` peut être `null` (accessibilité refusée).
+- `call` : un appel commence ou se termine dans une app surveillée (voir `watch`). `app` est
+  l'identifiant de l'app (`teams`, `slack`, `zoom`…) ; `title` peut être `null`
+  (accessibilité refusée ou titre introuvable). Un événement par app : plusieurs appels
+  peuvent être actifs en même temps.
+- `teams_call` : **ancien format**, toujours accepté par le cœur ; équivaut à
+  `{"type":"call","app":"teams",…}`.
 - Codes d'erreur : `mic_denied`, `system_audio_denied`, `tap_failed`, `device_changed`,
   `asr_failed`, `model_missing`, `bad_command`.
 
 ### Cœur → sidecar
 
 ```json
-{"cmd":"start","vocabulary":["Scribe","Atlas"],"silence_ms":1000,"keep_audio":false,"audio_dir":"/…/Caches/Scribe/<meeting_id>"}
+{"cmd":"watch","apps":[{"id":"teams","name":"Microsoft Teams","bundles":["com.microsoft.teams2","com.microsoft.teams"]},{"id":"slack","name":"Slack","bundles":["com.tinyspeck.slackmacgap"]}]}
+{"cmd":"start","vocabulary":["Scribe","Atlas"],"silence_ms":1000,"keep_audio":false,"audio_dir":"/…/Caches/Scribe/<meeting_id>","apps":["slack"]}
 {"cmd":"stop"}
 {"cmd":"aside","on":true}
 {"cmd":"wake_test","seconds":8}
@@ -107,17 +114,24 @@ inconnus (compatibilité ascendante).
 {"cmd":"shutdown"}
 ```
 
+- `watch` : liste des apps de visio à surveiller (identifiant, nom, préfixes de bundle ;
+  un processus dont le bundle **commence par** un préfixe appartient à l'app, auxiliaires
+  compris). Envoyé par le cœur juste après `ready` puis à chaque changement de réglages.
+  Avant le premier `watch`, le sidecar surveille seulement Teams.
+- `start.apps` : identifiants des apps dont le son est capté (canal `them`) — l'app de
+  l'appel en cours si le cœur en connaît une, sinon toutes les apps surveillées. Absent ou
+  vide = toutes les apps surveillées.
 - `start.keep_audio` : si `true` (diarisation ou rétention > 0), le sidecar écrit
   `them.wav` (et `me.wav`) dans `audio_dir` ; sinon aucun fichier audio n'est écrit.
 - `diarize` : le sidecar lit `them.wav` et répond par `diarization` (ou `error`).
   Le cœur attribue ensuite `Eux-1`, `Eux-2`… aux segments `them` selon le chevauchement.
-- Sans `start`, le sidecar ne capture rien mais continue de surveiller Teams et émet
-  `teams_call`. Le cœur n'en déduit **jamais** un démarrage : il met à jour
-  `LiveState.teams_call` et, si `audio.auto_detect_teams`, envoie une notification.
-- La fin de l'appel (`teams_call` avec `active: false`) n'arrête pas l'écoute.
+- Sans `start`, le sidecar ne capture rien mais continue de surveiller les apps et émet
+  `call`. Le cœur n'en déduit **jamais** un démarrage : il met à jour `LiveState.call` et,
+  si `audio.auto_detect_calls`, envoie une notification (« Appel Slack détecté… »).
+- La fin de l'appel (`call` avec `active: false`) n'arrête pas l'écoute.
 
 Simulateur : `scribe replay <fixture.jsonl> [--speed N] [--exit]` parle exactement ce protocole
-(il rejoue un fichier d'exemple). Comme le vrai sidecar, il annonce l'appel Teams tout de
+(il rejoue un fichier d'exemple). Comme le vrai sidecar, il annonce l'appel (Teams ou autre) tout de
 suite mais n'envoie les phrases qu'après `start` ; `stop` met le rejeu en pause. Il permet de
 tester l'app et le cœur sans Mac.
 
@@ -210,7 +224,16 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
     "feedback": "system"
   },
   "audio": {
-    "auto_detect_teams": true,
+    "auto_detect_calls": true,
+    "call_apps": [
+      { "id": "teams", "name": "Microsoft Teams", "bundles": ["com.microsoft.teams2", "com.microsoft.teams"], "enabled": true, "browser": false },
+      { "id": "slack", "name": "Slack", "bundles": ["com.tinyspeck.slackmacgap"], "enabled": true, "browser": false },
+      { "id": "zoom", "name": "Zoom", "bundles": ["us.zoom.xos"], "enabled": true, "browser": false },
+      { "id": "webex", "name": "Webex", "bundles": ["Cisco-Systems.Spark", "com.cisco.webexmeetingsapp", "com.webex.meetingmanager"], "enabled": true, "browser": false },
+      { "id": "discord", "name": "Discord", "bundles": ["com.hnc.Discord"], "enabled": true, "browser": false },
+      { "id": "facetime", "name": "FaceTime", "bundles": ["com.apple.FaceTime"], "enabled": true, "browser": false },
+      { "id": "browser", "name": "Navigateur (Google Meet…)", "bundles": ["com.google.Chrome", "com.apple.Safari", "company.thebrowser.Browser", "com.microsoft.edgemac", "org.mozilla.firefox", "com.brave.Browser"], "enabled": false, "browser": true }
+    ],
     "silence_ms": 1000,
     "vocabulary": [],
     "end_grace_s": 60,
@@ -224,8 +247,12 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
 ```
 
 - `voice.feedback` : `none | system | headset`.
-- `audio.auto_detect_teams` : proposer (notification) de démarrer l'écoute quand un appel
-  Teams commence. `audio.end_grace_s` : obsolète, ignoré.
+- `audio.auto_detect_calls` (ancien nom accepté : `auto_detect_teams`) : proposer
+  (notification) de démarrer l'écoute quand un appel commence dans une app surveillée.
+- `audio.call_apps` : apps de visio surveillées. L'utilisateur peut en ajouter (identifiant
+  libre en minuscules, nom, préfixes de bundle). `browser: true` signale qu'on capte **tout**
+  le son du navigateur (autres onglets compris) : désactivé par défaut, avec avertissement.
+  `audio.end_grace_s` : obsolète, ignoré.
 - `correlation.mode` : `off | on_demand | auto`.
 - Import/export TOML : mêmes sections, **sans** `profile.name`, `privacy.auto_export_dir`,
   ni dépôts (aucun chemin, aucune donnée personnelle).
@@ -244,7 +271,8 @@ type Channel = "me" | "them";
 type Meeting = { id: string; title: string | null; title_source: string | null;
   started_at: string; ended_at: string | null;
   status: "live" | "ended" | "processing" | "done" | "error";
-  confidential: boolean; agent_provider: string | null; correlation: "off" | "on_demand" | "auto" };
+  confidential: boolean; agent_provider: string | null; correlation: "off" | "on_demand" | "auto";
+  call_app: string | null /* identifiant de l'app de l'appel (teams, slack…), null si démarrage sans appel */ };
 type MeetingSummary = Meeting & { correlated: boolean; open_actions: number;
   segment_count: number; snippet: string | null };
 type Segment = { id: number; meeting_id: string; seq: number; ts: string; t0: number | null; t1: number | null;
@@ -275,7 +303,7 @@ type LiveState = { state: "idle" | "listening" | "paused" | "processing";
   meeting: Meeting | null; levels: { me: number; them: number }; aside: boolean;
   sidecar: "running" | "starting" | "stopped" | "missing" | "error"; last_error: string | null;
   pending_requests: number;
-  teams_call: { active: boolean; title: string | null } };
+  call: { active: boolean; app: string | null; app_name: string | null; title: string | null } };
 type AgentInfo = { id: string; name: string; support: "supported" | "experimental" | "generic";
   installed: boolean; version: string | null; error: string | null;
   capabilities: { resume_session: boolean; stream_json: boolean; read_only_files: boolean;
@@ -297,7 +325,7 @@ type Settings = /* section 4 */;
 | Commande | Arguments | Retour |
 |---|---|---|
 | `live_state` | — | `LiveState` |
-| `start_meeting` | `title?: string` (sans titre : titre de la fenêtre Teams si un appel est en cours) | `Meeting` |
+| `start_meeting` | `title?: string` (sans titre : titre de l'appel en cours s'il y en a un ; le son capté est celui de cette app) | `Meeting` |
 | `stop_meeting` | — | `null` |
 | `set_aside` | `on: boolean` | `null` |
 | `set_live_confidential` | `on: boolean` | `null` |

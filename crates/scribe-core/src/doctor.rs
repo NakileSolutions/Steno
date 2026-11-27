@@ -71,13 +71,36 @@ pub async fn run(core: &Core, live_policy_test: bool) -> Vec<DoctorItem> {
             )),
             None => v.push(item("macOS", "warn", "version inconnue", None)),
         }
-        let teams = ["/Applications/Microsoft Teams.app", "/Applications/Microsoft Teams (work or school).app"]
-            .iter()
-            .any(|p| std::path::Path::new(p).exists());
-        v.push(if teams {
-            item("Teams", "ok", "Microsoft Teams est installé", None)
+        // Apps de visio surveillées : lesquelles sont installées (recherche Spotlight par bundle).
+        let audio = core.settings().audio;
+        let (mut found, mut missing) = (vec![], vec![]);
+        for app in audio.call_apps.iter().filter(|a| a.enabled) {
+            let installed = app.bundles.iter().any(|b| {
+                std::process::Command::new("mdfind")
+                    .arg(format!("kMDItemCFBundleIdentifier == '{b}'"))
+                    .output()
+                    .map(|o| !String::from_utf8_lossy(&o.stdout).trim().is_empty())
+                    .unwrap_or(false)
+            });
+            if installed {
+                found.push(app.name.clone());
+            } else {
+                missing.push(app.name.clone());
+            }
+        }
+        v.push(if found.is_empty() {
+            item(
+                "Apps de visio",
+                "warn",
+                "aucune app de visio surveillée n'est installée",
+                Some("Réglages → Audio & transcription → Apps de visio."),
+            )
         } else {
-            item("Teams", "warn", "Microsoft Teams introuvable dans /Applications", Some("Installer le nouveau Teams."))
+            let mut msg = format!("surveillées et installées : {}", found.join(", "));
+            if !missing.is_empty() {
+                msg.push_str(&format!(" (absentes : {})", missing.join(", ")));
+            }
+            item("Apps de visio", "ok", msg, None)
         });
     } else {
         v.push(item("Système", "warn", "hors macOS : capture audio indisponible (mode simulation possible)", None));

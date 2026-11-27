@@ -18,6 +18,10 @@ Trois choses n'ont **jamais tourné** :
 C'est l'objet de la phase 0 (`docs/spikes.md`), à faire en premier sur un Mac.
 
 Règles produit ajoutées après le plan initial (appliquées partout) :
+0. **Multi-apps** : la détection d'appel couvre une liste d'apps réglable (`audio.call_apps` :
+   Teams, Slack, Zoom, Webex, Discord, FaceTime ; navigateur pour Google Meet, désactivé par
+   défaut). Le cœur envoie la liste au sidecar (`watch`), le sidecar émet `call` par app, et
+   `start.apps` indique l'app dont on capte le son. La réunion garde `call_app`.
 1. **L'écoute ne démarre jamais automatiquement.**
    - Un appel Teams détecté donne au plus une notification « Appel Teams détecté — démarrer l'écoute ? ».
    - On démarre l'écoute depuis l'icône de la barre d'état macOS (menu natif), le raccourci ⌃⌥S, ou l'app.
@@ -128,7 +132,7 @@ Sur Mac, pour les e2e : `cd app/ui && npx playwright install chromium` une fois.
    - initialiseurs de `CATapDescription` ;
    - code d'erreur quand l'audio système est refusé.
 2. **S4** (Mac pro, MDM) : si l'audio système est bloqué, arrêter et prévenir.
-3. **S1** : capture Teams **lancée depuis Scribe.app**, pour vérifier que la permission couvre le sidecar. Plan B : capture en Rust dans le processus principal (`objc2-core-audio`), avec le même protocole.
+3. **S1** : capture Teams, puis **Slack (huddle) et Zoom**, **lancée depuis Scribe.app**, pour vérifier que la permission couvre le sidecar. Plan B : capture en Rust dans le processus principal (`objc2-core-audio`), avec le même protocole.
 4. **S2** : qualité de la transcription en français et latence (< 1 s par phrase).
 5. **S3** : `scribe doctor --live` avec le vrai Claude Code puis Codex :
    - les connecteurs du compte sont-ils disponibles en `-p` ?

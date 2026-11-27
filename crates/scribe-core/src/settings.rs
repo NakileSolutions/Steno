@@ -161,12 +161,74 @@ impl Default for Shortcuts {
     }
 }
 
+/// App de visio surveillée (appel détecté quand elle utilise le micro).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CallApp {
+    pub id: String,
+    pub name: String,
+    /// Préfixes d'identifiant de bundle (auxiliaires compris).
+    pub bundles: Vec<String>,
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    /// Navigateur : on capte tout son audio (autres onglets compris).
+    #[serde(default)]
+    pub browser: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// Catalogue par défaut des apps de visio.
+pub fn default_call_apps() -> Vec<CallApp> {
+    let app = |id: &str, name: &str, bundles: &[&str], enabled: bool, browser: bool| CallApp {
+        id: id.into(),
+        name: name.into(),
+        bundles: bundles.iter().map(|b| b.to_string()).collect(),
+        enabled,
+        browser,
+    };
+    vec![
+        app("teams", "Microsoft Teams", &["com.microsoft.teams2", "com.microsoft.teams"], true, false),
+        app("slack", "Slack", &["com.tinyspeck.slackmacgap"], true, false),
+        app("zoom", "Zoom", &["us.zoom.xos"], true, false),
+        app("webex", "Webex", &["Cisco-Systems.Spark", "com.cisco.webexmeetingsapp", "com.webex.meetingmanager"], true, false),
+        app("discord", "Discord", &["com.hnc.Discord"], true, false),
+        app("facetime", "FaceTime", &["com.apple.FaceTime"], true, false),
+        app(
+            "browser",
+            "Navigateur (Google Meet…)",
+            &[
+                "com.google.Chrome",
+                "com.apple.Safari",
+                "company.thebrowser.Browser",
+                "com.microsoft.edgemac",
+                "org.mozilla.firefox",
+                "com.brave.Browser",
+            ],
+            false,
+            true,
+        ),
+    ]
+}
+
+/// Nom court pour les libellés (« Teams », « Slack »…).
+pub fn short_app_name(app: &CallApp) -> String {
+    match app.id.as_str() {
+        "teams" => "Teams".into(),
+        _ => app.name.split(" (").next().unwrap_or(&app.name).to_string(),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct AudioSettings {
-    /// Proposer de démarrer l'écoute quand un appel Teams commence (notification seulement :
-    /// l'écoute ne démarre jamais toute seule).
-    pub auto_detect_teams: bool,
+    /// Proposer de démarrer l'écoute quand un appel commence dans une app surveillée
+    /// (notification seulement : l'écoute ne démarre jamais toute seule).
+    #[serde(alias = "auto_detect_teams")]
+    pub auto_detect_calls: bool,
+    /// Apps de visio surveillées.
+    pub call_apps: Vec<CallApp>,
     pub silence_ms: u32,
     pub vocabulary: Vec<String>,
     /// Obsolète (l'écoute ne s'arrête plus à la fin de l'appel Teams) ; conservé pour la
@@ -175,10 +237,17 @@ pub struct AudioSettings {
     pub shortcuts: Shortcuts,
 }
 
+impl AudioSettings {
+    pub fn call_app(&self, id: &str) -> Option<&CallApp> {
+        self.call_apps.iter().find(|a| a.id == id)
+    }
+}
+
 impl Default for AudioSettings {
     fn default() -> Self {
         AudioSettings {
-            auto_detect_teams: true,
+            auto_detect_calls: true,
+            call_apps: default_call_apps(),
             silence_ms: 1000,
             vocabulary: vec![],
             end_grace_s: 60,
@@ -291,6 +360,14 @@ impl Settings {
         if self.audio.end_grace_s == 0 {
             self.audio.end_grace_s = 60;
         }
+        // Apps de visio : identifiants en minuscules, uniques, avec au moins un bundle.
+        let mut seen = std::collections::HashSet::new();
+        for app in self.audio.call_apps.iter_mut() {
+            app.id = app.id.trim().to_lowercase().replace(' ', "-");
+            app.name = app.name.trim().to_string();
+            app.bundles = app.bundles.iter().map(|b| b.trim().to_string()).filter(|b| !b.is_empty()).collect();
+        }
+        self.audio.call_apps.retain(|a| !a.id.is_empty() && !a.bundles.is_empty() && seen.insert(a.id.clone()));
         self.voice.variants.retain(|v| !v.trim().is_empty());
         self.voice.variants.dedup();
         Ok(self)
@@ -378,6 +455,25 @@ mod tests {
         let merged = other.merge_team_toml(&t).unwrap();
         assert_eq!(merged.audio.vocabulary, vec!["ms-booking".to_string()]);
         assert_eq!(merged.profile.name, "Sam");
+    }
+
+    #[test]
+    fn apps_de_visio() {
+        // Anciens réglages : `auto_detect_teams`, pas de `call_apps`.
+        let db = Db::open_in_memory().unwrap();
+        db.set_setting("audio", r#"{"auto_detect_teams":false}"#).unwrap();
+        let s = Settings::load(&db).unwrap();
+        assert!(!s.audio.auto_detect_calls);
+        assert_eq!(s.audio.call_apps.len(), 7);
+        assert!(!s.audio.call_app("browser").unwrap().enabled);
+        assert_eq!(short_app_name(s.audio.call_app("teams").unwrap()), "Teams");
+        assert_eq!(short_app_name(s.audio.call_app("browser").unwrap()), "Navigateur");
+        let mut s = s;
+        s.audio.call_apps.push(CallApp { id: " Mon App ".into(), name: "Mon app".into(), bundles: vec!["com.x".into()], enabled: true, browser: false });
+        s.audio.call_apps.push(CallApp { id: "slack".into(), name: "doublon".into(), bundles: vec!["x".into()], enabled: true, browser: false });
+        let v = s.validated().unwrap();
+        assert!(v.audio.call_app("mon-app").is_some());
+        assert_eq!(v.audio.call_apps.iter().filter(|a| a.id == "slack").count(), 1);
     }
 
     #[test]

@@ -34,6 +34,7 @@ fn recherche_sur_500_reunions() {
             agent_provider: None,
             agent_session_id: None,
             correlation: None,
+            call_app: None,
         })
         .unwrap();
         for s in 0..300 {

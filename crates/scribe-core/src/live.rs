@@ -63,8 +63,8 @@ struct Session {
     aside_buf: Vec<(i64, String)>,
     aside_flush_at: Option<Instant>,
     end_at: Option<Instant>,
-    teams_active: bool,
-    teams_title: Option<String>,
+    /// Appels en cours (app, titre), du plus ancien au plus récent.
+    calls: Vec<(String, Option<String>)>,
     next_confidential: bool,
     wake_waiters: Vec<oneshot::Sender<Result<String>>>,
     diarize_waiters: HashMap<String, oneshot::Sender<Result<Vec<Turn>>>>,
@@ -93,8 +93,7 @@ pub fn spawn(inner: Arc<Inner>) -> LiveHandle {
         aside_buf: vec![],
         aside_flush_at: None,
         end_at: None,
-        teams_active: false,
-        teams_title: None,
+        calls: vec![],
         next_confidential: false,
         wake_waiters: vec![],
         diarize_waiters: HashMap::new(),
@@ -160,6 +159,7 @@ impl Session {
                     s.sidecar = "running".into();
                     s.last_error = None;
                 });
+                self.send_watch();
                 // Reprise d'une capture interrompue.
                 if self.capturing {
                     self.t_offset = self.t_max;
@@ -197,12 +197,38 @@ impl Session {
         vocab.extend(s.audio.vocabulary.iter().cloned());
         let dir = crate::paths::cache_dir().join(&m.id);
         let _ = std::fs::create_dir_all(&dir);
+        // Son capté : celui de l'app de l'appel ; sans appel connu, toutes les apps surveillées.
+        let apps = m.call_app.clone().into_iter().collect();
         self.send(SidecarCommand::Start {
             vocabulary: vocab,
             silence_ms: s.audio.silence_ms,
             keep_audio: true,
             audio_dir: dir.display().to_string(),
+            apps,
         });
+    }
+
+    /// Envoie au sidecar la liste des apps de visio à surveiller.
+    fn send_watch(&self) {
+        self.send(SidecarCommand::Watch { apps: watch_list(&self.inner.settings().audio) });
+    }
+
+    fn current_call(&self) -> Option<&(String, Option<String>)> {
+        self.calls.last()
+    }
+
+    fn publish_call_state(&self) {
+        let s = self.inner.settings();
+        let st = match self.current_call() {
+            Some((app, title)) => crate::events::CallState {
+                active: true,
+                app: Some(app.clone()),
+                app_name: Some(s.audio.call_app(app).map(|a| a.name.clone()).unwrap_or_else(|| app.clone())),
+                title: title.clone(),
+            },
+            None => crate::events::CallState::default(),
+        };
+        self.inner.set_live_state(|l| l.call = st);
     }
 
     fn title_excluded(&self, title: Option<&str>) -> bool {
@@ -216,7 +242,7 @@ impl Session {
             .any(|w| !w.is_empty() && nt.contains(&w))
     }
 
-    fn create_meeting(&mut self, title: Option<String>, source: &str) -> Result<Meeting> {
+    fn create_meeting(&mut self, title: Option<String>, source: &str, call_app: Option<String>) -> Result<Meeting> {
         let s = self.inner.settings();
         let now = chrono::Local::now();
         let base = format!(
@@ -242,6 +268,7 @@ impl Session {
             agent_provider: None,
             agent_session_id: None,
             correlation: Some(s.correlation.mode.clone()),
+            call_app,
         };
         self.inner.db.insert_meeting(&m)?;
         self.meeting = Some(m.clone());
@@ -311,12 +338,13 @@ impl Session {
                     Some(m) => Ok(m.clone()),
                     None => {
                         let given = title.filter(|t| !t.trim().is_empty());
-                        let (t, src) = match given {
-                            Some(t) => (Some(t), "user"),
-                            None if self.teams_active => (self.teams_title.clone(), "teams_window"),
-                            None => (None, "inferred"),
+                        let call = self.current_call().cloned();
+                        let (t, src) = match (given, &call) {
+                            (Some(t), _) => (Some(t), "user"),
+                            (None, Some((_, title))) => (title.clone(), "call_window"),
+                            (None, None) => (None, "inferred"),
                         };
-                        self.create_meeting(t, src)
+                        self.create_meeting(t, src, call.map(|(app, _)| app))
                     }
                 };
                 let _ = reply.send(r);
@@ -344,6 +372,11 @@ impl Session {
             }
             LiveCmd::SettingsChanged => {
                 self.detector = Detector::new(&self.inner.settings().voice);
+                self.send_watch();
+                // Une app désactivée ne compte plus comme appel en cours.
+                let s = self.inner.settings();
+                self.calls.retain(|(app, _)| s.audio.call_app(app).map(|a| a.enabled).unwrap_or(false));
+                self.publish_call_state();
             }
             LiveCmd::WakeTest { seconds, reply } => {
                 if self.send(SidecarCommand::WakeTest { seconds }) {
@@ -369,6 +402,7 @@ impl Session {
             SidecarEvent::Ready { version, asr } => {
                 tracing::info!("sidecar prêt (v{version}, {asr})");
                 self.backoff = Duration::from_secs(2);
+                self.send_watch();
             }
             SidecarEvent::Permissions { microphone, system_audio, accessibility } => {
                 let _ = self.inner.db.set_runtime(
@@ -376,7 +410,8 @@ impl Session {
                     &serde_json::json!({"microphone": microphone, "system_audio": system_audio, "accessibility": accessibility}).to_string(),
                 );
             }
-            SidecarEvent::TeamsCall { active, title } => self.on_teams(active, title).await,
+            SidecarEvent::Call { active, app, title } => self.on_call(&app, active, title).await,
+            SidecarEvent::TeamsCall { active, title } => self.on_call("teams", active, title).await,
             SidecarEvent::Segment { ts, t0, t1, channel, text, private } => {
                 if let Err(e) = self.on_segment(ts, t0, t1, &channel, &text, private) {
                     tracing::error!("segment non enregistré : {e:#}");
@@ -459,40 +494,48 @@ impl Session {
         }
     }
 
-    /// Appel Teams détecté ou terminé. **Jamais** de démarrage ni d'arrêt automatique de
-    /// l'écoute : au plus une notification qui propose de démarrer.
-    async fn on_teams(&mut self, active: bool, title: Option<String>) {
+    /// Appel détecté ou terminé dans une app de visio. **Jamais** de démarrage ni d'arrêt
+    /// automatique de l'écoute : au plus une notification qui propose de démarrer.
+    async fn on_call(&mut self, app: &str, active: bool, title: Option<String>) {
         let s = self.inner.settings();
+        let Some(conf) = s.audio.call_app(app).filter(|a| a.enabled).cloned() else {
+            tracing::debug!("appel ignoré : app « {app} » non surveillée");
+            return;
+        };
         let title = title.filter(|t| !t.trim().is_empty());
-        let was_active = self.teams_active;
-        self.teams_active = active;
+        let was_active = self.calls.iter().any(|(a, _)| a == app);
         if active {
-            if title.is_some() {
-                self.teams_title = title.clone();
+            match self.calls.iter_mut().find(|(a, _)| a == app) {
+                Some(c) => {
+                    if title.is_some() {
+                        c.1 = title.clone();
+                    }
+                }
+                None => self.calls.push((app.to_string(), title.clone())),
             }
         } else {
-            self.teams_title = None;
+            self.calls.retain(|(a, _)| a != app);
         }
-        let (a, t) = (self.teams_active, self.teams_title.clone());
-        self.inner.set_live_state(|st| st.teams_call = crate::events::TeamsCall { active: a, title: t });
+        self.publish_call_state();
         match &self.meeting {
-            Some(m) if active => {
-                // Le titre de la fenêtre Teams remplace un titre déduit (jamais celui saisi).
+            Some(m) if active && m.call_app.as_deref() == Some(app) => {
+                // Le titre de la fenêtre d'appel remplace un titre déduit (jamais celui saisi).
                 if let Some(t) = &title {
                     if m.title_source.as_deref() != Some("user") {
-                        let _ = self.inner.db.set_meeting_title_auto(&m.id, t, "teams_window");
+                        let _ = self.inner.db.set_meeting_title_auto(&m.id, t, "call_window");
                         if let Some(mm) = &mut self.meeting {
                             mm.title = Some(t.clone());
-                            mm.title_source = Some("teams_window".into());
+                            mm.title_source = Some("call_window".into());
                         }
                         self.inner.emit(CoreEvent::MeetingsChanged);
                     }
                 }
             }
-            None if active && !was_active && s.audio.auto_detect_teams && !self.title_excluded(title.as_deref()) => {
+            None if active && !was_active && s.audio.auto_detect_calls && !self.title_excluded(title.as_deref()) => {
                 let shortcut = s.audio.shortcuts.toggle.clone();
+                let who = crate::settings::short_app_name(&conf);
                 self.inner.emit(CoreEvent::Notify {
-                    title: "Appel Teams détecté".into(),
+                    title: if conf.browser { "Appel détecté dans le navigateur".into() } else { format!("Appel {who} détecté") },
                     body: format!(
                         "{}Démarrer l'écoute : icône Scribe dans la barre de menus ou {shortcut}.",
                         title.as_deref().map(|t| format!("« {t} ». ")).unwrap_or_default()
@@ -607,6 +650,16 @@ impl Session {
             self.start_sidecar();
         }
     }
+}
+
+/// Apps surveillées (activées) au format du protocole.
+pub fn watch_list(audio: &crate::settings::AudioSettings) -> Vec<crate::sidecar::WatchApp> {
+    audio
+        .call_apps
+        .iter()
+        .filter(|a| a.enabled)
+        .map(|a| crate::sidecar::WatchApp { id: a.id.clone(), name: a.name.clone(), bundles: a.bundles.clone() })
+        .collect()
 }
 
 trait IfEmpty {

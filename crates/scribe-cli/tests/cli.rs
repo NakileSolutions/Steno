@@ -206,7 +206,7 @@ fn serveur_http_de_l_api() {
     assert!(up, "le serveur ne répond pas");
     let (c, b) = http(port, "POST", "/api/invoke/live_state", "");
     assert_eq!(c, 200, "{b}");
-    assert!(b.contains("\"teams_call\""));
+    assert!(b.contains("\"call\""));
     let (c, b) = http(port, "POST", "/api/invoke/start_meeting", r#"{"title":"Essai HTTP"}"#);
     assert_eq!(c, 200, "{b}");
     let (c, b) = http(port, "POST", "/api/invoke/ask", r#"{"query":"Poste ça sur Slack"}"#);

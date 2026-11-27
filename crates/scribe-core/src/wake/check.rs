@@ -93,6 +93,7 @@ mod tests {
             agent_provider: None,
             agent_session_id: None,
             correlation: None,
+            call_app: None,
         })
         .unwrap();
         for i in 0..4 {

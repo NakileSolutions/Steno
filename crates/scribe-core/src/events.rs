@@ -9,9 +9,12 @@ pub struct Levels {
     pub them: f64,
 }
 
+/// Appel en cours dans une app de visio surveillée (le plus récent s'il y en a plusieurs).
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]
-pub struct TeamsCall {
+pub struct CallState {
     pub active: bool,
+    pub app: Option<String>,
+    pub app_name: Option<String>,
     pub title: Option<String>,
 }
 
@@ -24,8 +27,8 @@ pub struct LiveState {
     pub sidecar: String,
     pub last_error: Option<String>,
     pub pending_requests: i64,
-    /// Appel Teams détecté (l'écoute ne démarre jamais toute seule).
-    pub teams_call: TeamsCall,
+    /// Appel détecté (l'écoute ne démarre jamais toute seule).
+    pub call: CallState,
 }
 
 impl Default for LiveState {
@@ -38,7 +41,7 @@ impl Default for LiveState {
             sidecar: "stopped".into(),
             last_error: None,
             pending_requests: 0,
-            teams_call: TeamsCall::default(),
+            call: CallState::default(),
         }
     }
 }

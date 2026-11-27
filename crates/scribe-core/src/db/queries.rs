@@ -11,7 +11,7 @@ fn b(v: i64) -> bool {
 }
 
 const MEETING_COLS: &str = "id, title, title_source, started_at, ended_at, status, confidential, \
-     agent_provider, agent_session_id, correlation";
+     agent_provider, agent_session_id, correlation, call_app";
 
 fn meeting_row(r: &Row) -> rusqlite::Result<Meeting> {
     Ok(Meeting {
@@ -25,6 +25,7 @@ fn meeting_row(r: &Row) -> rusqlite::Result<Meeting> {
         agent_provider: r.get(7)?,
         agent_session_id: r.get(8)?,
         correlation: r.get(9)?,
+        call_app: r.get(10)?,
     })
 }
 
@@ -192,10 +193,10 @@ impl Db {
     pub fn insert_meeting(&self, m: &Meeting) -> Result<()> {
         self.with(|c| {
             c.execute(
-                &format!("INSERT INTO meetings ({MEETING_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)"),
+                &format!("INSERT INTO meetings ({MEETING_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)"),
                 params![
                     m.id, m.title, m.title_source, m.started_at, m.ended_at, m.status,
-                    m.confidential as i64, m.agent_provider, m.agent_session_id, m.correlation
+                    m.confidential as i64, m.agent_provider, m.agent_session_id, m.correlation, m.call_app
                 ],
             )
         })?;
@@ -242,7 +243,7 @@ impl Db {
         self.with(|c| {
             let mut sql = String::from(
                 "SELECT m.id, m.title, m.title_source, m.started_at, m.ended_at, m.status, m.confidential, \
-                 m.agent_provider, m.agent_session_id, m.correlation, \
+                 m.agent_provider, m.agent_session_id, m.correlation, m.call_app, \
                  COALESCE((SELECT correlated FROM reports r WHERE r.meeting_id=m.id),0), \
                  (SELECT COUNT(*) FROM actions a WHERE a.meeting_id=m.id AND a.status='open'), \
                  (SELECT COUNT(*) FROM segments s WHERE s.meeting_id=m.id AND s.is_echo=0), ",
@@ -288,10 +289,10 @@ impl Db {
             let rows = st.query_map(rusqlite::params_from_iter(args.iter()), |r| {
                 Ok(MeetingSummary {
                     meeting: meeting_row(r)?,
-                    correlated: b(r.get(10)?),
-                    open_actions: r.get(11)?,
-                    segment_count: r.get(12)?,
-                    snippet: r.get(13)?,
+                    correlated: b(r.get(11)?),
+                    open_actions: r.get(12)?,
+                    segment_count: r.get(13)?,
+                    snippet: r.get(14)?,
                 })
             })?;
             let mut list: Vec<MeetingSummary> = rows.collect::<rusqlite::Result<_>>()?;
@@ -1312,6 +1313,7 @@ mod tests {
             agent_provider: None,
             agent_session_id: None,
             correlation: Some("on_demand".into()),
+            call_app: None,
         }
     }
 

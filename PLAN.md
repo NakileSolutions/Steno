@@ -175,7 +175,7 @@ CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);   -- JSON
 Uniquement audio → segments de texte. Aucune logique métier, aucun accès à la base.
 
 ### 4.2 Fonctions
-1. **Détection d'appel Teams** (sert au titre de la réunion et à **proposer** de démarrer par une notification ; l'écoute ne démarre **jamais** toute seule) : le processus Teams utilise le micro (`kAudioProcessPropertyIsRunningInput`, interrogé périodiquement) → événement `teams_call`. Titre lu dans la fenêtre de réunion via l'API d'accessibilité (`AXTitle`).
+1. **Détection d'appel** dans les apps de visio surveillées (Teams, Slack, Zoom, Webex, Discord, FaceTime, navigateur pour Meet ; liste réglable, message `call` par app) (sert au titre de la réunion et à **proposer** de démarrer par une notification ; l'écoute ne démarre **jamais** toute seule) : le processus Teams utilise le micro (`kAudioProcessPropertyIsRunningInput`, interrogé périodiquement) → événement `teams_call`. Titre lu dans la fenêtre de réunion via l'API d'accessibilité (`AXTitle`).
 2. **Capture** de deux flux séparés, rééchantillonnés en 16 kHz mono : micro (voice processing activé, donc annulation d'écho) et tap sur l'arbre de processus Teams.
 3. **VAD + ASR** : un énoncé est clos après 0,8 à 1,2 s de silence ou 25 s au maximum ; transcription Parakeet v3 ; **< 3 s** entre la fin de la phrase et l'émission du segment.
 4. **Vocabulaire** : reçu au démarrage (mot d'appel, noms de services) ; injecté si le moteur le permet, sinon correction par dictionnaire après coup.

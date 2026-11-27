@@ -2,7 +2,7 @@
 
 # Scribe
 
-Assistant de réunion **100 % local** pour Mac + Teams : transcription en direct sur le Neural
+Assistant de réunion **100 % local** pour Mac (Teams, Slack, Zoom, Webex, Discord, FaceTime, Google Meet…) : transcription en direct sur le Neural
 Engine, compte rendu de fin de réunion, et recherches croisées **à la voix** dans le code, Jira,
 Confluence et Datadog — avec l'agent IA que vous avez déjà (Claude Code, Codex, Gemini CLI,
 OpenCode…), dans le cadre de votre abonnement. Aucun coût en plus, aucune donnée audio qui sort
@@ -17,13 +17,16 @@ du Mac, et **le Scribe ne publie jamais rien** : il lit, vous publiez.
 ## Ce que fait Scribe
 
 - **Écoute 100 % manuelle** : rien n'est jamais enregistré sans votre action. Quand un appel
-  Teams commence, Scribe le **propose** (notification) ; vous démarrez l'écoute depuis l'icône
+  commence dans une app de visio (Teams, Slack, Zoom…), Scribe le **propose** (notification) ; vous démarrez l'écoute depuis l'icône
   de la barre d'état (en haut à droite, à côté de l'heure), ⌃⌥S ou l'app. Elle ne s'arrête
   pas toute seule non plus : menu, ⌃⌥S, ou à la voix « *Scribe, arrête l'écoute* ».
-- **Transcription en direct** de vos réunions Teams, en séparant votre voix (« Moi », micro)
-  et celle des autres (« Eux », son de Teams), sans enregistrer d'audio durablement.
+- **Transcription en direct** de vos appels, en séparant votre voix (« Moi », micro) et celle
+  des autres (« Eux », son de l'app de l'appel), sans enregistrer d'audio durablement.
+- **Multi-apps** : Teams, Slack (huddles), Zoom, Webex, Discord, FaceTime sont surveillés par
+  défaut ; Google Meet via le navigateur est activable (il capte tout le son du navigateur) ;
+  toute autre app peut être ajoutée par son identifiant de bundle (Réglages → Audio).
 - **Commandes vocales** : « *Scribe, cherche les erreurs Datadog sur ms-booking depuis hier.* »
-  — ou en **aparté** : micro Teams coupé, maintenez ⌃⌥Espace et parlez. Notification
+  — ou en **aparté** : micro coupé dans l'app d'appel, maintenez ⌃⌥Espace et parlez. Notification
   « 🔎 Je cherche… » puis « ✅ réponse en 2 lignes », réponse complète et sourcée dans l'app.
 - **Compte rendu** automatique (décisions, actions qui/quoi/échéance, questions ouvertes,
   points techniques, vos notes fusionnées), les apartés n'y figurent jamais.
@@ -56,7 +59,7 @@ Mise à jour : `git pull && make install` (sauvegarde de la base puis migrations
 
 | Où | Quoi |
 |---|---|
-| Barre d'état (icône à côté de l'heure) | menu : état (« ● Écoute en cours », « Appel Teams détecté »), **Démarrer / Arrêter l'écoute**, réunion confidentielle, demande rapide, transcription en direct, ouvrir Scribe, réglages |
+| Barre d'état (icône à côté de l'heure) | menu : état (« ● Écoute en cours », « Appel Slack détecté »…), **Démarrer / Arrêter l'écoute**, réunion confidentielle, demande rapide, transcription en direct, ouvrir Scribe, réglages |
 | Fenêtre | Réunions (compte rendu, transcription, demandes, notes), En direct, Recherche, Décisions & actions, Réglages |
 | Voix | « *Scribe, cherche / vérifie / note / résume / annule …* », « *Scribe, arrête l'écoute* » (mot d'appel et verbes réglables) |
 | Raccourcis | ⌃⌥S démarrer/arrêter · ⌃⌥Espace aparté (maintenir) · ⌃⌥N note rapide |
@@ -82,7 +85,7 @@ contient « 1:1 », « RH », « entretien », « perso » : jamais corrélées 
 ## Architecture
 
 ```
-audio/ScribeAudio/     sidecar Swift : Core Audio process tap (Teams) + micro (AEC),
+audio/ScribeAudio/     sidecar Swift : Core Audio process tap (app de l'appel) + micro (AEC),
                        VAD Silero + ASR Parakeet v3 (FluidAudio, Neural Engine) → JSON lines
 crates/scribe-core/    Rust : SQLite (WAL + FTS5), file de tâches, mot d'appel, anti-écho,
                        adaptateurs d'agent, politique lecture seule, compte rendu, corrélation

@@ -32,6 +32,14 @@ pub enum SidecarEvent {
         #[serde(default)]
         accessibility: String,
     },
+    /// Appel détecté ou terminé dans une app surveillée.
+    Call {
+        active: bool,
+        app: String,
+        #[serde(default)]
+        title: Option<String>,
+    },
+    /// Ancien format (Teams seulement), toujours accepté.
     TeamsCall {
         active: bool,
         #[serde(default)]
@@ -77,15 +85,27 @@ pub enum SidecarEvent {
     Unknown,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WatchApp {
+    pub id: String,
+    pub name: String,
+    pub bundles: Vec<String>,
+}
+
 /// Messages cœur → sidecar.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum SidecarCommand {
+    /// Apps de visio à surveiller.
+    Watch { apps: Vec<WatchApp> },
     Start {
         vocabulary: Vec<String>,
         silence_ms: u32,
         keep_audio: bool,
         audio_dir: String,
+        /// Apps dont le son est capté (vide = toutes les apps surveillées).
+        #[serde(default)]
+        apps: Vec<String>,
     },
     Stop,
     Aside { on: bool },
@@ -188,6 +208,15 @@ mod tests {
         );
         let c = serde_json::to_string(&SidecarCommand::Aside { on: true }).unwrap();
         assert_eq!(c, r#"{"cmd":"aside","on":true}"#);
+        assert_eq!(
+            parse_line(r#"{"type":"call","active":true,"app":"slack","title":"Huddle"}"#),
+            Some(SidecarEvent::Call { active: true, app: "slack".into(), title: Some("Huddle".into()) })
+        );
+        let w = serde_json::to_string(&SidecarCommand::Watch {
+            apps: vec![WatchApp { id: "slack".into(), name: "Slack".into(), bundles: vec!["com.tinyspeck.slackmacgap".into()] }],
+        })
+        .unwrap();
+        assert_eq!(w, r#"{"cmd":"watch","apps":[{"id":"slack","name":"Slack","bundles":["com.tinyspeck.slackmacgap"]}]}"#);
         let c = serde_json::to_string(&SidecarCommand::Stop).unwrap();
         assert_eq!(c, r#"{"cmd":"stop"}"#);
     }

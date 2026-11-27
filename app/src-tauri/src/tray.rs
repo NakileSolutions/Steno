@@ -17,16 +17,26 @@ pub struct TrayItems {
 /// Libellés selon l'état (fonction pure, testée).
 pub fn labels(st: &LiveState, shortcut: &str) -> (String, String) {
     let toggle_hint = if shortcut.is_empty() { String::new() } else { format!("  ({shortcut})") };
-    match (&st.meeting, st.teams_call.active) {
+    match (&st.meeting, st.call.active) {
         (Some(m), _) => (
             format!("● Écoute en cours — {}", m.title.clone().unwrap_or_else(|| "réunion".into())),
             format!("Arrêter l'écoute{toggle_hint}"),
         ),
         (None, true) => (
-            format!("Appel Teams détecté : {}", st.teams_call.title.clone().unwrap_or_else(|| "sans titre".into())),
+            format!("{} : {}", call_label(st), st.call.title.clone().unwrap_or_else(|| "sans titre".into())),
             format!("Démarrer l'écoute{toggle_hint}"),
         ),
         (None, false) => ("En attente — aucune écoute".into(), format!("Démarrer l'écoute{toggle_hint}")),
+    }
+}
+
+/// « Appel Teams détecté », « Appel Slack détecté », « Appel détecté dans le navigateur ».
+fn call_label(st: &LiveState) -> String {
+    match (st.call.app.as_deref(), st.call.app_name.as_deref()) {
+        (Some("browser"), _) => "Appel détecté dans le navigateur".into(),
+        (Some("teams"), _) => "Appel Teams détecté".into(),
+        (_, Some(name)) => format!("Appel {} détecté", name.split(" (").next().unwrap_or(name)),
+        _ => "Appel détecté".into(),
     }
 }
 
@@ -150,14 +160,18 @@ pub fn hide_main(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scribe_core::events::TeamsCall;
+    use scribe_core::events::CallState;
 
     #[test]
     fn libelles_du_menu() {
         let mut st = LiveState::default();
         assert_eq!(labels(&st, "Ctrl+Alt+S"), ("En attente — aucune écoute".into(), "Démarrer l'écoute  (Ctrl+Alt+S)".into()));
-        st.teams_call = TeamsCall { active: true, title: Some("Daily".into()) };
+        st.call = CallState { active: true, app: Some("teams".into()), app_name: Some("Microsoft Teams".into()), title: Some("Daily".into()) };
         assert_eq!(labels(&st, "").0, "Appel Teams détecté : Daily");
+        st.call = CallState { active: true, app: Some("slack".into()), app_name: Some("Slack".into()), title: Some("Huddle #flotte".into()) };
+        assert_eq!(labels(&st, "").0, "Appel Slack détecté : Huddle #flotte");
+        st.call.app = Some("browser".into());
+        assert_eq!(labels(&st, "").0, "Appel détecté dans le navigateur : Huddle #flotte");
         st.meeting = Some(scribe_core::model::Meeting {
             id: "m".into(),
             title: Some("Daily".into()),
@@ -169,6 +183,7 @@ mod tests {
             agent_provider: None,
             agent_session_id: None,
             correlation: None,
+            call_app: None,
         });
         let (s, t) = labels(&st, "");
         assert_eq!(s, "● Écoute en cours — Daily");

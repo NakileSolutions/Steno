@@ -75,11 +75,13 @@ async fn replay_fixture(c: &Core) -> String {
     let expected: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(root().join("fixtures/expected.json")).unwrap()).unwrap();
     let n = expected["segments"].as_i64().unwrap();
-    wait_until("appel Teams annoncé", 20, || c.live_state().teams_call.active).await;
+    wait_until("appel Teams annoncé", 20, || c.live_state().call.active).await;
+    assert_eq!(c.live_state().call.app.as_deref(), Some("teams"), "ancien format `teams_call` accepté");
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(c.db().live_meeting().unwrap().is_none(), "l'écoute ne doit jamais démarrer seule");
     let m = c.start_meeting(None).await.unwrap();
     assert_eq!(m.title.as_deref(), Some("Daily ORION"), "titre repris de la fenêtre Teams");
+    assert_eq!(m.call_app.as_deref(), Some("teams"));
     let id = m.id;
     wait_until("segments reçus", 30, || c.db().segments(&id, true, true).unwrap().len() as i64 == n).await;
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -331,7 +333,7 @@ async fn appel_teams_propose_sans_demarrer_et_arret_a_la_voix() {
         args: vec!["replay".into(), file.display().to_string(), "--speed".into(), "4".into()],
     }));
     let mut rx = c.subscribe();
-    wait_until("appel Teams annoncé", 20, || c.live_state().teams_call.active).await;
+    wait_until("appel Teams annoncé", 20, || c.live_state().call.active).await;
     // Une notification propose de démarrer ; aucune réunion n'est créée.
     let mut proposed = false;
     while let Ok(ev) = rx.try_recv() {
@@ -352,4 +354,56 @@ async fn appel_teams_propose_sans_demarrer_et_arret_a_la_voix() {
     let segs = c.db().segments(&m.id, true, true).unwrap();
     assert!(!segs.iter().any(|s| s.text.contains("ne doit pas")), "rien n'est enregistré après l'arrêt");
     c.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn appel_slack_et_apps_desactivees() {
+    // Rejeu : un appel Slack (nouveau format `call`), puis un appel Zoom.
+    let file = env().join("slack.jsonl");
+    let lines = [
+        r#"{"type":"call","active":true,"app":"slack","title":"Huddle dans #equipe-flotte"}"#,
+        r#"{"type":"segment","ts":"2026-11-27T10:00:03+01:00","t0":1.0,"t1":3.0,"channel":"them","text":"On regarde le ticket APP-1234 ?","private":false}"#,
+        r#"{"type":"segment","ts":"2026-11-27T10:00:06+01:00","t0":4.0,"t1":6.0,"channel":"me","text":"Oui, on garde le verrou de créneau.","private":false}"#,
+    ];
+    std::fs::write(&file, lines.join("\n") + "\n").unwrap();
+    let c = core("slack", Some(replay_sidecar(&file)));
+    let mut rx = c.subscribe();
+    wait_until("appel Slack annoncé", 20, || c.live_state().call.active).await;
+    let st = c.live_state();
+    assert_eq!(st.call.app.as_deref(), Some("slack"));
+    assert_eq!(st.call.app_name.as_deref(), Some("Slack"));
+    assert_eq!(st.call.title.as_deref(), Some("Huddle dans #equipe-flotte"));
+    let mut notif = String::new();
+    while let Ok(ev) = rx.try_recv() {
+        if let scribe_core::events::CoreEvent::Notify { title, .. } = ev {
+            notif = title;
+        }
+    }
+    assert_eq!(notif, "Appel Slack détecté");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(c.db().live_meeting().unwrap().is_none(), "jamais de démarrage automatique");
+
+    let m = c.start_meeting(None).await.unwrap();
+    assert_eq!(m.call_app.as_deref(), Some("slack"));
+    assert_eq!(m.title.as_deref(), Some("Huddle dans #equipe-flotte"));
+    wait_until("segments", 20, || c.db().segments(&m.id, true, true).unwrap().len() == 2).await;
+    c.stop_meeting().await.unwrap();
+
+    // Slack désactivé dans les réglages : l'appel n'est plus proposé.
+    let mut s = c.settings();
+    s.audio.call_apps.iter_mut().find(|a| a.id == "slack").unwrap().enabled = false;
+    c.save_settings(s).unwrap();
+    wait_until("appel oublié", 10, || !c.live_state().call.active).await;
+    c.shutdown();
+}
+
+#[test]
+fn liste_des_apps_surveillees() {
+    let mut audio = scribe_core::settings::AudioSettings::default();
+    let ids: Vec<String> = scribe_core::live::watch_list(&audio).into_iter().map(|a| a.id).collect();
+    assert_eq!(ids, ["teams", "slack", "zoom", "webex", "discord", "facetime"], "navigateur désactivé par défaut");
+    audio.call_apps.iter_mut().for_each(|a| a.enabled = a.id == "browser");
+    let w = scribe_core::live::watch_list(&audio);
+    assert_eq!(w.len(), 1);
+    assert!(w[0].bundles.iter().any(|b| b == "com.google.Chrome"));
 }

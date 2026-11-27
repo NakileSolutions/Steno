@@ -52,6 +52,8 @@ pub fn run(file: &Path, speed: f64, exit_at_end: bool) -> Result<()> {
                 emit(&json!({"type": "state", "state": "stopped"}))
             }
             "aside" => *aside = c.get("on").and_then(|x| x.as_bool()).unwrap_or(false),
+            // Liste des apps surveillées : le rejeu annonce les appels du fichier tels quels.
+            "watch" => {}
             "wake_test" => emit(&json!({"type": "wake_test", "text": "Scribe, cherche quelque chose."})),
             "diarize" => emit(&json!({"type": "error", "code": "diarize_failed",
                                       "message": "diarisation indisponible en simulation", "recoverable": true})),
@@ -65,7 +67,7 @@ pub fn run(file: &Path, speed: f64, exit_at_end: bool) -> Result<()> {
     let mut idx = 0;
     // Événements d'en-tête (appel Teams, état) avant la première phrase.
     while idx < events.len() && events[idx].get("type").and_then(|t| t.as_str()) != Some("segment") {
-        if events[idx].get("type").and_then(|t| t.as_str()) == Some("teams_call") {
+        if matches!(events[idx].get("type").and_then(|t| t.as_str()), Some("teams_call" | "call")) {
             emit(&events[idx]);
         }
         idx += 1;

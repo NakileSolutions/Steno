@@ -89,6 +89,9 @@ pub struct Meeting {
     pub agent_provider: Option<String>,
     pub agent_session_id: Option<String>,
     pub correlation: Option<String>,
+    /// App de visio de l'appel (teams, slack…), `None` si l'écoute a démarré sans appel.
+    #[serde(default)]
+    pub call_app: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
