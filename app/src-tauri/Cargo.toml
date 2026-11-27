@@ -33,3 +33,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Clic sur une notification (le plugin de notification ne le gère pas sur macOS).
+mac-notification-sys = "0.6"

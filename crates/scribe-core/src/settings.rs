@@ -16,6 +16,33 @@ pub struct Settings {
     pub correlation: CorrelationSettings,
     pub privacy: PrivacySettings,
     pub profile: ProfileSettings,
+    pub report: ReportSettings,
+}
+
+/// Modèle de compte rendu ajouté par l'utilisateur.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct CustomTemplate {
+    pub id: String,
+    pub name: String,
+    pub instructions: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct ReportSettings {
+    /// Modèle utilisé quand la réunion n'en précise pas (`standard`, `daily`… ou un modèle perso).
+    pub default_template: String,
+    /// Proposer d'ajouter du contexte quand on arrête l'écoute depuis la fenêtre (désactivé :
+    /// l'arrêt reste en un clic, le contexte s'ajoute pendant la réunion ou sur sa page).
+    pub ask_context_on_stop: bool,
+    pub templates: Vec<CustomTemplate>,
+}
+
+impl Default for ReportSettings {
+    fn default() -> Self {
+        ReportSettings { default_template: "standard".into(), ask_context_on_stop: false, templates: vec![] }
+    }
 }
 
 
@@ -296,6 +323,9 @@ pub struct AudioSettings {
     /// compatibilité des réglages enregistrés.
     pub end_grace_s: u32,
     pub shortcuts: Shortcuts,
+    /// Retranscription de fin de réunion avec un modèle plus précis, langue imposée
+    /// (code ISO, ex. `fr`) ; `off` pour garder la transcription du direct.
+    pub final_transcription: String,
 }
 
 impl AudioSettings {
@@ -315,9 +345,16 @@ impl Default for AudioSettings {
             vocabulary: vec![],
             end_grace_s: 60,
             shortcuts: Shortcuts::default(),
+            final_transcription: "fr".into(),
         }
     }
 }
+
+/// Langues de la retranscription de fin de réunion (modèle Canary 1B v2).
+pub const FINAL_LANGUAGES: &[&str] = &[
+    "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "hr", "hu", "it", "lt", "lv", "mt", "nl", "pl",
+    "pt", "ro", "ru", "sk", "sl", "sv", "uk",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -349,13 +386,34 @@ impl CorrelationSettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct PrivacySettings {
     pub audio_retention_days: u32,
     pub transcript_retention_days: Option<u32>,
     pub auto_export_dir: Option<String>,
     pub excluded_titles: Vec<String>,
+    /// Au début de l'écoute, rappeler de prévenir les participants (RGPD).
+    pub consent_reminder: bool,
+    /// Message d'information à coller dans le chat de l'appel.
+    pub consent_message: String,
+}
+
+/// Message d'information par défaut : honnête sur ce qui sort du Mac (le compte rendu passe
+/// par un assistant IA).
+pub const DEFAULT_CONSENT_MESSAGE: &str = "Pour information : j'utilise Scribe pour transcrire cette réunion et en préparer un compte rendu. La transcription reste sur mon ordinateur ; un assistant IA s'en sert pour rédiger le compte rendu. Dites-le-moi si vous préférez que je ne transcrive pas.";
+
+impl Default for PrivacySettings {
+    fn default() -> Self {
+        PrivacySettings {
+            audio_retention_days: 0,
+            transcript_retention_days: None,
+            auto_export_dir: None,
+            excluded_titles: vec![],
+            consent_reminder: true,
+            consent_message: DEFAULT_CONSENT_MESSAGE.into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -365,6 +423,8 @@ pub struct ProfileSettings {
     pub role: String,
     pub team: String,
     pub jira_key_pattern: String,
+    /// Apparence de l'app : `auto` (suit macOS), `light` ou `dark`.
+    pub theme: String,
 }
 
 impl Default for ProfileSettings {
@@ -374,11 +434,12 @@ impl Default for ProfileSettings {
             role: String::new(),
             team: String::new(),
             jira_key_pattern: r"[A-Z][A-Z0-9]+-\d+".into(),
+            theme: "auto".into(),
         }
     }
 }
 
-const SECTIONS: [&str; 6] = ["agent", "voice", "audio", "correlation", "privacy", "profile"];
+const SECTIONS: [&str; 7] = ["agent", "voice", "audio", "correlation", "privacy", "profile", "report"];
 
 impl Settings {
     /// Charge les réglages depuis la base (valeurs par défaut pour ce qui manque).
@@ -410,6 +471,42 @@ impl Settings {
         if self.voice.wake_word.is_empty() {
             anyhow::bail!("le mot d'appel ne peut pas être vide");
         }
+        if self.privacy.consent_message.trim().is_empty() {
+            self.privacy.consent_message = DEFAULT_CONSENT_MESSAGE.into();
+        }
+        // Modèles perso : nom obligatoire, identifiant unique dérivé du nom, distinct des modèles intégrés.
+        let mut ids: std::collections::HashSet<String> =
+            crate::report::BUILTIN_TEMPLATES.iter().map(|t| t.id.to_string()).collect();
+        let mut templates = vec![];
+        for mut t in std::mem::take(&mut self.report.templates) {
+            t.name = t.name.trim().to_string();
+            t.instructions = t.instructions.trim().to_string();
+            if t.name.is_empty() {
+                continue;
+            }
+            let mut id = t.id.trim().to_string();
+            if id.is_empty() || crate::report::BUILTIN_TEMPLATES.iter().any(|b| b.id == id) {
+                id = format!("perso-{}", crate::text::normalize(&t.name).replace(' ', "-"));
+            }
+            let base = id.clone();
+            let mut n = 2;
+            while !ids.insert(id.clone()) {
+                id = format!("{base}-{n}");
+                n += 1;
+            }
+            t.id = id;
+            templates.push(t);
+        }
+        self.report.templates = templates;
+        if crate::report::template(&self, &self.report.default_template).is_none() {
+            self.report.default_template = "standard".into();
+        }
+        if !["auto", "light", "dark"].contains(&self.profile.theme.as_str()) {
+            self.profile.theme = "auto".into();
+        }
+        let lang = self.audio.final_transcription.trim().to_lowercase();
+        self.audio.final_transcription =
+            if FINAL_LANGUAGES.contains(&lang.as_str()) { lang } else { "off".into() };
         if !["none", "system", "headset"].contains(&self.voice.feedback.as_str()) {
             self.voice.feedback = "system".into();
         }
@@ -553,6 +650,33 @@ mod tests {
         let v = s.validated().unwrap();
         assert!(v.audio.call_app("mon-app").is_some());
         assert_eq!(v.audio.call_apps.iter().filter(|a| a.id == "slack").count(), 1);
+    }
+
+    #[test]
+    fn theme_et_retranscription_valides() {
+        let mut s = Settings::default();
+        assert_eq!(s.profile.theme, "auto");
+        assert_eq!(s.audio.final_transcription, "fr");
+        s.profile.theme = "rose".into();
+        s.audio.final_transcription = "FR ".into();
+        let v = s.validated().unwrap();
+        assert_eq!(v.profile.theme, "auto");
+        assert_eq!(v.audio.final_transcription, "fr");
+        let mut s = Settings::default();
+        s.audio.final_transcription = "klingon".into();
+        assert_eq!(s.validated().unwrap().audio.final_transcription, "off");
+    }
+
+    #[test]
+    fn formats_perso_identifiants_uniques() {
+        let mut s = Settings::default();
+        let t = |id: &str, name: &str| CustomTemplate { id: id.into(), name: name.into(), instructions: "x".into() };
+        s.report.templates = vec![t("", "Note COMEX"), t("", "Note COMEX"), t("mail", "Mon mail"), t("", "  ")];
+        s.report.default_template = "inconnu".into();
+        let v = s.validated().unwrap();
+        let ids: Vec<&str> = v.report.templates.iter().map(|t| t.id.as_str()).collect();
+        assert_eq!(ids, ["perso-note-comex", "perso-note-comex-2", "perso-mon-mail"]);
+        assert_eq!(v.report.default_template, "standard");
     }
 
     #[test]

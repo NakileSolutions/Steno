@@ -4,7 +4,7 @@
   import { api } from '../lib/api';
   import { setPrefs } from '../lib/prefs.svelte';
   import { navigate } from '../lib/router.svelte';
-  import type { AgentInfo, Connector, DoctorItem, Repo, Settings, TestAgentResult, WakeCheck } from '../lib/types';
+  import type { AgentInfo, Connector, Repo, Settings, TestAgentResult, WakeCheck } from '../lib/types';
   import { debounce, stripLeadingIcon } from '../lib/format';
   import { toast, toastError } from '../lib/ui.svelte';
   import Logo from '../lib/Logo.svelte';
@@ -12,6 +12,7 @@
   import AgentLogo from '../lib/components/AgentLogo.svelte';
   import { sortAgents } from '../lib/agents';
   import WakeTest from './settings/WakeTest.svelte';
+  import Permissions from '../lib/components/Permissions.svelte';
 
   const STEPS = [
     { id: 'permissions', label: 'Permissions macOS', icon: 'shield' },
@@ -24,8 +25,6 @@
 
   let step = $state(0);
   let settings = $state<Settings | null>(null);
-  let doctor = $state<DoctorItem[]>([]);
-  let doctoring = $state(false);
   let agents = $state<AgentInfo[]>([]);
   let testResult = $state<TestAgentResult | null>(null);
   let testing = $state(false);
@@ -39,7 +38,6 @@
   onMount(async () => {
     try {
       settings = await api.getSettings();
-      runDoctor();
       agents = await api.detectAgents();
       repos = await api.listRepos();
     } catch (e) {
@@ -47,16 +45,6 @@
     }
   });
 
-  async function runDoctor() {
-    doctoring = true;
-    try {
-      doctor = await api.doctor();
-    } catch (e) {
-      toastError(e);
-    } finally {
-      doctoring = false;
-    }
-  }
   async function testAgent() {
     if (!settings) return;
     testing = true;
@@ -127,6 +115,7 @@
       await persist();
       if (step < STEPS.length - 1) step++;
       else {
+        await api.completeOnboarding();
         toast('Scribe est prêt.');
         navigate('/meetings');
       }
@@ -135,6 +124,17 @@
     } finally {
       saving = false;
     }
+  }
+
+  /** Passer l'assistant : il ne se rouvrira pas (tout reste réglable dans les Réglages). */
+  async function skip() {
+    try {
+      await persist();
+      await api.completeOnboarding();
+    } catch (e) {
+      toastError(e);
+    }
+    navigate('/meetings');
   }
 
   async function openWakeTest() {
@@ -163,7 +163,6 @@
 
   const blockable = $derived(connectors.filter((c) => c.write_blockable));
   const hiddenCount = $derived(connectors.length - blockable.length);
-  const STATUS_ICON: Record<string, string> = { ok: 'check', warn: 'warn', error: 'x' };
 </script>
 
 <div class="ob">
@@ -193,21 +192,9 @@
 
         {#if STEPS[step].id === 'permissions'}
           <h1>Permissions macOS</h1>
-          <p class="lead">Le Scribe a besoin du micro, de l’audio du système (pour entendre l’app de l’appel : Teams, Slack, Zoom…) et de l’accessibilité (pour lire le titre de l’appel). Il n’écoute que lorsque vous démarrez l’écoute.</p>
-          <ul class="doctor">
-            {#each doctor as d (d.name)}
-              <li class={d.status}>
-                <span class="st"><Icon name={STATUS_ICON[d.status]} size={14} stroke={2} /></span>
-                <div class="grow">
-                  <p><strong>{d.name}</strong> <span class="muted">— {d.message}</span></p>
-                  {#if d.fix}<p class="fix small">{d.fix}</p>{/if}
-                </div>
-              </li>
-            {:else}
-              <li class="faint">{#if doctoring}<span class="skeleton" style="width: 60%"></span>{:else}Aucun résultat.{/if}</li>
-            {/each}
-          </ul>
-          <button class="btn" onclick={runDoctor} disabled={doctoring}><Icon name="refresh" size={14} />{doctoring ? 'Vérification…' : 'Vérifier à nouveau'}</button>
+          <p class="lead">Le Scribe a besoin du micro et de l’audio du système (pour entendre l’app de l’appel : Teams, Slack, Zoom…) ; l’accessibilité lui permet de lire le titre de l’appel. Il n’écoute que lorsque vous démarrez l’écoute.</p>
+          <Permissions />
+          <p class="small faint">Vous retrouverez ces droits dans Réglages → Permissions.</p>
 
         {:else if STEPS[step].id === 'agent'}
           <h1>Agent IA</h1>
@@ -287,7 +274,7 @@
         <div class="nav row">
           {#if step > 0}<button class="btn" onclick={() => step--}>Précédent</button>{/if}
           <span class="grow"></span>
-          <button class="btn ghost" onclick={() => navigate('/meetings')}>Passer</button>
+          <button class="btn ghost" onclick={skip}>Passer</button>
           <button class="btn primary nextbtn" onclick={next} disabled={saving}>{step === STEPS.length - 1 ? 'Terminer' : 'Suivant'}{#if step < STEPS.length - 1}<Icon name="chevron" size={14} stroke={2} />{/if}</button>
         </div>
       </div>
@@ -347,16 +334,10 @@
   }
   .inner h1 { font-size: 26px; margin-top: -8px; }
   .lead { color: var(--text-2); font-size: 14.5px; line-height: 1.6; }
-  .doctor, .repos { list-style: none; margin: 0; padding: 4px 0; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); }
-  .doctor li, .repos li { display: flex; align-items: flex-start; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); animation: appear var(--t) var(--ease) both; }
+  .repos { list-style: none; margin: 0; padding: 4px 0; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); }
+  .repos li { display: flex; align-items: flex-start; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); animation: appear var(--t) var(--ease) both; }
   .repos li { align-items: center; }
-  .doctor li:first-child, .repos li:first-child { border-top: 0; }
-  .doctor p { line-height: 1.45; }
-  .st { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; flex: none; }
-  .ok .st { background: var(--ok-soft); color: var(--ok); }
-  .warn .st { background: var(--warn-soft); color: var(--warn); }
-  .error .st { background: var(--err-soft); color: var(--err); }
-  .fix { margin-top: 3px; color: var(--text-2); }
+  .repos li:first-child { border-top: 0; }
   .choices { display: flex; flex-direction: column; gap: 6px; }
   .choice { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
   .choice:hover:not(.off) { border-color: var(--line-strong); }

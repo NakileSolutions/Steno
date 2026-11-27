@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  cap, cleanSnippet, clockDuration, stripLeadingIcon, dayLabel, debounce, duration, fullDate, highlight, INTENT_LABEL, isoDate,
+  cap, cleanSnippet, clockDuration, shortDuration, stripLeadingIcon, dayLabel, debounce, duration, fullDate, highlight, INTENT_LABEL, isoDate,
   offset, relDay, shortDate, STATUS_LABEL, time, timeS,
 } from '../format';
 
@@ -128,5 +128,13 @@ describe('stripLeadingIcon', () => {
   it('retire le pictogramme de tête', () => {
     expect(stripLeadingIcon('⚠️ « Scribe » n’a qu’une syllabe')).toBe('« Scribe » n’a qu’une syllabe');
     expect(stripLeadingIcon('Sans icône')).toBe('Sans icône');
+  });
+});
+
+describe('shortDuration', () => {
+  it('formate la durée d’une recherche', () => {
+    expect(shortDuration('2026-11-27T12:40:38+01:00', '2026-11-27T12:40:46+01:00')).toBe('8 s');
+    expect(shortDuration('2026-11-27T12:40:38+01:00', '2026-11-27T12:42:14+01:00')).toBe('1 min 36 s');
+    expect(shortDuration(null, '2026-11-27T12:42:14+01:00')).toBeNull();
   });
 });

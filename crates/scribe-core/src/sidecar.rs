@@ -14,6 +14,22 @@ pub struct Turn {
     pub speaker: String,
 }
 
+/// Phrase à retranscrire : fichier (`me.wav` / `them.wav`) et bornes en secondes.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct RetranscribeItem {
+    pub id: i64,
+    pub file: String,
+    pub t0: f64,
+    pub t1: f64,
+}
+
+/// Nouveau texte d'une phrase retranscrite.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct RetranscribedItem {
+    pub id: i64,
+    pub text: String,
+}
+
 /// Messages sidecar → cœur.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -55,6 +71,9 @@ pub enum SidecarEvent {
         text: String,
         #[serde(default)]
         private: bool,
+        /// Intervenant reconnu en direct par le sidecar (« S1 »…), canal `them` seulement.
+        #[serde(default)]
+        speaker: Option<String>,
     },
     Level {
         me: f64,
@@ -77,6 +96,12 @@ pub enum SidecarEvent {
         #[serde(default)]
         meeting_id: String,
         turns: Vec<Turn>,
+    },
+    Retranscription {
+        #[serde(default)]
+        meeting_id: String,
+        #[serde(default)]
+        items: Vec<RetranscribedItem>,
     },
     Error {
         code: String,
@@ -133,6 +158,9 @@ pub enum SidecarCommand {
         /// UID du micro (`None` = micro par défaut du système).
         #[serde(default)]
         input_device: Option<String>,
+        /// Réunion en présentiel : micro seul, sans capture d'app ni annulation d'écho.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        room: bool,
     },
     /// Change de micro (pendant la capture ou pour le prochain `start`).
     SetInput { device: Option<String> },
@@ -142,9 +170,30 @@ pub enum SidecarCommand {
     Play { sound: String, device: Option<String> },
     Stop,
     Aside { on: bool },
+    /// Coupe (ou rétablit) le micro dans Scribe.
+    Mute { on: bool },
+    /// Met la capture en pause (rien n'est transcrit) / la reprend.
+    Pause,
+    Resume,
     WakeTest { seconds: u32 },
-    Diarize { meeting_id: String, audio_dir: String },
+    Diarize {
+        meeting_id: String,
+        audio_dir: String,
+        /// Fichier à analyser dans `audio_dir` : `them.wav` (appel) ou `me.wav` (présentiel).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        file: Option<String>,
+    },
+    /// Retranscription de fin de réunion, langue imposée.
+    Retranscribe {
+        meeting_id: String,
+        audio_dir: String,
+        language: String,
+        vocabulary: Vec<String>,
+        items: Vec<RetranscribeItem>,
+    },
     Permissions,
+    /// Déclenche l'invite système du droit (`microphone | system_audio | accessibility`).
+    RequestPermission { kind: String },
     Shutdown,
 }
 
@@ -209,7 +258,16 @@ impl SidecarProcess {
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                tracing::debug!(target: "scribe_audio", "{line}");
+                // Journal du sidecar (« [scribe-audio] INFO … ») recopié dans scribe.log.
+                if line.contains("] ERROR") {
+                    tracing::error!(target: "scribe_audio", "{line}");
+                } else if line.contains("] WARN") {
+                    tracing::warn!(target: "scribe_audio", "{line}");
+                } else if line.contains("] INFO") {
+                    tracing::info!(target: "scribe_audio", "{line}");
+                } else {
+                    tracing::debug!(target: "scribe_audio", "{line}");
+                }
             }
         });
         Ok((SidecarProcess { commands: cmd_tx, child }, ev_rx))

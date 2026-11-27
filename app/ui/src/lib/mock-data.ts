@@ -4,7 +4,7 @@ import type {
   Action, AgentInfo, AudioDevices, Connector, Decision, Draft, Meeting, ModelInfo, Note, Repo, Report, ReportRef,
   Request, Segment, Settings, Speaker,
 } from './types';
-import { defaultCallApps } from './listening';
+import { DEFAULT_CONSENT_MESSAGE, defaultCallApps } from './listening';
 
 export type MeetingStore = {
   meeting: Meeting;
@@ -498,12 +498,21 @@ export function defaultSettings(): Settings {
       input_device_name: null,
       call_apps: defaultCallApps(),
       silence_ms: 1000,
+      final_transcription: 'fr',
       vocabulary: ['ms-booking', 'ms-stations', 'ms-pricing', 'ORION', 'Brindille'],
       shortcuts: { toggle: 'Ctrl+Alt+S', aside: 'Ctrl+Alt+Space', quick_note: 'Ctrl+Alt+N' },
     },
     correlation: { mode: 'on_demand', budget: 30, exclude_words: ['1:1', 'RH', 'entretien', 'perso'] },
-    privacy: { audio_retention_days: 0, transcript_retention_days: null, auto_export_dir: null, excluded_titles: [] },
-    profile: { name: 'Camille', role: 'Développeuse back-end', team: 'ORION', jira_key_pattern: '[A-Z][A-Z0-9]+-\\d+' },
+    privacy: {
+      audio_retention_days: 0,
+      transcript_retention_days: null,
+      auto_export_dir: null,
+      excluded_titles: [],
+      consent_reminder: true,
+      consent_message: DEFAULT_CONSENT_MESSAGE,
+    },
+    profile: { name: 'Camille', role: 'Développeuse back-end', team: 'ORION', jira_key_pattern: '[A-Z][A-Z0-9]+-\\d+', theme: 'auto' },
+    report: { default_template: 'standard', ask_context_on_stop: false, templates: [{ id: 'perso-note-comex', name: 'Note COMEX', instructions: 'Trois puces au plus, ton exécutif, chiffres en gras.' }] },
   };
 }
 
@@ -577,3 +586,14 @@ export function seedRepos(): Repo[] {
     { id: 3, label: 'infra-cluster', path: '/Users/camille/dev/orion/infra-cluster', use_live: false, use_correlation: true, exclude_globs: 'secrets/**' },
   ];
 }
+
+/** Formats intégrés (miroir de `report::BUILTIN_TEMPLATES` côté cœur). */
+export const MOCK_BUILTIN_TEMPLATES = [
+  { id: 'standard', name: 'Standard', description: 'Décisions, actions, questions ouvertes, points techniques.' },
+  { id: 'daily', name: "Daily / point d'équipe", description: 'Court : par personne, ce qui est fait, en cours, bloqué.' },
+  { id: 'client', name: 'Point client', description: 'Présentable au client : demandes, engagements, prochaines étapes.' },
+  { id: 'atelier', name: 'Atelier / spécification', description: 'Détaillé : besoins, règles de gestion, cas limites, points à trancher.' },
+  { id: 'arbitrage', name: 'Comité / arbitrage', description: "Options étudiées, arguments, décision et qui l'a prise." },
+  { id: 'mail', name: 'Mail de synthèse', description: 'Prêt à envoyer : objet, synthèse, décisions, actions.' },
+  { id: 'slack', name: 'Message Slack / Teams', description: 'Court, à coller dans un canal : 10 lignes au plus.' },
+];

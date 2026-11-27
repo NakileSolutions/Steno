@@ -49,6 +49,9 @@ final class ProcessTap {
     private var procID: AudioDeviceIOProcID?
     private var format: AVAudioFormat?
     private(set) var isRunning = false
+    /// Débit réellement reçu (voir `checkRate`) : manipulé sur `ioQueue` seulement.
+    private var rateWindowStart: TimeInterval?
+    private var rateWindowFrames = 0
 
     init(target: Target, onSamples: @escaping SampleHandler) {
         self.target = target
@@ -166,6 +169,7 @@ final class ProcessTap {
             throw TapError.failed("création de l'agrégat", status)
         }
         aggregateID = aggregate
+        alignFormatOnAggregate()
 
         status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, ioQueue) {
             [weak self] _, inputData, _, _, _ in
@@ -184,8 +188,62 @@ final class ProcessTap {
         guard let format,
               let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: inputData, deallocator: nil)
         else { return }
+        checkRate(frames: Int(buffer.frameLength))
         let mono = AudioBufferUtils.monoSamples(from: buffer, mix: .average)
         if !mono.isEmpty { onSamples(mono, format.sampleRate) }
+    }
+
+    /// L'agrégat est cadencé par la sortie par défaut. Le format du tap annonce souvent
+    /// 48 kHz alors qu'un casque Bluetooth en appel (profil mains libres) tourne à 16 ou
+    /// 24 kHz : les échantillons arrivent alors à ce rythme. Les traiter comme du 48 kHz
+    /// accélère la voix ×3 (transcription absurde, VAD muette). On suit donc la fréquence
+    /// nominale de l'agrégat.
+    private func alignFormatOnAggregate() {
+        guard let f = format,
+              let nominal = try? HAL.read(aggregateID, kAudioDevicePropertyNominalSampleRate, default: Float64(0)),
+              nominal > 0, abs(nominal - f.sampleRate) > 1
+        else { return }
+        Log.warn("tap : format annoncé \(Int(f.sampleRate)) Hz, agrégat cadencé à \(Int(nominal)) Hz : on suit l'agrégat")
+        setSampleRate(nominal)
+    }
+
+    private func setSampleRate(_ rate: Double) {
+        guard let f = format else { return }
+        var asbd = f.streamDescription.pointee
+        asbd.mSampleRate = rate
+        if let updated = AVAudioFormat(streamDescription: &asbd) { format = updated }
+    }
+
+    /// Garde-fou : compare le débit reçu (sur ~3 s) à la fréquence supposée. Un écart net
+    /// (sortie changée en cours d'appel, profil Bluetooth basculé…) corrige la fréquence.
+    private func checkRate(frames: Int) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard let start = rateWindowStart else {
+            rateWindowStart = now
+            rateWindowFrames = 0
+            return
+        }
+        rateWindowFrames += frames
+        let elapsed = now - start
+        guard elapsed >= 3 else { return }
+        let measured = Double(rateWindowFrames) / elapsed
+        rateWindowStart = now
+        rateWindowFrames = 0
+        guard let current = format?.sampleRate,
+              abs(measured - current) / current > 0.15,
+              let snapped = Self.standardRate(near: measured)
+        else { return }
+        Log.warn("tap : \(Int(measured)) échantillons/s reçus pour \(Int(current)) Hz annoncés : passage à \(Int(snapped)) Hz")
+        setSampleRate(snapped)
+    }
+
+    /// Fréquence standard la plus proche (à 10 % près), sinon nil.
+    static func standardRate(near measured: Double) -> Double? {
+        let rates: [Double] = [8000, 11025, 16000, 22050, 24000, 32000, 44100, 48000, 88200, 96000]
+        guard let best = rates.min(by: { abs($0 - measured) < abs($1 - measured) }),
+              abs(best - measured) / best < 0.10
+        else { return nil }
+        return best
     }
 
     /// À VÉRIFIER (spike S1/S4) : code(s) renvoyé(s) quand l'utilisateur ou le MDM refuse

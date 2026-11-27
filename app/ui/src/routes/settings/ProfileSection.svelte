@@ -12,6 +12,17 @@
   });
 </script>
 
+<div class="field">
+  <div class="field-label">Apparence<span class="hint">Auto suit le réglage de macOS.</span></div>
+  <div class="field-body">
+    <div class="seg-ctl" role="radiogroup" aria-label="Apparence">
+      {#each [['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']] as [v, l] (v)}
+        <button role="radio" aria-checked={(settings.profile.theme ?? 'auto') === v} onclick={() => (settings.profile.theme = v as 'auto' | 'light' | 'dark')}>{l}</button>
+      {/each}
+    </div>
+  </div>
+</div>
+
 <p class="intro muted">Aide l’agent à rédiger les comptes rendus (« Moi » = vous). Le nom n’est jamais exporté.</p>
 <div class="field">
   <label class="field-label" for="p-name">Nom</label>

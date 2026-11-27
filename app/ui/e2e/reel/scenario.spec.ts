@@ -51,6 +51,15 @@ test('réunion complète : écoute manuelle, demandes, compte rendu, corrélatio
 
   // On laisse passer la décision, l'action de Marie et la note vocale, puis on arrête.
   await expect(tx.getByText('Je relancerai le support Brindille cet après-midi.').first()).toBeAttached({ timeout: 90_000 });
+  // Contexte, document (texte extrait par le cœur) et format pendant la réunion, puis arrêt en un clic.
+  await live.getByRole('button', { name: 'Contexte' }).click();
+  const dlg = page.getByRole('dialog', { name: 'Contexte du compte rendu' });
+  await dlg.getByLabel('Contexte').fill('Daily ORION : suivre le verrou de créneau.');
+  await dlg.locator('input[type=file]').setInputFiles({ name: 'notes-creneaux.csv', mimeType: 'text/csv', buffer: Buffer.from('sujet;état\nverrou de créneau;en cours\n') });
+  await expect(dlg.getByText('notes-creneaux.csv')).toBeVisible();
+  await expect(dlg.getByText('CSV', { exact: true })).toBeVisible();
+  await dlg.getByLabel('Format du compte rendu').selectOption('daily');
+  await dlg.getByRole('button', { name: 'Terminé' }).click();
   await live.getByRole('button', { name: 'Arrêter l’écoute' }).click();
   await expect(live.getByRole('button', { name: 'Arrêter l’écoute' })).toHaveCount(0);
 
@@ -61,6 +70,7 @@ test('réunion complète : écoute manuelle, demandes, compte rendu, corrélatio
   const report = detail.locator('article.report');
   await expect(report).toContainText('verrou de créneau', { timeout: 90_000 });
   await expect(report).toContainText('Marie');
+  await expect(detail.locator('details.ctxbox summary')).toContainText('contexte · 1 document · format choisi');
   const actions = detail.locator('ul.actions');
   await expect(actions.locator('li', { hasText: 'APP-1234' })).toContainText('Marie');
 
@@ -76,14 +86,21 @@ test('réunion complète : écoute manuelle, demandes, compte rendu, corrélatio
 
   // Export markdown.
   await detail.getByRole('tab', { name: /Compte rendu/ }).click();
+  await detail.getByRole('button', { name: 'Exporter' }).click();
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    detail.getByRole('button', { name: 'Exporter en markdown' }).click(),
+    detail.getByRole('menuitem', { name: /Enregistrer en Markdown/ }).click(),
   ]);
   expect(download.suggestedFilename()).toMatch(/daily-orion\.md$/);
   const md = fs.readFileSync((await download.path())!, 'utf8');
   expect(md).toContain('verrou de créneau');
-  await expect(page.getByText('Export markdown copié et téléchargé.')).toBeVisible();
+  await expect(page.getByText(/Enregistré : .*daily-orion\.md/)).toBeVisible();
+  // Transcription en sous-titres.
+  await detail.getByRole('tab', { name: /Transcription/ }).click();
+  await detail.getByRole('button', { name: /Exporter la transcription/ }).click();
+  const [srt] = await Promise.all([page.waitForEvent('download'), detail.getByRole('menuitem', { name: /SRT/ }).click()]);
+  expect(srt.suggestedFilename()).toMatch(/transcription\.srt$/);
+  expect(fs.readFileSync((await srt.path())!, 'utf8')).toMatch(/^1\n\d{2}:\d{2}:\d{2},\d{3} --> /);
 
   // Recherche plein texte.
   await nav(page).getByRole('link', { name: 'Recherche', exact: true }).click();

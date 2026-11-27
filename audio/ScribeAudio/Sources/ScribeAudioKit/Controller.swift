@@ -14,6 +14,12 @@ actor Controller {
     private let deviceWatcher = AudioDeviceWatcher()
     private let feedback = FeedbackPlayer()
     private var session: CaptureSession?
+    /// Micro coupé dans Scribe : appliqué aussi à la capture suivante.
+    private var micMuted = false
+    /// Arrêt de capture en cours ou terminé : les WAV ne sont complets (en-tête réécrit,
+    /// fichier fermé) qu'à sa fin. La diarisation l'attend toujours, même au-delà du délai
+    /// après lequel `stopped` est annoncé.
+    private var pendingStop: Task<Void, Never>?
     /// Micro choisi (`start.input_device` ou `set_input`), conservé d'une capture à l'autre.
     private var inputSelection: DeviceSelection = .systemDefault
     /// `start.apps` de la session en cours (vide = toutes les apps surveillées).
@@ -30,6 +36,18 @@ actor Controller {
     func boot() async {
         output.send(.ready(version: SidecarInfo.version, asr: models.asrName))
         output.send(.permissions(permissions.snapshot()))
+
+        // Le micro ne peut pas être ajouté à la main dans Réglages → Confidentialité : macOS
+        // n'y inscrit une app qu'après une demande. On la fait dès le lancement (invite au nom
+        // de Scribe.app, processus responsable), sans attendre la première écoute.
+        let tracker = permissions
+        let out = output
+        Task {
+            if PermissionsTracker.microphoneStatus() == .unknown {
+                _ = await PermissionsTracker.requestMicrophoneIfNeeded()
+                out.send(.permissions(tracker.snapshot()))
+            }
+        }
 
         let output = self.output
         // Périphériques : liste après `ready`, puis à chaque changement (anti-rebond ≈ 300 ms).
@@ -105,15 +123,46 @@ actor Controller {
             session?.setAside(on)
             Log.info("aparté \(on ? "activé" : "désactivé")")
 
+        case .pause:
+            guard let s = session else { return }
+            s.setPaused(true)
+            Log.info("écoute en pause")
+            output.send(.state(.paused))
+
+        case .resume:
+            guard let s = session else { return }
+            s.setPaused(false)
+            Log.info("écoute reprise")
+            output.send(.state(.listening))
+
+        case let .mute(on):
+            micMuted = on
+            session?.setMicMuted(on)
+            Log.info("micro \(on ? "coupé" : "rétabli") dans Scribe")
+
         case let .wakeTest(seconds):
             // En tâche séparée : la boucle de commandes reste disponible pendant l'enregistrement.
             Task { await self.wakeTest(seconds: seconds) }
 
-        case let .diarize(meetingId, audioDir):
-            Task { await self.diarize(meetingId: meetingId, audioDir: audioDir) }
+        case let .diarize(meetingId, audioDir, file):
+            Task { await self.diarize(meetingId: meetingId, audioDir: audioDir, file: file) }
+
+        case let .retranscribe(meetingId, audioDir, language, vocabulary, items):
+            Task {
+                await self.retranscribe(meetingId: meetingId, audioDir: audioDir, language: language,
+                                        vocabulary: vocabulary, items: items)
+            }
 
         case .permissions:
             output.send(.permissions(permissions.snapshot()))
+
+        case let .requestPermission(kind):
+            let tracker = permissions
+            let out = output
+            Task {
+                await tracker.request(kind)
+                out.send(.permissions(tracker.snapshot()))
+            }
 
         case .shutdown:
             await shutdown(reason: "commande shutdown")
@@ -138,7 +187,8 @@ actor Controller {
             silenceMs: options.silenceMs,
             keepAudio: options.keepAudio,
             audioDir: options.audioDir.map { URL(fileURLWithPath: $0, isDirectory: true) },
-            inputDevice: inputSelection.uid
+            inputDevice: inputSelection.uid,
+            room: options.room
         )
         let s = CaptureSession(config: config, output: output, permissions: permissions, models: models)
         session = s
@@ -149,8 +199,9 @@ actor Controller {
         if !selection.unknown.isEmpty {
             Log.warn("start.apps : app(s) non surveillée(s) ignorée(s) : \(selection.unknown.joined(separator: ", "))")
         }
+        s.setMicMuted(micMuted)
         await s.start(tapSource: tapSource(for: snapshot))
-        Log.info("capture démarrée (micro \(inputSelection.label), apps \(selection.apps.map(\.id).joined(separator: ", ")), silence \(options.silenceMs) ms, vocabulaire \(options.vocabulary.count) mots, audio \(options.keepAudio ? "conservé" : "non conservé"))")
+        Log.info("capture démarrée (micro \(inputSelection.label), \(options.room ? "présentiel" : "apps " + selection.apps.map(\.id).joined(separator: ", ")), silence \(options.silenceMs) ms, vocabulaire \(options.vocabulary.count) mots, audio \(options.keepAudio ? "conservé" : "non conservé"))")
         output.send(.state(.listening))
     }
 
@@ -160,13 +211,27 @@ actor Controller {
             return
         }
         session = nil
+        let stopping = Task { await s.stop() }
+        pendingStop = stopping
         // Vide les énoncés en cours ; au-delà de 15 s (modèle encore en chargement…), on
         // annonce l'arrêt quand même et les derniers segments arriveront ensuite.
-        let complete = await runWithTimeout(seconds: 15) { await s.stop() }
-        if !complete { Log.warn("vidage des segments plus long que prévu : arrêt annoncé avant la fin") }
-        Log.info("capture arrêtée")
+        let complete = await runWithTimeout(seconds: 15) { await stopping.value }
+        if complete {
+            Log.info("capture arrêtée")
+        } else {
+            Log.warn("vidage des segments plus long que prévu : arrêt annoncé avant la fin")
+        }
         output.send(.state(.stopped))
-        // Retour au niveau de repos : les modèles seront rechargés au prochain `start`.
+        // Retour au niveau de repos (modèles rechargés au prochain `start`), mais jamais pendant
+        // que les derniers énoncés sont encore transcrits.
+        Task { [weak self] in
+            await stopping.value
+            await self?.unloadIfIdle()
+        }
+    }
+
+    private func unloadIfIdle() async {
+        guard session == nil else { return }
         await models.unload()
     }
 
@@ -197,10 +262,14 @@ actor Controller {
         }
     }
 
-    private func diarize(meetingId: String, audioDir: String) async {
+    private func diarize(meetingId: String, audioDir: String, file: String) async {
+        // `them.wav` n'est lisible qu'une fois la capture complètement arrêtée.
+        if let pendingStop {
+            await pendingStop.value
+        }
         let url: URL
         do {
-            url = try diarizationInput(audioDir: audioDir)
+            url = try diarizationInput(audioDir: audioDir, file: file)
         } catch {
             output.send(.error(code: .badCommand, message: "Diarisation impossible : \(error)", recoverable: true))
             return
@@ -217,10 +286,39 @@ actor Controller {
             let turns = try await runDiarization(fileURL: url, diarizer: diarizer)
             output.send(.diarization(meetingId: meetingId, turns: turns))
             await models.releaseDiarizer()
+        } catch where String(describing: error).contains("noSpeechDetected") {
+            // Personne n'a parlé côté appel (test seul, micro coupé…) : rien à attribuer.
+            Log.info("diarisation : aucune voix dans \(file)")
+            output.send(.diarization(meetingId: meetingId, turns: []))
+            await models.releaseDiarizer()
         } catch {
             Log.error("diarisation : \(error)")
             output.send(.error(code: .asrFailed, message: "Diarisation impossible : \(error)", recoverable: true))
         }
+    }
+
+    private func retranscribe(meetingId: String, audioDir: String, language: String,
+                              vocabulary: [String], items: [RetranscribeItem]) async {
+        // Les fichiers ne sont complets qu'une fois la capture arrêtée.
+        if let pendingStop {
+            await pendingStop.value
+        }
+        let recognizer: FinalRecognizer
+        do {
+            recognizer = try await models.finalRecognizer(language: language)
+        } catch {
+            Log.error("modèle de retranscription : \(error)")
+            output.send(.error(code: .modelMissing, message: "Retranscription impossible : \(error)", recoverable: true))
+            return
+        }
+        let result = await Retranscriber.run(
+            items: items,
+            audioDir: URL(fileURLWithPath: audioDir, isDirectory: true),
+            recognizer: recognizer,
+            corrector: VocabularyCorrector(vocabulary: vocabulary),
+            load: Spikes.loadMono16k
+        )
+        output.send(.retranscription(meetingId: meetingId, items: result))
     }
 
     // MARK: Apps surveillées

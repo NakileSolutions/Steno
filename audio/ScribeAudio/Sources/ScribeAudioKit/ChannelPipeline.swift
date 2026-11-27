@@ -26,7 +26,7 @@ final class ChannelPipeline {
     private let corrector: VocabularyCorrector
     private let wav: WavWriter?
     private let meter: LevelMeter
-    private let onSegment: (Utterance, String) -> Void
+    private let onSegment: (Utterance, String, String?) -> Void
     private let onError: (ErrorCode, String) -> Void
 
     private let chunkStream: AsyncStream<Chunk>
@@ -46,7 +46,7 @@ final class ChannelPipeline {
          models: SpeechModels,
          wav: WavWriter?,
          meter: LevelMeter,
-         onSegment: @escaping (Utterance, String) -> Void,
+         onSegment: @escaping (Utterance, String, String?) -> Void,
          onError: @escaping (ErrorCode, String) -> Void)
     {
         self.channel = channel
@@ -170,12 +170,21 @@ final class ChannelPipeline {
             guard let recognizer = await models.recognizer() else { continue } // model_missing déjà signalé
             let started = Date()
             do {
-                let raw = try await recognizer.transcribe(utterance.samples)
+                let (raw, confidence) = try await recognizer.transcribeDetailed(utterance.samples)
                 let text = corrector.correct(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+                if !text.isEmpty, let why = HallucinationFilter.rejection(
+                    text: text, confidence: confidence, duration: utterance.duration,
+                    rmsDb: HallucinationFilter.rmsDb(utterance.samples)
+                ) {
+                    Log.info("canal \(channel.rawValue) : phrase écartée « \(text) » (\(why))")
+                    continue
+                }
                 let elapsed = Date().timeIntervalSince(started)
                 Log.debug("canal \(channel.rawValue) : \(String(format: "%.1f", utterance.duration)) s transcrits en \(String(format: "%.2f", elapsed)) s")
                 guard !text.isEmpty else { continue }
-                onSegment(utterance, text)
+                // Intervenants : pas d'identification en direct (« Eux »), seulement la
+                // diarisation de fin de réunion.
+                onSegment(utterance, text, nil)
             } catch {
                 onError(.asrFailed, "Transcription impossible : \(error)")
             }

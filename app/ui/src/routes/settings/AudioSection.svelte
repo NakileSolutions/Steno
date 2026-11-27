@@ -10,6 +10,16 @@
     { id: 'aside', label: 'Aparté (maintenir)' },
     { id: 'quick_note', label: 'Note rapide' },
   ] as const;
+  const FINAL_LANGUAGES = [
+    ['off', 'Désactivée (garder le direct)'],
+    ['fr', 'Français'],
+    ['en', 'Anglais'],
+    ['es', 'Espagnol'],
+    ['de', 'Allemand'],
+    ['it', 'Italien'],
+    ['pt', 'Portugais'],
+    ['nl', 'Néerlandais'],
+  ] as const;
 </script>
 
 <InputDevice bind:settings={settings} />
@@ -24,6 +34,14 @@
       <input id="silence" type="range" min="400" max="2500" step="100" bind:value={settings.audio.silence_ms} />
       <span class="val small tnum">{settings.audio.silence_ms} ms</span>
     </div>
+  </div>
+</div>
+<div class="field">
+  <label class="field-label" for="final-tr">Retranscription finale<span class="hint">À la fin de la réunion, un modèle plus précis réécrit la transcription dans la langue choisie (évite le mélange français / anglais). Premier usage : téléchargement d’environ 1 Go.</span></label>
+  <div class="field-body">
+    <select id="final-tr" class="input" value={settings.audio.final_transcription ?? 'fr'} onchange={(e) => (settings.audio.final_transcription = e.currentTarget.value)}>
+      {#each FINAL_LANGUAGES as [v, l] (v)}<option value={v}>{l}</option>{/each}
+    </select>
   </div>
 </div>
 <div class="field">

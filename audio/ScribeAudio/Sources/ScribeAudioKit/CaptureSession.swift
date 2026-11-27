@@ -33,6 +33,9 @@ final class CaptureSession {
         var audioDir: URL?
         /// UID du micro (nil = micro par défaut du système, en suivant ses changements).
         var inputDevice: String? = nil
+        /// Réunion en présentiel : micro seul, sans tap ni voice processing (rien n'est joué,
+        /// et le traitement de la voix atténuerait les personnes éloignées du micro).
+        var room: Bool = false
     }
 
     enum TapMode {
@@ -81,6 +84,8 @@ final class CaptureSession {
     // Aparté et collecteurs (test du mot d'appel pendant une réunion).
     private let lock = NSLock()
     private var asideIntervals: [(start: Double, end: Double?)] = []
+    private var micMuted = false
+    private var paused = false
     private var micCollectors: [UUID: ([Float]) -> Void] = [:]
 
     init(config: Config, output: Output, permissions: PermissionsTracker, models: SpeechModels,
@@ -120,7 +125,9 @@ final class CaptureSession {
                 models: models,
                 wav: wav,
                 meter: meter,
-                onSegment: { utterance, text in self?.emitSegment(utterance, channel: channel, text: text) },
+                onSegment: { utterance, text, speaker in
+                    self?.emitSegment(utterance, channel: channel, text: text, speaker: speaker)
+                },
                 onError: { code, message in self?.reportError(code, message, recoverable: true) }
             )
         }
@@ -140,7 +147,7 @@ final class CaptureSession {
         if micPermission == .denied {
             reportError(.micDenied, "Accès au micro refusé : autorisez Scribe dans Réglages Système › Confidentialité et sécurité › Micro.", recoverable: false)
         } else {
-            let mic = MicCapture(voiceProcessing: true, inputDevice: config.inputDevice) { [weak self] samples, rate in
+            let mic = MicCapture(voiceProcessing: !config.room, inputDevice: config.inputDevice) { [weak self] samples, rate in
                 self?.handleMicSamples(samples, sampleRate: rate)
             }
             mic.onDeviceMissing = { [weak self] uid in
@@ -161,8 +168,10 @@ final class CaptureSession {
             }
         }
 
-        // Tap (canal « them »).
-        tapQueue.sync {
+        // Tap (canal « them ») : aucun en présentiel.
+        if config.room {
+            Log.info("réunion en présentiel : micro seul")
+        } else { tapQueue.sync {
             running = true
             tapSource = initial
             for selector in [kAudioHardwarePropertyDefaultSystemOutputDevice, kAudioHardwarePropertyDefaultOutputDevice] {
@@ -184,7 +193,7 @@ final class CaptureSession {
                 }
                 reportError(.tapFailed, message, recoverable: true)
             }
-        }
+        } }
 
         // Veille / réveil.
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -303,7 +312,11 @@ final class CaptureSession {
     private func handleMicSamples(_ samples: [Float], sampleRate: Double) {
         let out = meResampler.process(samples, sampleRate: sampleRate)
         guard !out.isEmpty else { return }
-        mePipeline.feed(out)
+        lock.lock()
+        let muted = micMuted || paused
+        lock.unlock()
+        // Micro coupé : du silence à la place (VAD muette, WAV et horloge continus).
+        mePipeline.feed(muted ? [Float](repeating: 0, count: out.count) : out)
         lock.lock()
         let collectors = Array(micCollectors.values)
         lock.unlock()
@@ -318,7 +331,10 @@ final class CaptureSession {
             permissions.setSystemAudio(.granted)
             Log.info("audio système reçu : permission accordée")
         }
-        themPipeline.feed(out)
+        lock.lock()
+        let isPaused = paused
+        lock.unlock()
+        themPipeline.feed(isPaused ? [Float](repeating: 0, count: out.count) : out)
     }
 
     /// Enregistre `seconds` secondes du micro déjà ouvert (test du mot d'appel en réunion).
@@ -333,6 +349,21 @@ final class CaptureSession {
         micCollectors[id] = nil
         lock.unlock()
         return buffer.samples
+    }
+
+    // MARK: Micro coupé
+
+    /// Pause : silence sur les deux canaux (WAV et horloge continus, énoncés clos proprement).
+    func setPaused(_ on: Bool) {
+        lock.lock()
+        paused = on
+        lock.unlock()
+    }
+
+    func setMicMuted(_ on: Bool) {
+        lock.lock()
+        micMuted = on
+        lock.unlock()
     }
 
     // MARK: Aparté
@@ -361,11 +392,12 @@ final class CaptureSession {
 
     // MARK: Émission
 
-    private func emitSegment(_ utterance: Utterance, channel: Channel, text: String) {
+    private func emitSegment(_ utterance: Utterance, channel: Channel, text: String, speaker: String?) {
         let isPrivate = channel == .me && isAside(t0: utterance.t0, t1: utterance.t1)
         let ts = Timestamp.iso8601(startDate.addingTimeInterval(utterance.t1))
         output.send(.segment(SegmentPayload(ts: ts, t0: utterance.t0, t1: utterance.t1,
-                                            channel: channel, text: text, isPrivate: isPrivate)))
+                                            channel: channel, text: text, isPrivate: isPrivate,
+                                            speaker: speaker)))
     }
 
     private func reportError(_ code: ErrorCode, _ message: String, recoverable: Bool) {

@@ -10,6 +10,20 @@ import Foundation
 protocol SpeechRecognizer: AnyObject {
     var name: String { get }
     func transcribe(_ samples: [Float]) async throws -> String
+    /// Texte et confiance du modèle (0…1, nil si inconnue).
+    func transcribeDetailed(_ samples: [Float]) async throws -> (text: String, confidence: Float?)
+}
+
+extension SpeechRecognizer {
+    func transcribeDetailed(_ samples: [Float]) async throws -> (text: String, confidence: Float?) {
+        (try await transcribe(samples), nil)
+    }
+}
+
+/// Retranscription de fin de réunion : modèle plus lent et plus précis, langue imposée.
+protocol FinalRecognizer: AnyObject {
+    var name: String { get }
+    func transcribe(_ samples: [Float]) async throws -> String
 }
 
 /// Diarisation hors ligne d'un fichier audio.
@@ -25,6 +39,14 @@ protocol SpeechBackend: AnyObject {
     /// Renvoie une fabrique : une instance de VAD (à état) par canal.
     func loadVADFactory() async throws -> () -> VoiceActivityDetector
     func loadDiarizer() async throws -> SpeakerDiarizer
+    /// `language` : code ISO (`fr`…). Téléchargé au premier usage.
+    func loadFinalRecognizer(language: String) async throws -> FinalRecognizer
+}
+
+extension SpeechBackend {
+    func loadFinalRecognizer(language: String) async throws -> FinalRecognizer {
+        throw SpeechModelError.unavailable("retranscription non prise en charge par \(asrName)")
+    }
 }
 
 enum SpeechModelError: Error, CustomStringConvertible {
@@ -112,6 +134,14 @@ actor SpeechModels {
             return factory()
         }
         return EnergyVAD()
+    }
+
+    /// Modèle de retranscription (chargé à la demande, jamais gardé : il pèse ~1 Go).
+    func finalRecognizer(language: String) async throws -> FinalRecognizer {
+        let started = Date()
+        let r = try await backend.loadFinalRecognizer(language: language)
+        Log.info("modèle de retranscription \(r.name) prêt en \(String(format: "%.1f", Date().timeIntervalSince(started))) s")
+        return r
     }
 
     func diarizer() async throws -> SpeakerDiarizer {

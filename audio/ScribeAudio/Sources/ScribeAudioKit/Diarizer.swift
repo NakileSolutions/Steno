@@ -60,8 +60,8 @@ enum DiarizationError: Error, CustomStringConvertible {
 }
 
 /// Chemin de `<audio_dir>/them.wav`, ou erreur si le fichier n'existe pas.
-func diarizationInput(audioDir: String) throws -> URL {
-    let url = URL(fileURLWithPath: audioDir, isDirectory: true).appendingPathComponent("them.wav")
+func diarizationInput(audioDir: String, file: String = "them.wav") throws -> URL {
+    let url = URL(fileURLWithPath: audioDir, isDirectory: true).appendingPathComponent(file)
     guard FileManager.default.fileExists(atPath: url.path) else {
         throw DiarizationError.missingFile(url.path)
     }

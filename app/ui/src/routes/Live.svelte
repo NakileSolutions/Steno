@@ -2,20 +2,22 @@
   import { onMount, tick } from 'svelte';
   import { api, onEvent } from '../lib/api';
   import { live, clock, STATE_LABEL } from '../lib/live.svelte';
-  import { callOffer, isListening, meetingCallChip } from '../lib/listening';
+  import { ROOM, callOffer, isListening, meetingCallChip } from '../lib/listening';
   import { isDeviceMissing, missingInputLabel } from '../lib/audio';
   import type { AudioDevice } from '../lib/types';
   import { prefs, stopHint } from '../lib/prefs.svelte';
   import { href } from '../lib/router.svelte';
   import type { Request, Segment, Speaker } from '../lib/types';
   import { clockDuration, timeS } from '../lib/format';
-  import { toastError } from '../lib/ui.svelte';
+  import { insertChrono } from '../lib/group';
+  import { copyText, promptDialog, toast, toastError } from '../lib/ui.svelte';
   import { initial, speakerColor, speakerName } from '../lib/components/speakers';
   import Logo from '../lib/Logo.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import Meter from '../lib/components/Meter.svelte';
   import Waveform from '../lib/components/Waveform.svelte';
   import RequestCard from '../lib/components/RequestCard.svelte';
+  import ContextDialog from '../lib/components/ContextDialog.svelte';
 
   const s = $derived(live.s);
   const meeting = $derived(s.meeting);
@@ -25,6 +27,8 @@
   const themLabel = $derived(meetingCallChip(meeting?.call_app, prefs.callApps) ?? 'Visio');
   /** Puce de l'app de l'appel (Teams, Slack…), si l'écoute a démarré sur un appel. */
   const appChip = $derived(meetingCallChip(meeting?.call_app, prefs.callApps));
+  /** Réunion en présentiel : micro seul, pas de son d'app. */
+  const inPerson = $derived(meeting?.call_app === ROOM);
   // Micro choisi débranché : le sidecar a repris le micro par défaut (liste relue à chaque réunion).
   let inputs = $state<AudioDevice[]>([]);
   $effect(() => {
@@ -48,6 +52,38 @@
   let query = $state('');
   let newTitle = $state('');
   let busy = $state(false);
+
+  /** Retire une phrase qui n'a pas été dite (erreur de transcription). */
+  async function removeSegment(seg: Segment) {
+    try {
+      await api.deleteSegment(seg.id);
+      segments = segments.filter((x) => x.id !== seg.id);
+    } catch (e) {
+      toastError(e);
+    }
+  }
+
+  /** Donne un nom à un intervenant reconnu à la voix (« Intervenant 3 » → « Marie »). */
+  async function renameSpeaker(label: string) {
+    if (!meeting || label === 'Moi') return;
+    const current = speakers.find((s) => s.label === label)?.display_name ?? '';
+    const name = await promptDialog({
+      title: 'Nommer l’intervenant',
+      message: `Nom affiché pour « ${speakerName(label, speakers)} » dans cette réunion.`,
+      value: current,
+      placeholder: 'Prénom Nom',
+      confirm: 'Enregistrer',
+    });
+    if (name === null) return;
+    try {
+      await api.renameSpeaker(meeting.id, label, name.trim());
+      const sp = speakers.find((s) => s.label === label);
+      if (sp) sp.display_name = name.trim() || null;
+      else speakers.push({ label, display_name: name.trim() || null });
+    } catch (e) {
+      toastError(e);
+    }
+  }
 
   async function loadMeeting(id: string) {
     loadedFor = id;
@@ -79,11 +115,16 @@
           segments[i] = seg;
           return;
         }
-        segments.push(seg);
+        const at = insertChrono(segments, seg);
+        // Phrase rangée plus haut (arrivée en retard) : pas de « nouvelles lignes » à signaler.
+        if (at < segments.length - 1) return;
         if (stick) {
           await tick();
           scrollBottom(true);
         } else unseen++;
+      }),
+      onEvent('scribe://segment_deleted', ({ meeting_id, id }) => {
+        if (meeting_id === meeting?.id) segments = segments.filter((x) => x.id !== id);
       }),
       onEvent('scribe://request', (r) => {
         if (r.meeting_id !== meeting?.id) return;
@@ -125,16 +166,38 @@
     }
   }
 
-  async function start() {
+  async function start(inPerson = false) {
     busy = true;
     try {
-      await api.startMeeting(newTitle.trim() || undefined);
+      await api.startMeeting(newTitle.trim() || undefined, inPerson);
       newTitle = '';
     } catch (e) {
       toastError(e);
     } finally {
       busy = false;
     }
+  }
+  let ctxOpen = $state(false);
+  let ctxMode = $state<'stop' | 'edit'>('edit');
+  /** Arrêt depuis la fenêtre : propose d'abord contexte, documents et format (sauf réunion confidentielle). */
+  async function askStop() {
+    if (!meeting?.confidential) {
+      try {
+        const st = await api.getSettings();
+        if (st.report?.ask_context_on_stop) {
+          ctxMode = 'stop';
+          ctxOpen = true;
+          return;
+        }
+      } catch {
+        // Réglages illisibles : arrêt direct.
+      }
+    }
+    await stop();
+  }
+  function openContext() {
+    ctxMode = 'edit';
+    ctxOpen = true;
   }
   async function stop() {
     busy = true;
@@ -146,6 +209,28 @@
       busy = false;
     }
   }
+  async function togglePause() {
+    busy = true;
+    try {
+      if (s.state === 'paused') await api.resumeMeeting();
+      else await api.pauseMeeting();
+    } catch (e) {
+      toastError(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  // Rappel RGPD : prévenir les participants au début de chaque écoute (une fois par réunion).
+  let consentDismissed = $state<string | null>(null);
+  const showConsent = $derived(!!meeting && prefs.consentReminder && consentDismissed !== meeting.id && s.state !== 'processing');
+  async function copyConsent() {
+    if (await copyText(prefs.consentMessage)) {
+      toast('Message copié : collez-le dans le chat de l’appel.');
+      consentDismissed = meeting?.id ?? null;
+    }
+  }
+
   async function setConf(on: boolean) {
     try {
       await api.setLiveConfidential(on);
@@ -176,7 +261,7 @@
         <div class="grow">
           <p class="sub">
             <span class="st {s.state}">{STATE_LABEL[s.state]}</span>
-            {#if appChip}<span class="chip"><Icon name="phone" size={11} />{appChip}</span>{/if}
+            {#if appChip}<span class="chip"><Icon name={inPerson ? 'user' : 'phone'} size={11} />{appChip}</span>{/if}
             {#if micGone}<span class="chip micgone" title={missingInputLabel(prefs.inputDeviceName, prefs.inputDevice)}><Icon name="mic" size={11} />micro par défaut</span>{/if}
             {#if s.pending_requests}<span class="pend"><span class="spin" aria-hidden="true"></span>{s.pending_requests} demande{s.pending_requests > 1 ? 's' : ''} en cours</span>{/if}
             {#if s.sidecar !== 'running'}<span class="warn">Audio : {s.sidecar}</span>{/if}
@@ -188,9 +273,24 @@
             <Icon name="lock" size={14} /> Confidentielle
             <input class="switch" type="checkbox" role="switch" checked={meeting.confidential} onchange={(e) => setConf(e.currentTarget.checked)} />
           </label>
-          <button class="btn danger stopbtn" onclick={stop} disabled={busy}><span class="sq" aria-hidden="true"></span>Arrêter l’écoute</button>
+          <button class="btn pausebtn" onclick={togglePause} disabled={busy} title={s.state === 'paused' ? 'Reprendre la transcription' : 'Mettre l’écoute en pause : rien n’est transcrit, la réunion continue'}>
+            <Icon name={s.state === 'paused' ? 'play' : 'pause'} size={14} />{s.state === 'paused' ? 'Reprendre' : 'Pause'}
+          </button>
+          {#if !meeting.confidential}
+            <button class="btn ctxbtn" onclick={openContext} title="Contexte, documents et format du compte rendu"><Icon name="paperclip" size={14} />Contexte</button>
+          {/if}
+          <button class="btn danger stopbtn" onclick={askStop} disabled={busy}><span class="sq" aria-hidden="true"></span>Arrêter l’écoute</button>
         {/if}
       </div>
+      {#if showConsent}
+        <div class="consent" role="status">
+          <Icon name="info" size={15} />
+          <p class="grow">Prévenez les participants que la réunion est transcrite.</p>
+          <button class="btn sm primary" onclick={copyConsent}><Icon name="copy" size={13} />Copier le message</button>
+          <button class="btn sm ghost icon" onclick={() => (consentDismissed = meeting?.id ?? null)} title="Masquer pour cette réunion" aria-label="Masquer le rappel"><Icon name="x" size={13} /></button>
+        </div>
+      {/if}
+      {#if s.state === 'paused'}<p class="paused-note small"><Icon name="pause" size={13} />Écoute en pause : rien n’est transcrit jusqu’à la reprise.</p>{/if}
 
       <div class="row wavebar">
         <Waveform me={s.levels.me} them={s.levels.them} active={s.state === 'listening'} />
@@ -199,9 +299,19 @@
 
       {#if active}
         <div class="row ctl">
+          <button
+            class="btn mute"
+            class:on={s.mic_muted}
+            aria-pressed={s.mic_muted}
+            onclick={() => api.setMicMuted(!s.mic_muted).catch(toastError)}
+            title={s.mic_muted ? 'Rétablir votre micro dans Scribe' : 'Couper votre micro dans Scribe : vos paroles ne sont plus transcrites (le son de l’appel, si)'}
+          >
+            <Icon name={s.mic_muted ? 'micoff' : 'mic'} size={15} />
+            {s.mic_muted ? 'Micro coupé' : 'Couper mon micro'}
+          </button>
           <div class="meters">
-            <Meter db={s.levels.me} label="Micro" icon="mic" />
-            <Meter db={s.levels.them} label={themLabel} icon="speaker" />
+            <Meter db={s.mic_muted ? -90 : s.levels.me} label={s.mic_muted ? 'Micro coupé' : 'Micro'} icon={s.mic_muted ? 'micoff' : 'mic'} />
+            {#if !inPerson}<Meter db={s.levels.them} label={themLabel} icon="speaker" />{/if}
           </div>
           <button
             class="btn aside"
@@ -224,6 +334,7 @@
       {#if active}<p class="stophint"><Icon name="info" size={13} />{stopHint()}</p>{/if}
       {#if s.last_error}<p class="err small"><Icon name="warn" size={13} />{s.last_error}</p>{/if}
     </header>
+    <ContextDialog meetingId={meeting.id} mode={ctxMode} bind:open={ctxOpen} onstop={stop} />
 
     <div class="body">
       <section class="tx" aria-label="Transcription en direct">
@@ -242,13 +353,17 @@
                 <time class="ts">{timeS(seg.ts)}</time>
                 <span class="av">{#if !cont}<span class="avatar" aria-hidden="true">{initial(name)}</span>{/if}</span>
                 <div class="body-c">
-                  {#if !cont}<span class="who">{name}</span>{/if}
+                  {#if !cont}
+                    {#if !/^Eux-\d+$/.test(seg.speaker)}<span class="who">{name}</span>
+                    {:else}<button class="who rename" onclick={() => renameSpeaker(seg.speaker)} title="Nommer cet intervenant">{name}</button>{/if}
+                  {/if}
                   <p class="text">
                     {#if seg.private}<span class="priv"><Icon name="lock" size={11} /> Aparté</span>{/if}
                     {seg.text}
                     {#if seg.request_id}<span class="badge accent cmdtag"><Icon name="ask" size={11} /> Demande</span>{/if}
                   </p>
                 </div>
+                <button class="del" onclick={() => removeSegment(seg)} title="Supprimer cette phrase (jamais dite)" aria-label="Supprimer cette phrase"><Icon name="trash" size={13} /></button>
               </li>
             {/each}
           </ol>
@@ -300,7 +415,8 @@
             <p class="to-sub">Le Scribe n’écoute pas encore : rien n’est transcrit tant que vous ne l’avez pas décidé.{#if offer.browser} Attention : tout le son du navigateur sera capté, y compris les autres onglets.{/if}</p>
           </div>
         </div>
-        <button class="btn primary go" onclick={start} disabled={busy}><Icon name="play" size={15} stroke={2} />Démarrer l’écoute</button>
+        <button class="btn primary go" onclick={() => start()} disabled={busy}><Icon name="play" size={15} stroke={2} />Démarrer l’écoute</button>
+        <button class="btn room" onclick={() => start(true)} disabled={busy} title="Sans app de visio : seul le micro du Mac est écouté"><Icon name="user" size={15} />Plutôt une réunion en présentiel</button>
       {:else}
         <span class="hic"><Logo size={56} tile /></span>
         <h2>Le Scribe n’écoute pas</h2>
@@ -309,6 +425,9 @@
           <input class="input lg" bind:value={newTitle} placeholder="Titre de la réunion (facultatif)" aria-label="Titre de la réunion" />
           <button class="btn primary go" disabled={busy}><Icon name="play" size={15} stroke={2} />Démarrer l’écoute</button>
         </form>
+        <button class="btn room" onclick={() => start(true)} disabled={busy} title="Sans app de visio : seul le micro du Mac est écouté ; les intervenants sont identifiés à la fin">
+          <Icon name="user" size={15} />Réunion en présentiel
+        </button>
       {/if}
       {#if s.state !== 'processing'}
         <p class="tiny faint howto">Pour arrêter ensuite : le bouton « Arrêter l’écoute », le raccourci, le menu de la barre d’état, ou à la voix.</p>
@@ -372,6 +491,11 @@
   .conf { gap: 8px; font-size: var(--fs-ui); color: var(--text-2); padding: 0 6px; height: 30px; }
   .conf :global(.icon) { color: var(--text-3); }
   .stopbtn { gap: 8px; }
+  .pausebtn { gap: 6px; }
+  .btn.room { gap: 7px; margin-top: 10px; }
+  .consent { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 8px 10px 8px 12px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-text); }
+  .consent p { color: var(--text); font-size: var(--fs-ui); }
+  .paused-note { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--warn); }
   .sq { width: 9px; height: 9px; border-radius: 2px; background: currentColor; }
   .wavebar { gap: 22px; align-items: center; padding: 2px 0 0 52px; }
   .clock {
@@ -385,6 +509,7 @@
   .ctl { gap: 20px; padding-left: 52px; }
   .meters { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; flex: 1; max-width: 520px; }
   .aside { touch-action: none; user-select: none; margin-left: auto; }
+  .mute.on { background: var(--err-soft); color: var(--err); border-color: transparent; }
   .aside.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; box-shadow: 0 0 0 4px var(--accent-soft-2); }
   .stophint { display: flex; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--fs-meta); margin-top: -2px; padding-left: 52px; }
 
@@ -394,7 +519,7 @@
   .segs { list-style: none; margin: 0; padding: 0; max-width: 860px; }
   .seg {
     display: grid;
-    grid-template-columns: 58px 32px 1fr;
+    grid-template-columns: 58px 32px 1fr 24px;
     column-gap: 12px;
     padding-top: 22px;
     align-items: start;
@@ -408,6 +533,12 @@
   .av { padding-top: 0; }
   .who { display: block; font-weight: 600; font-size: var(--fs-meta); color: var(--c); line-height: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .text { font-size: var(--fs-body); line-height: 1.62; color: var(--text); padding: 1px 0; }
+  .who.rename { all: unset; display: block; font-weight: 600; font-size: var(--fs-meta); color: var(--c); line-height: 24px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who.rename:hover { text-decoration: underline; }
+  .who.rename:focus-visible { outline: 2px solid var(--accent); border-radius: 4px; }
+  .del { all: unset; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; color: var(--text-3); opacity: 0; cursor: pointer; transition: opacity var(--t-fast) var(--ease); }
+  .seg:hover .del, .del:focus-visible { opacity: 1; }
+  .del:hover { color: var(--err); background: var(--err-soft); }
   .seg.private .text { color: var(--text-2); font-style: italic; }
   .seg.cmd .text {
     margin: 3px 0;

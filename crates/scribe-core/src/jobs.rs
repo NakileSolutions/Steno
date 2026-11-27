@@ -138,6 +138,7 @@ async fn run_request(inner: &Inner, job: &Job) -> Result<()> {
     }
     inner.db.set_request_running(&rid)?;
     emit_request(inner, &rid);
+    let started = std::time::Instant::now();
     let cancel = CancellationToken::new();
     inner.cancels.lock().unwrap().insert(rid.clone(), cancel.clone());
     let s = inner.settings();
@@ -225,6 +226,14 @@ async fn run_request(inner: &Inner, job: &Job) -> Result<()> {
     }
     match result {
         Ok(r) => {
+            // Mesure : durée totale et outils, pour repérer les recherches lentes dans le journal.
+            tracing::info!(
+                "demande {rid} ({}) : {:.1} s, {} appel(s) d'outils {:?}",
+                req.intent,
+                started.elapsed().as_secs_f64(),
+                r.tools_used.len(),
+                r.tools_used
+            );
             let summary = crate::report::extract_summary(&r.answer);
             inner.db.finish_request(&rid, "done", Some(&summary), Some(&r.answer), &r.tools_used, None)?;
             emit_request(inner, &rid);
@@ -278,7 +287,18 @@ async fn run_report(inner: &Inner, job: &Job) -> Result<()> {
 
 async fn run_diarize(inner: &Inner, job: &Job) -> Result<()> {
     let mid = job.meeting_id.clone().context("réunion manquante")?;
+    // Retranscription d'abord (même audio, mêmes bornes) : le compte rendu lira le texte final.
+    match crate::live::retranscribe(inner, &mid).await {
+        Ok(n) if n > 0 => tracing::info!("réunion {mid} : {n} phrases retranscrites"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!("retranscription impossible ({e:#}) : on garde la transcription du direct"),
+    }
     let res = crate::live::diarize(inner, &mid).await;
+    // Réunion supprimée pendant le traitement : plus rien à faire.
+    if !inner.db.meeting_exists(&mid)? {
+        tracing::info!("réunion {mid} supprimée pendant la diarisation : compte rendu abandonné");
+        return Ok(());
+    }
     if let Err(e) = &res {
         tracing::warn!("diarisation impossible ({e:#}) : on garde « Eux »");
     }

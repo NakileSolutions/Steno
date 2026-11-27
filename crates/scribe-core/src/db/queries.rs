@@ -466,10 +466,116 @@ impl Db {
             if !include_echo {
                 sql.push_str("AND is_echo=0 ");
             }
-            sql.push_str("ORDER BY seq");
+            // Ordre chronologique : les deux canaux arrivent avec un décalage (une longue phrase
+            // du micro est enregistrée après les réponses courtes de l'appel). Une phrase sans
+            // horodatage reste derrière la précédente.
+            sql.push_str(
+                "ORDER BY COALESCE(t0, (SELECT p.t0 FROM segments p WHERE p.meeting_id=segments.meeting_id \
+                 AND p.seq < segments.seq AND p.t0 IS NOT NULL ORDER BY p.seq DESC LIMIT 1), 0), seq",
+            );
             let mut st = c.prepare(&sql)?;
             let rows = st.query_map([meeting_id], segment_row)?;
             rows.collect()
+        })
+    }
+
+    /// Supprime une phrase de la transcription ; renvoie l'identifiant de sa réunion.
+    pub fn delete_segment(&self, segment_id: i64) -> Result<Option<String>> {
+        self.with(|c| {
+            let mid: Option<String> = c
+                .query_row("SELECT meeting_id FROM segments WHERE id=?1", [segment_id], |r| r.get(0))
+                .optional()?;
+            c.execute("DELETE FROM segments WHERE id=?1", [segment_id])?;
+            Ok(mid)
+        })
+    }
+
+    // ---------- Contexte de réunion ----------
+
+    /// Contexte d'une réunion : texte, modèle et liste des documents (sans leur texte).
+    pub fn meeting_context(&self, meeting_id: &str) -> Result<crate::context::MeetingContext> {
+        self.with(|c| {
+            let (text, template): (String, Option<String>) = c
+                .query_row("SELECT text, template FROM meeting_context WHERE meeting_id=?1", [meeting_id], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })
+                .optional()?
+                .unwrap_or_default();
+            let mut st = c.prepare(
+                "SELECT id, meeting_id, name, kind, size, length(text), truncated, added_at FROM context_files \
+                 WHERE meeting_id=?1 ORDER BY id",
+            )?;
+            let files = st
+                .query_map([meeting_id], |r| {
+                    Ok(crate::context::ContextFile {
+                        id: r.get(0)?,
+                        meeting_id: r.get(1)?,
+                        name: r.get(2)?,
+                        kind: r.get(3)?,
+                        size: r.get(4)?,
+                        chars: r.get(5)?,
+                        truncated: r.get::<_, i64>(6)? != 0,
+                        added_at: r.get(7)?,
+                    })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(crate::context::MeetingContext { meeting_id: meeting_id.into(), text, template, files })
+        })
+    }
+
+    pub fn set_meeting_context(&self, meeting_id: &str, text: &str, template: Option<&str>) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "INSERT INTO meeting_context (meeting_id, text, template, updated_at) VALUES (?1,?2,?3,?4) \
+                 ON CONFLICT(meeting_id) DO UPDATE SET text=excluded.text, template=excluded.template, updated_at=excluded.updated_at",
+                params![meeting_id, text, template, now_iso()],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn add_context_file(
+        &self,
+        meeting_id: &str,
+        name: &str,
+        kind: &str,
+        size: i64,
+        text: &str,
+        truncated: bool,
+    ) -> Result<i64> {
+        self.with(|c| {
+            c.execute(
+                "INSERT INTO context_files (meeting_id, name, kind, size, text, truncated, added_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                params![meeting_id, name, kind, size, text, truncated as i64, now_iso()],
+            )?;
+            Ok(c.last_insert_rowid())
+        })
+    }
+
+    /// Supprime un document ; renvoie l'identifiant de sa réunion.
+    pub fn delete_context_file(&self, id: i64) -> Result<Option<String>> {
+        self.with(|c| {
+            let mid: Option<String> =
+                c.query_row("SELECT meeting_id FROM context_files WHERE id=?1", [id], |r| r.get(0)).optional()?;
+            c.execute("DELETE FROM context_files WHERE id=?1", [id])?;
+            Ok(mid)
+        })
+    }
+
+    /// Texte des documents d'une réunion : (nom, texte, tronqué).
+    pub fn context_texts(&self, meeting_id: &str) -> Result<Vec<(String, String, bool)>> {
+        self.with(|c| {
+            let mut st = c.prepare("SELECT name, text, truncated FROM context_files WHERE meeting_id=?1 ORDER BY id")?;
+            let rows = st.query_map([meeting_id], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0)))?;
+            rows.collect()
+        })
+    }
+
+    /// Remplace le texte d'une phrase (retranscription de fin de réunion).
+    pub fn set_segment_text(&self, segment_id: i64, text: &str) -> Result<()> {
+        self.with(|c| {
+            c.execute("UPDATE segments SET text=?2 WHERE id=?1", params![segment_id, text])?;
+            Ok(())
         })
     }
 
@@ -1351,6 +1457,23 @@ mod tests {
             .unwrap();
         assert_eq!(list.len(), 1);
         assert!(list[0].snippet.as_deref().unwrap_or("").contains("créneau"));
+    }
+
+    #[test]
+    fn segments_dans_l_ordre_chronologique_et_retranscription() {
+        let db = Db::open_in_memory().unwrap();
+        db.insert_meeting(&meeting("m1", "Daily")).unwrap();
+        let at = |ch: &str, text: &str, t0: Option<f64>| NewSegment { t0, t1: t0.map(|t| t + 1.0), ..seg("m1", ch, text, false) };
+        // Une réponse courte de l'appel arrive avant la longue phrase du micro, commencée plus tôt.
+        db.insert_segment(&at("them", "Ouais.", Some(35.0))).unwrap();
+        let long = db.insert_segment(&at("me", "Longue phrase", Some(2.0))).unwrap();
+        db.insert_segment(&at("me", "Sans horodatage", None)).unwrap();
+        db.insert_segment(&at("me", "Suite", Some(24.0))).unwrap();
+        let order: Vec<String> = db.segments("m1", false, false).unwrap().into_iter().map(|s| s.text).collect();
+        assert_eq!(order, ["Longue phrase", "Sans horodatage", "Suite", "Ouais."], "sans horodatage : derrière la phrase insérée avant");
+        db.set_segment_text(long.id, "Phrase retranscrite en français").unwrap();
+        assert_eq!(db.search("retranscrite", 5).unwrap().len(), 1, "l'index suit le nouveau texte");
+        assert!(db.search("Longue", 5).unwrap().is_empty());
     }
 
     #[test]

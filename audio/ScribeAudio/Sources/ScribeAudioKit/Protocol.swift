@@ -54,6 +54,8 @@ struct SegmentPayload: Equatable {
     var channel: Channel
     var text: String
     var isPrivate: Bool
+    /// Intervenant reconnu en direct (« S1 »…), canal « them » seulement.
+    var speaker: String? = nil
 }
 
 /// App de visio surveillée (commande `watch`).
@@ -153,6 +155,8 @@ enum OutgoingMessage: Equatable {
     case state(CaptureState)
     case wakeTest(text: String)
     case diarization(meetingId: String, turns: [DiarizationTurn])
+    /// Phrases retranscrites en fin de réunion (celles qui ne figurent pas gardent le direct).
+    case retranscription(meetingId: String, items: [RetranscribedItem])
     case error(code: ErrorCode, message: String, recoverable: Bool)
 }
 
@@ -166,11 +170,12 @@ extension OutgoingMessage: Encodable {
         case active, app, title
         case ts, t0, t1, channel, text
         case isPrivate = "private"
+        case speaker
         case me, them
         case inputs, outputs
         case state
         case meetingId = "meeting_id"
-        case turns
+        case turns, items
         case code, message, recoverable
     }
 
@@ -207,6 +212,7 @@ extension OutgoingMessage: Encodable {
             try c.encode(s.channel, forKey: .channel)
             try c.encode(s.text, forKey: .text)
             try c.encode(s.isPrivate, forKey: .isPrivate)
+            try c.encodeIfPresent(s.speaker, forKey: .speaker)
 
         case let .level(me, them):
             try c.encode("level", forKey: .type)
@@ -230,6 +236,11 @@ extension OutgoingMessage: Encodable {
             try c.encode("diarization", forKey: .type)
             try c.encode(meetingId, forKey: .meetingId)
             try c.encode(turns, forKey: .turns)
+
+        case let .retranscription(meetingId, items):
+            try c.encode("retranscription", forKey: .type)
+            try c.encode(meetingId, forKey: .meetingId)
+            try c.encode(items, forKey: .items)
 
         case let .error(code, message, recoverable):
             try c.encode("error", forKey: .type)
@@ -262,6 +273,8 @@ struct StartOptions: Equatable {
     /// Micro demandé : nil = champ absent (le choix mémorisé par `set_input` s'applique, sinon
     /// le micro par défaut) ; `.systemDefault` = `"input_device": null`.
     var inputDevice: DeviceSelection?
+    /// Réunion en présentiel : micro seul (ni tap ni voice processing).
+    var room: Bool = false
 
     /// Bornes raisonnables pour `silence_ms` (le plan vise 0,8 à 1,2 s).
     static let silenceRange = 300...3000
@@ -279,10 +292,27 @@ enum Command: Equatable {
     case play(sound: FeedbackSound, device: DeviceSelection)
     case stop
     case aside(on: Bool)
+    /// Coupe le micro dans Scribe (rien de ce que vous dites n'est transcrit).
+    case mute(on: Bool)
+    /// Pause / reprise : rien n'est transcrit pendant la pause (silence sur les deux canaux).
+    case pause
+    case resume
     case wakeTest(seconds: Double)
-    case diarize(meetingId: String, audioDir: String)
+    /// `file` : fichier de `audioDir` à analyser (`them.wav` par défaut, `me.wav` en présentiel).
+    case diarize(meetingId: String, audioDir: String, file: String = "them.wav")
+    /// Retranscription de fin de réunion, langue imposée (`fr`…).
+    case retranscribe(meetingId: String, audioDir: String, language: String, vocabulary: [String], items: [RetranscribeItem])
     case permissions
+    /// Déclenche l'invite système d'un droit.
+    case requestPermission(PermissionKind)
     case shutdown
+}
+
+/// Droits macOS que le cœur peut demander.
+enum PermissionKind: String, Equatable {
+    case microphone
+    case systemAudio = "system_audio"
+    case accessibility
 }
 
 enum CommandParseError: Error, Equatable {
@@ -337,6 +367,7 @@ enum CommandParser {
                 if let dir = p.audioDir, !dir.isEmpty { opts.audioDir = dir }
                 opts.apps = uniqueTrimmed(p.apps ?? [])
                 opts.inputDevice = p.inputDevice
+                opts.room = p.room ?? false
                 return .success(.start(opts))
 
             case "set_input":
@@ -384,6 +415,17 @@ enum CommandParser {
                 guard let on = p.on else { return .failure(.invalidField(command: cmd, field: "on")) }
                 return .success(.aside(on: on))
 
+            case "pause":
+                return .success(.pause)
+
+            case "resume":
+                return .success(.resume)
+
+            case "mute":
+                let p = try decoder.decode(AsidePayload.self, from: data)
+                guard let on = p.on else { return .failure(.invalidField(command: cmd, field: "on")) }
+                return .success(.mute(on: on))
+
             case "wake_test":
                 let p = try decoder.decode(WakeTestPayload.self, from: data)
                 var seconds = p.seconds ?? 8
@@ -398,10 +440,38 @@ enum CommandParser {
                 guard let dir = p.audioDir, !dir.isEmpty else {
                     return .failure(.invalidField(command: cmd, field: "audio_dir"))
                 }
-                return .success(.diarize(meetingId: id, audioDir: dir))
+                let file = p.file ?? "them.wav"
+                guard ["them.wav", "me.wav"].contains(file) else {
+                    return .failure(.invalidField(command: cmd, field: "file"))
+                }
+                return .success(.diarize(meetingId: id, audioDir: dir, file: file))
+
+            case "retranscribe":
+                let p = try decoder.decode(RetranscribePayload.self, from: data)
+                guard let id = p.meetingId, !id.isEmpty else {
+                    return .failure(.invalidField(command: cmd, field: "meeting_id"))
+                }
+                guard let dir = p.audioDir, !dir.isEmpty else {
+                    return .failure(.invalidField(command: cmd, field: "audio_dir"))
+                }
+                guard let lang = p.language, !lang.isEmpty else {
+                    return .failure(.invalidField(command: cmd, field: "language"))
+                }
+                let items = p.items ?? []
+                guard items.allSatisfy({ ["them.wav", "me.wav"].contains($0.file) }) else {
+                    return .failure(.invalidField(command: cmd, field: "items"))
+                }
+                return .success(.retranscribe(meetingId: id, audioDir: dir, language: lang, vocabulary: p.vocabulary ?? [], items: items))
 
             case "permissions":
                 return .success(.permissions)
+
+            case "request_permission":
+                let p = try decoder.decode(RequestPermissionPayload.self, from: data)
+                guard let raw = p.kind, let kind = PermissionKind(rawValue: raw) else {
+                    return .failure(.invalidField(command: cmd, field: "kind"))
+                }
+                return .success(.requestPermission(kind))
 
             case "shutdown":
                 return .success(.shutdown)
@@ -446,6 +516,10 @@ enum CommandParser {
         let cmd: String?
     }
 
+    private struct RequestPermissionPayload: Decodable {
+        let kind: String?
+    }
+
     /// Champ de périphérique : absent → nil ; `null` ou chaîne vide → `.systemDefault` ;
     /// chaîne → `.uid` ; autre type → erreur de décodage (`bad_command` sur ce champ).
     fileprivate static func decodeSelection<K: CodingKey>(_ c: KeyedDecodingContainer<K>, forKey key: K) throws
@@ -466,6 +540,7 @@ enum CommandParser {
         let apps: [String]?
         /// nil = absent (≠ `null`, qui demande le micro par défaut).
         let inputDevice: DeviceSelection?
+        let room: Bool?
 
         enum CodingKeys: String, CodingKey {
             case vocabulary
@@ -474,6 +549,7 @@ enum CommandParser {
             case audioDir = "audio_dir"
             case apps
             case inputDevice = "input_device"
+            case room
         }
 
         init(from decoder: Decoder) throws {
@@ -484,6 +560,7 @@ enum CommandParser {
             audioDir = try c.decodeIfPresent(String.self, forKey: .audioDir)
             apps = try c.decodeIfPresent([String].self, forKey: .apps)
             inputDevice = try CommandParser.decodeSelection(c, forKey: .inputDevice)
+            room = try c.decodeIfPresent(Bool.self, forKey: .room)
         }
     }
 
@@ -533,13 +610,29 @@ enum CommandParser {
         let seconds: Double?
     }
 
-    private struct DiarizePayload: Decodable {
+    private struct RetranscribePayload: Decodable {
         let meetingId: String?
         let audioDir: String?
+        let language: String?
+        let vocabulary: [String]?
+        let items: [RetranscribeItem]?
 
         enum CodingKeys: String, CodingKey {
             case meetingId = "meeting_id"
             case audioDir = "audio_dir"
+            case language, vocabulary, items
+        }
+    }
+
+    private struct DiarizePayload: Decodable {
+        let meetingId: String?
+        let audioDir: String?
+        let file: String?
+
+        enum CodingKeys: String, CodingKey {
+            case meetingId = "meeting_id"
+            case audioDir = "audio_dir"
+            case file
         }
     }
 }

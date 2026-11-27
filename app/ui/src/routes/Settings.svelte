@@ -14,7 +14,9 @@
   import VoiceSection from './settings/VoiceSection.svelte';
   import AudioSection from './settings/AudioSection.svelte';
   import PrivacySection from './settings/PrivacySection.svelte';
+  import Permissions from '../lib/components/Permissions.svelte';
   import ProfileSection from './settings/ProfileSection.svelte';
+  import ReportsSection from './settings/ReportsSection.svelte';
   import ImportSection from './settings/ImportSection.svelte';
   import { version } from '../../package.json';
 
@@ -25,7 +27,7 @@
   const section = $derived(SETTINGS_SECTIONS.find((s) => s.id === router.route.query.section) ?? SETTINGS_SECTIONS[0]);
   const dirty = $derived(!!settings && JSON.stringify(settings) !== saved);
   /** Sections enregistrées immédiatement (tables à part), sans bouton Enregistrer. */
-  const immediate = $derived(section.id === 'repos' || section.id === 'connectors' || section.id === 'import');
+  const immediate = $derived(section.id === 'repos' || section.id === 'connectors' || section.id === 'import' || section.id === 'permissions');
 
   onMount(async () => {
     try {
@@ -96,6 +98,12 @@
         {:else if section.id === 'correlation'}<CorrelationSection bind:settings={settings} />
         {:else if section.id === 'voice'}<VoiceSection bind:settings={settings} ensureSaved={async () => { if (dirty) await save(); }} />
         {:else if section.id === 'audio'}<AudioSection bind:settings={settings} />
+        {:else if section.id === 'permissions'}
+          <section class="perm-sec">
+            <p class="muted">Droits accordés à Scribe par macOS. Un droit refusé ne peut être rétabli que dans les Réglages Système.</p>
+            <Permissions />
+          </section>
+        {:else if section.id === 'reports'}<ReportsSection bind:settings={settings} />
         {:else if section.id === 'privacy'}<PrivacySection bind:settings={settings} />
         {:else if section.id === 'profile'}<ProfileSection bind:settings={settings} />
         {:else}<ImportSection onimported={replaced} {dirty} />{/if}
@@ -120,6 +128,7 @@
   .udot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
   .sbody { flex: 1; min-height: 0; }
   .inner { max-width: 880px; padding: 4px 40px 64px; }
+  .perm-sec { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; }
   .credit { margin-top: 40px; text-align: center; font-size: 11.5px; color: var(--text-3); letter-spacing: 0.01em; }
   .skel { margin-top: 20px; padding: 20px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 22px; }
   .sk-row { display: grid; grid-template-columns: 200px 1fr; gap: 24px; }

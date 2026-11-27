@@ -93,8 +93,12 @@ export function callOffer(s: Pick<LiveState, 'state' | 'call'>, apps?: Apps): Ca
 }
 
 /** Puce d'une réunion : nom court de l'app de l'appel, `null` sans appel. */
+/** `call_app` d'une réunion en présentiel (micro du Mac seul). */
+export const ROOM = 'room';
+
 export function meetingCallChip(callApp: string | null | undefined, apps?: Apps): string | null {
   if (!callApp) return null;
+  if (callApp === ROOM) return 'En présentiel';
   if (isBrowserApp(callApp, apps)) return 'Navigateur';
   return callAppShortName(callApp, null, apps);
 }
@@ -129,7 +133,10 @@ export function isValidBundle(b: string): boolean {
 }
 
 /** État en direct d'un cœur plus ancien (`teams_call`) ramené au contrat actuel (`call`). */
-export function normalizeLiveState(s: LiveState): LiveState {
+export function normalizeLiveState(input: LiveState): LiveState {
+  if (input.call && typeof input.mic_muted === 'boolean') return input;
+  // Cœur plus ancien : pas de `mic_muted`.
+  const s: LiveState = { ...input, mic_muted: input.mic_muted ?? false };
   if (s.call) return s;
   const legacy = (s as unknown as { teams_call?: { active: boolean; title: string | null } }).teams_call;
   const { teams_call: _old, ...rest } = s as LiveState & { teams_call?: unknown };
@@ -143,8 +150,26 @@ export function normalizeLiveState(s: LiveState): LiveState {
 }
 
 /** Réglages d'un cœur plus ancien (`auto_detect_teams`, sans `call_apps`) ramenés au contrat actuel. */
+/** Message d'information par défaut (identique au cœur : `DEFAULT_CONSENT_MESSAGE`). */
+export const DEFAULT_CONSENT_MESSAGE =
+  "Pour information : j\'utilise Scribe pour transcrire cette réunion et en préparer un compte rendu. La transcription reste sur mon ordinateur ; un assistant IA s\'en sert pour rédiger le compte rendu. Dites-le-moi si vous préférez que je ne transcrive pas.";
+
+export const DEFAULT_REPORT_SETTINGS = { default_template: 'standard', ask_context_on_stop: false, templates: [] };
+
 export function normalizeSettings(input: Settings): Settings {
   let s = normalizeAgentSettings(input);
+  // Cœur plus ancien : pas de formats de compte rendu.
+  if (!s.report) s = { ...s, report: { ...DEFAULT_REPORT_SETTINGS, templates: [] } };
+  // Cœur plus ancien : pas de message d'information aux participants.
+  if (s.privacy && (s.privacy.consent_reminder === undefined || s.privacy.consent_message === undefined))
+    s = {
+      ...s,
+      privacy: {
+        ...s.privacy,
+        consent_reminder: s.privacy.consent_reminder ?? true,
+        consent_message: s.privacy.consent_message || DEFAULT_CONSENT_MESSAGE,
+      },
+    };
   // Périphériques (cœur plus ancien) : `null` = défaut du système.
   if (s.audio && (s.audio.input_device === undefined || s.audio.input_device_name === undefined))
     s = { ...s, audio: { ...s.audio, input_device: s.audio.input_device ?? null, input_device_name: s.audio.input_device_name ?? null } };

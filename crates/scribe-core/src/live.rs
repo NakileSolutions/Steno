@@ -5,7 +5,7 @@ use crate::core::{create_request, Inner};
 use crate::echo::EchoFilter;
 use crate::events::{CoreEvent, Levels};
 use crate::model::{Meeting, Segment};
-use crate::sidecar::{SidecarCommand, SidecarEvent, SidecarProcess, Turn};
+use crate::sidecar::{RetranscribeItem, RetranscribedItem, SidecarCommand, SidecarEvent, SidecarProcess, Turn};
 use crate::wake::assembler::{Assembled, CommandAssembler, Utterance};
 use crate::wake::Detector;
 use crate::{db::NewSegment, now_iso};
@@ -23,15 +23,30 @@ pub struct SidecarSpec {
 }
 
 pub enum LiveCmd {
-    Start { title: Option<String>, reply: oneshot::Sender<Result<Meeting>> },
+    /// `in_person` : réunion en présentiel (micro seul).
+    Start { title: Option<String>, in_person: bool, reply: oneshot::Sender<Result<Meeting>> },
     Stop { reply: oneshot::Sender<Result<()>> },
     Aside(bool),
+    /// Coupe (ou rétablit) le micro dans Scribe.
+    Mute(bool),
+    /// Pause / reprise de l'écoute (la réunion continue, rien n'est transcrit).
+    Pause(bool),
     NextConfidential(bool),
     /// Arrêt demandé à la voix ou par une demande tapée (« arrête l'écoute »).
     StopRequested,
     SettingsChanged,
     WakeTest { seconds: u32, reply: oneshot::Sender<Result<String>> },
     Diarize { meeting_id: String, reply: oneshot::Sender<Result<Vec<Turn>>> },
+    Retranscribe {
+        meeting_id: String,
+        language: String,
+        items: Vec<RetranscribeItem>,
+        reply: oneshot::Sender<Result<Vec<RetranscribedItem>>>,
+    },
+    /// Redemande l'état des permissions au sidecar.
+    RefreshPermissions,
+    /// Déclenche l'invite système d'un droit.
+    RequestPermission(String),
     Shutdown,
 }
 
@@ -68,8 +83,11 @@ struct Session {
     /// Micro demandé au sidecar (UID, `None` = défaut du système).
     input_device: Option<String>,
     next_confidential: bool,
+    mic_muted: bool,
+    paused: bool,
     wake_waiters: Vec<oneshot::Sender<Result<String>>>,
     diarize_waiters: HashMap<String, oneshot::Sender<Result<Vec<Turn>>>>,
+    retranscribe_waiters: HashMap<String, oneshot::Sender<Result<Vec<RetranscribedItem>>>>,
     restart_at: Option<Instant>,
     backoff: Duration,
     t_offset: f64,
@@ -98,8 +116,11 @@ pub fn spawn(inner: Arc<Inner>) -> LiveHandle {
         calls: vec![],
         input_device: None,
         next_confidential: false,
+        mic_muted: false,
+        paused: false,
         wake_waiters: vec![],
         diarize_waiters: HashMap::new(),
+        retranscribe_waiters: HashMap::new(),
         restart_at: None,
         backoff: Duration::from_secs(2),
         t_offset: 0.0,
@@ -169,6 +190,12 @@ impl Session {
                     self.t_offset = self.t_max;
                     self.send_start();
                 }
+                if self.mic_muted {
+                    self.send(SidecarCommand::Mute { on: true });
+                }
+                if self.capturing && self.paused {
+                    self.send(SidecarCommand::Pause);
+                }
             }
             Err(e) => {
                 let missing = !std::path::Path::new(&spec.program).exists() && which::which(&spec.program).is_err();
@@ -201,8 +228,10 @@ impl Session {
         vocab.extend(s.audio.vocabulary.iter().cloned());
         let dir = crate::paths::cache_dir().join(&m.id);
         let _ = std::fs::create_dir_all(&dir);
-        // Son capté : celui de l'app de l'appel ; sans appel connu, toutes les apps surveillées.
-        let apps = m.call_app.clone().into_iter().collect();
+        // Son capté : celui de l'app de l'appel ; sans appel connu, toutes les apps surveillées ;
+        // en présentiel, aucune app (micro seul).
+        let room = m.in_person();
+        let apps = if room { vec![] } else { m.call_app.clone().into_iter().collect() };
         self.send(SidecarCommand::Start {
             vocabulary: vocab,
             silence_ms: s.audio.silence_ms,
@@ -210,6 +239,7 @@ impl Session {
             audio_dir: dir.display().to_string(),
             apps,
             input_device: s.audio.input_device.clone(),
+            room,
         });
     }
 
@@ -332,6 +362,13 @@ impl Session {
             st.levels = Levels { me: -90.0, them: -90.0 };
         });
         self.aside = false;
+        self.paused = false;
+        // Réunion suivante : micro rétabli (comme dans l'app de visio).
+        if self.mic_muted {
+            self.mic_muted = false;
+            self.send(SidecarCommand::Mute { on: false });
+            self.inner.set_live_state(|s| s.mic_muted = false);
+        }
         self.after_end(&m)?;
         Ok(())
     }
@@ -342,7 +379,7 @@ impl Session {
         if fresh.confidential {
             self.inner.db.set_meeting_status(&m.id, "done")?;
         } else {
-            let wav = crate::paths::cache_dir().join(&m.id).join("them.wav");
+            let wav = crate::paths::cache_dir().join(&m.id).join(diarize_file(&fresh));
             let kind = if wav.exists() && self.sidecar.is_some() { "diarize" } else { "report" };
             self.inner.db.enqueue_job(kind, Some(&m.id), &serde_json::json!({}))?;
             self.inner.jobs_notify.notify_one();
@@ -358,9 +395,14 @@ impl Session {
 
     async fn on_cmd(&mut self, c: LiveCmd) {
         match c {
-            LiveCmd::Start { title, reply } => {
+            LiveCmd::Start { title, in_person, reply } => {
                 let r = match &self.meeting {
                     Some(m) => Ok(m.clone()),
+                    None if in_person => {
+                        let given = title.filter(|t| !t.trim().is_empty());
+                        let src = if given.is_some() { "user" } else { "inferred" };
+                        self.create_meeting(given, src, Some(crate::model::ROOM.to_string()))
+                    }
                     None => {
                         let given = title.filter(|t| !t.trim().is_empty());
                         let call = self.current_call().cloned();
@@ -389,6 +431,19 @@ impl Session {
                 self.inner.set_live_state(|s| s.aside = on);
             }
             LiveCmd::NextConfidential(on) => self.next_confidential = on,
+            LiveCmd::Pause(on) => {
+                if self.meeting.is_none() || on == self.paused {
+                    return;
+                }
+                self.paused = on;
+                self.send(if on { SidecarCommand::Pause } else { SidecarCommand::Resume });
+                self.inner.set_live_state(|s| s.state = if on { "paused".into() } else { "listening".into() });
+            }
+            LiveCmd::Mute(on) => {
+                self.mic_muted = on;
+                self.send(SidecarCommand::Mute { on });
+                self.inner.set_live_state(|s| s.mic_muted = on);
+            }
             LiveCmd::StopRequested => {
                 if self.meeting.is_some() {
                     // Laisse le temps à la phrase en cours d'être enregistrée.
@@ -409,6 +464,12 @@ impl Session {
                 self.calls.retain(|(app, _)| s.audio.call_app(app).map(|a| a.enabled).unwrap_or(false));
                 self.publish_call_state();
             }
+            LiveCmd::RefreshPermissions => {
+                self.send(SidecarCommand::Permissions);
+            }
+            LiveCmd::RequestPermission(kind) => {
+                self.send(SidecarCommand::RequestPermission { kind });
+            }
             LiveCmd::WakeTest { seconds, reply } => {
                 if self.send(SidecarCommand::WakeTest { seconds }) {
                     self.wake_waiters.push(reply);
@@ -418,8 +479,31 @@ impl Session {
             }
             LiveCmd::Diarize { meeting_id, reply } => {
                 let dir = crate::paths::cache_dir().join(&meeting_id);
-                if self.send(SidecarCommand::Diarize { meeting_id: meeting_id.clone(), audio_dir: dir.display().to_string() }) {
+                let file = match self.inner.db.get_meeting(&meeting_id) {
+                    Ok(Some(m)) if m.in_person() => Some("me.wav".to_string()),
+                    _ => None,
+                };
+                if self.send(SidecarCommand::Diarize {
+                    meeting_id: meeting_id.clone(),
+                    audio_dir: dir.display().to_string(),
+                    file,
+                }) {
                     self.diarize_waiters.insert(meeting_id, reply);
+                } else {
+                    let _ = reply.send(Err(anyhow!("sidecar absent")));
+                }
+            }
+            LiveCmd::Retranscribe { meeting_id, language, items, reply } => {
+                let dir = crate::paths::cache_dir().join(&meeting_id);
+                let vocabulary = self.inner.settings().audio.vocabulary.clone();
+                if self.send(SidecarCommand::Retranscribe {
+                    meeting_id: meeting_id.clone(),
+                    audio_dir: dir.display().to_string(),
+                    language,
+                    vocabulary,
+                    items,
+                }) {
+                    self.retranscribe_waiters.insert(meeting_id, reply);
                 } else {
                     let _ = reply.send(Err(anyhow!("sidecar absent")));
                 }
@@ -443,8 +527,8 @@ impl Session {
             }
             SidecarEvent::Call { active, app, title } => self.on_call(&app, active, title).await,
             SidecarEvent::TeamsCall { active, title } => self.on_call("teams", active, title).await,
-            SidecarEvent::Segment { ts, t0, t1, channel, text, private } => {
-                if let Err(e) = self.on_segment(ts, t0, t1, &channel, &text, private) {
+            SidecarEvent::Segment { ts, t0, t1, channel, text, private, speaker } => {
+                if let Err(e) = self.on_segment(ts, t0, t1, &channel, &text, private, speaker.as_deref()) {
                     tracing::error!("segment non enregistré : {e:#}");
                 }
             }
@@ -461,7 +545,13 @@ impl Session {
             }
             SidecarEvent::State { state } => {
                 if self.meeting.is_some() {
-                    let st = if state == "stopped" { "listening".to_string() } else { state };
+                    let st = if self.paused {
+                        "paused".to_string()
+                    } else if state == "stopped" {
+                        "listening".to_string()
+                    } else {
+                        state
+                    };
                     self.inner.set_live_state(|s| s.state = st);
                 }
             }
@@ -483,14 +573,33 @@ impl Session {
                     }
                 }
             }
+            SidecarEvent::Retranscription { meeting_id, items } => {
+                let key = if self.retranscribe_waiters.contains_key(&meeting_id) {
+                    Some(meeting_id)
+                } else {
+                    self.retranscribe_waiters.keys().next().cloned()
+                };
+                if let Some(w) = key.and_then(|k| self.retranscribe_waiters.remove(&k)) {
+                    let _ = w.send(Ok(items));
+                }
+            }
             SidecarEvent::Error { code, message, recoverable } => {
                 tracing::warn!("sidecar : {code} {message}");
                 let msg = format!("{code} : {message}");
                 let lower = message.to_lowercase();
+                if lower.contains("retranscription") {
+                    for (_, w) in self.retranscribe_waiters.drain() {
+                        let _ = w.send(Err(anyhow!(msg.clone())));
+                    }
+                    // Sans gravité : le compte rendu suit avec la transcription du direct.
+                    return;
+                }
                 if code == "diarize_failed" || code == "diarization_failed" || lower.contains("diarisation") {
                     for (_, w) in self.diarize_waiters.drain() {
                         let _ = w.send(Err(anyhow!(msg.clone())));
                     }
+                    // Sans gravité : le compte rendu suit avec « Eux ». Rien à afficher.
+                    return;
                 }
                 if code == "wake_test_failed" || (!self.wake_waiters.is_empty() && lower.contains("test")) {
                     for w in self.wake_waiters.drain(..) {
@@ -525,6 +634,9 @@ impl Session {
                     let _ = w.send(Err(anyhow!("le sidecar audio s'est arrêté")));
                 }
                 for (_, w) in self.diarize_waiters.drain() {
+                    let _ = w.send(Err(anyhow!("le sidecar audio s'est arrêté")));
+                }
+                for (_, w) in self.retranscribe_waiters.drain() {
                     let _ = w.send(Err(anyhow!("le sidecar audio s'est arrêté")));
                 }
                 self.inner.set_live_state(|s| s.sidecar = "error".into());
@@ -588,7 +700,17 @@ impl Session {
         }
     }
 
-    fn on_segment(&mut self, ts: String, t0: Option<f64>, t1: Option<f64>, channel: &str, text: &str, private: bool) -> Result<()> {
+    #[allow(clippy::too_many_arguments)]
+    fn on_segment(
+        &mut self,
+        ts: String,
+        t0: Option<f64>,
+        t1: Option<f64>,
+        channel: &str,
+        text: &str,
+        private: bool,
+        live_speaker: Option<&str>,
+    ) -> Result<()> {
         let Some(m) = self.meeting.clone() else { return Ok(()) };
         let text = text.trim();
         if text.is_empty() {
@@ -600,13 +722,29 @@ impl Session {
         self.t_max = self.t_max.max(b);
         let me = channel == "me";
         let private = me && (private || self.aside);
+        // Canal « them » : intervenant reconnu en direct (« S3 » → « Eux-3 »), sinon « Eux ».
+        let speaker = if me && m.in_person() {
+            // Présentiel : toutes les voix passent par le micro ; intervenants identifiés en fin de réunion.
+            "Salle".to_string()
+        } else if me {
+            "Moi".to_string()
+        } else {
+            match live_speaker.map(|s| s.trim_start_matches('S')).filter(|n| !n.is_empty()) {
+                Some(n) => {
+                    let label = format!("Eux-{n}");
+                    self.inner.db.upsert_speaker(&m.id, &label, None)?;
+                    label
+                }
+                None => "Eux".to_string(),
+            }
+        };
         let seg = self.inner.db.insert_segment(&NewSegment {
             meeting_id: m.id.clone(),
             ts,
             t0,
             t1,
             channel: if me { "me".into() } else { "them".into() },
-            speaker: if me { "Moi".into() } else { "Eux".into() },
+            speaker,
             text: text.to_string(),
             private,
             is_echo: false,
@@ -725,10 +863,65 @@ impl IfEmpty for String {
 }
 
 /// Attribue `Eux-1`, `Eux-2`… aux segments `them` selon les tours de parole.
+/// Rapproche les intervenants de la diarisation hors ligne de ceux reconnus en direct : chaque
+/// intervenant hors ligne reprend l'étiquette « Eux-N » du direct la plus fréquente sur ses
+/// phrases (donc le nom éventuellement donné pendant la réunion) ; les autres reçoivent une
+/// étiquette nouvelle.
+pub fn reconcile_with_live(segments: &[Segment], assigned: &[(i64, String)]) -> Vec<(i64, String)> {
+    let live: HashMap<i64, &str> = segments
+        .iter()
+        .filter(|s| s.channel == "them" && s.speaker.starts_with("Eux-"))
+        .map(|s| (s.id, s.speaker.as_str()))
+        .collect();
+    if live.is_empty() {
+        return assigned.to_vec();
+    }
+    // Votes : intervenant hors ligne → (étiquette du direct → nombre de phrases).
+    let mut votes: HashMap<&str, HashMap<&str, usize>> = HashMap::new();
+    for (id, off) in assigned {
+        if let Some(l) = live.get(id) {
+            *votes.entry(off.as_str()).or_default().entry(l).or_default() += 1;
+        }
+    }
+    // Attribution gloutonne, les plus gros recouvrements d'abord, une étiquette par intervenant.
+    let mut pairs: Vec<(&str, &str, usize)> =
+        votes.iter().flat_map(|(o, m)| m.iter().map(move |(l, n)| (*o, *l, *n))).collect();
+    pairs.sort_by(|a, b| b.2.cmp(&a.2).then(a.0.cmp(b.0)).then(a.1.cmp(b.1)));
+    let mut map: HashMap<&str, String> = HashMap::new();
+    let mut used: HashSet<&str> = HashSet::new();
+    for (o, l, _) in pairs {
+        if !map.contains_key(o) && !used.contains(l) {
+            map.insert(o, l.to_string());
+            used.insert(l);
+        }
+    }
+    let mut next = live.values().filter_map(|l| l.trim_start_matches("Eux-").parse::<usize>().ok()).max().unwrap_or(0) + 1;
+    let mut out = Vec::with_capacity(assigned.len());
+    for (id, off) in assigned {
+        let label = match map.get(off.as_str()) {
+            Some(l) => l.clone(),
+            None => {
+                let l = format!("Eux-{next}");
+                next += 1;
+                map.insert(off.as_str(), l.clone());
+                l
+            }
+        };
+        out.push((*id, label));
+    }
+    out
+}
+
+/// Rattache chaque phrase du canal `them` (appel) à un tour de parole de la diarisation.
 pub fn assign_speakers(segments: &[Segment], turns: &[Turn]) -> Vec<(i64, String)> {
+    assign_speakers_on(segments, turns, "them")
+}
+
+/// Idem sur un canal donné : `me` pour une réunion en présentiel (apartés exclus).
+pub fn assign_speakers_on(segments: &[Segment], turns: &[Turn], channel: &str) -> Vec<(i64, String)> {
     let mut labels: HashMap<String, String> = HashMap::new();
     let mut out = vec![];
-    for s in segments.iter().filter(|s| s.channel == "them") {
+    for s in segments.iter().filter(|s| s.channel == channel && !s.private) {
         let (a, b) = (s.t0.unwrap_or(0.0), s.t1.unwrap_or(0.0));
         let best = turns
             .iter()
@@ -745,8 +938,68 @@ pub fn assign_speakers(segments: &[Segment], turns: &[Turn]) -> Vec<(i64, String
 }
 
 /// Diarisation hors ligne du canal `them` (via le sidecar), puis renommage des segments.
+/// Fichier audio à diariser : le son de l'appel, ou le micro pour une réunion en présentiel.
+pub fn diarize_file(m: &Meeting) -> &'static str {
+    if m.in_person() { "me.wav" } else { "them.wav" }
+}
+
+/// Phrases à retranscrire : tout sauf les échos, chacune dans le fichier de son canal.
+pub fn retranscribe_items(segs: &[Segment], has_me: bool, has_them: bool) -> Vec<RetranscribeItem> {
+    segs.iter()
+        .filter(|s| !s.is_echo)
+        .filter_map(|s| {
+            let (t0, t1) = (s.t0?, s.t1?);
+            let file = match s.channel.as_str() {
+                "me" if has_me => "me.wav",
+                "them" if has_them => "them.wav",
+                _ => return None,
+            };
+            (t1 > t0).then(|| RetranscribeItem { id: s.id, file: file.into(), t0, t1 })
+        })
+        .collect()
+}
+
+/// Retranscription de fin de réunion (langue imposée, modèle plus précis que le direct).
+/// Renvoie le nombre de phrases réécrites ; `Ok(0)` si désactivée ou sans audio.
+pub async fn retranscribe(inner: &Inner, meeting_id: &str) -> Result<usize> {
+    let language = inner.settings().audio.final_transcription.clone();
+    if language == "off" || language.is_empty() {
+        return Ok(0);
+    }
+    let dir = crate::paths::cache_dir().join(meeting_id);
+    let segs = inner.db.segments(meeting_id, true, false)?;
+    let items = retranscribe_items(&segs, dir.join("me.wav").exists(), dir.join("them.wav").exists());
+    if items.is_empty() {
+        return Ok(0);
+    }
+    let (tx, rx) = oneshot::channel();
+    if !inner.send_live(LiveCmd::Retranscribe { meeting_id: meeting_id.into(), language, items, reply: tx }) {
+        bail!("session en direct indisponible");
+    }
+    let done = tokio::time::timeout(Duration::from_secs(3600), rx)
+        .await
+        .map_err(|_| anyhow!("retranscription : délai dépassé"))?
+        .context("retranscription interrompue")??;
+    let mut n = 0;
+    for it in done {
+        let Some(old) = segs.iter().find(|s| s.id == it.id) else { continue };
+        let text = it.text.trim();
+        if text.is_empty() || text == old.text.trim() {
+            continue;
+        }
+        inner.db.set_segment_text(it.id, text)?;
+        let mut seg = old.clone();
+        seg.text = text.to_string();
+        inner.emit(CoreEvent::Segment(seg));
+        n += 1;
+    }
+    Ok(n)
+}
+
 pub async fn diarize(inner: &Inner, meeting_id: &str) -> Result<()> {
-    let wav = crate::paths::cache_dir().join(meeting_id).join("them.wav");
+    let meeting = inner.db.get_meeting(meeting_id)?.context("réunion introuvable")?;
+    let channel = if meeting.in_person() { "me" } else { "them" };
+    let wav = crate::paths::cache_dir().join(meeting_id).join(diarize_file(&meeting));
     if !wav.exists() {
         bail!("pas d'audio conservé pour cette réunion");
     }
@@ -759,7 +1012,7 @@ pub async fn diarize(inner: &Inner, meeting_id: &str) -> Result<()> {
         .map_err(|_| anyhow!("diarisation : délai dépassé"))?
         .context("diarisation interrompue")??;
     let segs = inner.db.segments(meeting_id, true, true)?;
-    let assigned = assign_speakers(&segs, &turns);
+    let assigned = reconcile_with_live(&segs, &assign_speakers_on(&segs, &turns, channel));
     let distinct: HashSet<&String> = assigned.iter().map(|(_, l)| l).collect();
     if distinct.len() < 2 {
         return Ok(()); // un seul interlocuteur : on garde « Eux »
@@ -776,6 +1029,91 @@ pub async fn diarize(inner: &Inner, meeting_id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn seg(id: i64, speaker: &str) -> Segment {
+        Segment {
+            id,
+            meeting_id: "m".into(),
+            seq: id,
+            ts: String::new(),
+            t0: Some(id as f64),
+            t1: Some(id as f64 + 1.0),
+            channel: "them".into(),
+            speaker: speaker.into(),
+            text: "x".into(),
+            private: false,
+            is_echo: false,
+            request_id: None,
+        }
+    }
+
+    #[test]
+    fn phrases_a_retranscrire() {
+        let mut me = seg(1, "Moi");
+        me.channel = "me".into();
+        let them = seg(2, "Eux-1");
+        let mut echo = seg(3, "Moi");
+        echo.channel = "me".into();
+        echo.is_echo = true;
+        let mut sans_t = seg(4, "Eux");
+        sans_t.t0 = None;
+        let segs = vec![me, them, echo, sans_t];
+        let items = retranscribe_items(&segs, true, true);
+        assert_eq!(items.iter().map(|i| (i.id, i.file.as_str())).collect::<Vec<_>>(), [(1, "me.wav"), (2, "them.wav")]);
+        // Présentiel : pas de them.wav, seules les phrases du micro.
+        assert_eq!(retranscribe_items(&segs, true, false).len(), 1);
+    }
+
+    #[test]
+    fn presentiel_intervenants_sur_le_micro() {
+        let mut a = seg(1, "Salle");
+        a.channel = "me".into();
+        let mut b = seg(2, "Salle");
+        b.channel = "me".into();
+        b.t0 = Some(10.0);
+        b.t1 = Some(11.0);
+        let mut aparte = seg(3, "Salle");
+        aparte.channel = "me".into();
+        aparte.private = true;
+        let turns = vec![
+            Turn { t0: 0.5, t1: 3.0, speaker: "S1".into() },
+            Turn { t0: 9.0, t1: 12.0, speaker: "S2".into() },
+        ];
+        let segs = vec![a, b, aparte];
+        let r = assign_speakers_on(&segs, &turns, "me");
+        assert_eq!(r, vec![(1, "Eux-1".to_string()), (2, "Eux-2".to_string())]);
+        // Le canal « them » (vide ici) n'est pas concerné.
+        assert!(assign_speakers(&segs, &turns).is_empty());
+    }
+
+    #[test]
+    fn diarisation_finale_garde_les_etiquettes_du_direct() {
+        // Direct : 1,2 → Eux-1 ; 3,4 → Eux-2 ; 5 non reconnu.
+        let segs = vec![seg(1, "Eux-1"), seg(2, "Eux-1"), seg(3, "Eux-2"), seg(4, "Eux-2"), seg(5, "Eux")];
+        // Hors ligne : numérotation différente et un intervenant de plus.
+        let off: Vec<(i64, String)> = vec![
+            (1, "Eux-2".into()),
+            (2, "Eux-2".into()),
+            (3, "Eux-1".into()),
+            (4, "Eux-1".into()),
+            (5, "Eux-3".into()),
+        ];
+        let r = reconcile_with_live(&segs, &off);
+        assert_eq!(
+            r,
+            vec![
+                (1, "Eux-1".to_string()),
+                (2, "Eux-1".to_string()),
+                (3, "Eux-2".to_string()),
+                (4, "Eux-2".to_string()),
+                (5, "Eux-3".to_string()),
+            ]
+        );
+        // Sans étiquettes du direct : résultat hors ligne inchangé.
+        let plain = vec![seg(1, "Eux"), seg(2, "Eux")];
+        let off2: Vec<(i64, String)> = vec![(1, "Eux-1".into()), (2, "Eux-2".into())];
+        assert_eq!(reconcile_with_live(&plain, &off2), off2);
+    }
 
     #[test]
     fn casque_par_defaut() {

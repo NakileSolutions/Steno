@@ -90,7 +90,8 @@ impl Inner {
             .filter(|r| if live { r.use_live } else { r.use_correlation })
             .filter(|r| std::path::Path::new(&r.path).is_dir())
             .map(|r| (if r.label.is_empty() { r.path.clone() } else { r.label.clone() }, r.path))
-            .collect();
+            .collect::<Vec<(String, String)>>();
+        let projects = repos.iter().flat_map(|(_, p)| crate::prompts::find_projects(std::path::Path::new(p))).collect();
         let connectors = self
             .db
             .list_connectors(Some(&provider))?
@@ -101,6 +102,7 @@ impl Inner {
             .collect();
         Ok(Sources {
             repos,
+            projects,
             connectors,
             budget: if live { s.agent.live_tool_budget } else { s.correlation.budget },
         })
@@ -338,6 +340,46 @@ impl Core {
 
     // ------------------------------------------------------------------ direct
 
+    // ------------------------------------------------------------------ permissions macOS
+
+    /// Dernier état connu des permissions. Redemande l'état au sidecar : la lecture suivante
+    /// reflète un changement fait entre-temps dans les Réglages Système.
+    pub fn permissions(&self) -> crate::permissions::Permissions {
+        self.inner.send_live(LiveCmd::RefreshPermissions);
+        let mut p = self
+            .inner
+            .db
+            .get_runtime("permissions")
+            .ok()
+            .flatten()
+            .and_then(|(s, _)| serde_json::from_str::<crate::permissions::Permissions>(&s).ok())
+            .unwrap_or_default();
+        p.available = self.inner.live_state.lock().unwrap().sidecar == "running";
+        p
+    }
+
+    /// Affiche l'invite macOS du droit (sans effet s'il a déjà été accordé ou refusé).
+    pub fn request_permission(&self, kind: &str) -> Result<()> {
+        crate::permissions::check_kind(kind)?;
+        if !self.inner.send_live(LiveCmd::RequestPermission(kind.to_string())) {
+            anyhow::bail!("la capture audio n'est pas démarrée : ouvrez les Réglages Système");
+        }
+        Ok(())
+    }
+
+    pub fn open_permission_settings(&self, kind: &str) -> Result<()> {
+        crate::permissions::open_settings(kind)
+    }
+
+    /// L'assistant de premier lancement est terminé (ou passé) : il ne s'ouvrira plus.
+    pub fn complete_onboarding(&self) -> Result<()> {
+        self.inner.db.set_runtime("onboarded", "1")
+    }
+
+    pub fn onboarded(&self) -> Result<bool> {
+        Ok(self.inner.db.get_runtime("onboarded")?.is_some())
+    }
+
     pub fn live_state(&self) -> LiveState {
         let mut s = self.inner.live_state.lock().unwrap().clone();
         s.pending_requests = self.inner.db.count_active_requests().unwrap_or(0);
@@ -351,8 +393,13 @@ impl Core {
 
     /// Démarre une réunion manuellement.
     pub async fn start_meeting(&self, title: Option<String>) -> Result<Meeting> {
+        self.start_meeting_with(title, false).await
+    }
+
+    /// `in_person` : réunion en présentiel, sans app de visio (micro du Mac seul).
+    pub async fn start_meeting_with(&self, title: Option<String>, in_person: bool) -> Result<Meeting> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        if !self.inner.send_live(LiveCmd::Start { title, reply: tx }) {
+        if !self.inner.send_live(LiveCmd::Start { title, in_person, reply: tx }) {
             bail!("la session en direct n'est pas démarrée");
         }
         rx.await.context("session en direct arrêtée")?
@@ -368,6 +415,20 @@ impl Core {
 
     pub fn set_aside(&self, on: bool) {
         self.inner.send_live(LiveCmd::Aside(on));
+    }
+
+    /// Met l'écoute en pause (rien n'est transcrit, la réunion continue) ou la reprend.
+    pub fn pause_meeting(&self, on: bool) -> Result<()> {
+        if self.live_state().meeting.is_none() {
+            bail!("aucune écoute en cours");
+        }
+        self.inner.send_live(LiveCmd::Pause(on));
+        Ok(())
+    }
+
+    /// Coupe ou rétablit le micro dans Scribe (indépendant du micro de l'app de visio).
+    pub fn set_mic_muted(&self, on: bool) {
+        self.inner.send_live(LiveCmd::Mute(on));
     }
 
     pub fn set_live_confidential(&self, on: bool) -> Result<()> {
@@ -461,6 +522,15 @@ impl Core {
         Ok(())
     }
 
+    /// Retire une phrase qui n'a pas été dite (hallucination de la transcription).
+    pub fn delete_segment(&self, id: i64) -> Result<()> {
+        let Some(meeting_id) = self.inner.db.delete_segment(id)? else {
+            bail!("phrase introuvable");
+        };
+        self.inner.emit(CoreEvent::SegmentDeleted { meeting_id, id });
+        Ok(())
+    }
+
     pub fn delete_meeting(&self, id: &str) -> Result<()> {
         self.inner.db.delete_meeting(id)?;
         let _ = std::fs::remove_dir_all(crate::paths::runs_dir().join(id));
@@ -482,6 +552,53 @@ impl Core {
         Ok(())
     }
 
+    // ---------- Contexte et documents ----------
+
+    pub fn meeting_context(&self, id: &str) -> Result<crate::context::MeetingContext> {
+        self.inner.db.get_meeting(id)?.context("réunion introuvable")?;
+        self.inner.db.meeting_context(id)
+    }
+
+    /// Texte libre et modèle de compte rendu (`None` = modèle par défaut des réglages).
+    pub fn set_meeting_context(&self, id: &str, text: &str, template: Option<&str>) -> Result<crate::context::MeetingContext> {
+        self.inner.db.get_meeting(id)?.context("réunion introuvable")?;
+        let template = template.map(str::trim).filter(|t| !t.is_empty());
+        if let Some(t) = template {
+            crate::report::template(&self.settings(), t).with_context(|| format!("modèle de compte rendu inconnu : {t}"))?;
+        }
+        let (text, _) = crate::context::cap(text.trim(), crate::context::MAX_FILE_CHARS);
+        self.inner.db.set_meeting_context(id, &text, template)?;
+        self.inner.db.meeting_context(id)
+    }
+
+    /// Joint un document (contenu en base64) : son texte est extrait et gardé en base.
+    pub fn add_context_file(&self, id: &str, name: &str, data_base64: &str) -> Result<crate::context::ContextFile> {
+        use base64::Engine;
+        self.inner.db.get_meeting(id)?.context("réunion introuvable")?;
+        let name = std::path::Path::new(name.trim())
+            .file_name()
+            .and_then(|n| n.to_str())
+            .filter(|n| !n.is_empty())
+            .context("nom de fichier manquant")?
+            .to_string();
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(data_base64.trim())
+            .context("contenu du fichier illisible (base64 attendu)")?;
+        let (kind, text, truncated) = crate::context::extract(&name, &bytes)?;
+        let fid = self.inner.db.add_context_file(id, &name, kind, bytes.len() as i64, &text, truncated)?;
+        self.inner.db.meeting_context(id)?.files.into_iter().find(|f| f.id == fid).context("document introuvable")
+    }
+
+    pub fn delete_context_file(&self, file_id: i64) -> Result<()> {
+        self.inner.db.delete_context_file(file_id)?;
+        Ok(())
+    }
+
+    /// Modèles de compte rendu (intégrés puis perso).
+    pub fn report_templates(&self) -> Vec<crate::report::Template> {
+        crate::report::templates(&self.settings())
+    }
+
     pub fn correlate(&self, id: &str) -> Result<()> {
         let m = self.inner.db.get_meeting(id)?.context("réunion introuvable")?;
         if let Some(r) = crate::correlate::blocked_reason(&self.inner, &m) {
@@ -500,6 +617,21 @@ impl Core {
 
     pub fn export_meeting(&self, id: &str) -> Result<String> {
         crate::export::meeting_markdown(&self.inner.db, id)
+    }
+
+    /// Export au format demandé (`markdown`, `txt`, `srt`, `vtt`).
+    pub fn export_meeting_as(&self, id: &str, format: &str) -> Result<String> {
+        crate::export::meeting_export(&self.inner.db, id, format)
+    }
+
+    /// Nom de fichier proposé pour un export.
+    pub fn export_file_name(&self, id: &str, format: &str) -> Result<String> {
+        crate::export::file_name(&self.inner.db, id, format)
+    }
+
+    /// Écrit l'export dans `path` (choisi par l'utilisateur dans la fenêtre d'enregistrement).
+    pub fn write_export(&self, id: &str, format: &str, path: &std::path::Path) -> Result<()> {
+        std::fs::write(path, self.export_meeting_as(id, format)?).with_context(|| format!("écriture de {}", path.display()))
     }
 
     pub fn add_note(&self, meeting_id: &str, text: &str) -> Result<Note> {

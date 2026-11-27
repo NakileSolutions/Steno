@@ -89,9 +89,20 @@ pub struct Meeting {
     pub agent_provider: Option<String>,
     pub agent_session_id: Option<String>,
     pub correlation: Option<String>,
-    /// App de visio de l'appel (teams, slack…), `None` si l'écoute a démarré sans appel.
+    /// App de visio de l'appel (teams, slack…), `room` pour une réunion en présentiel,
+    /// `None` si l'écoute a démarré sans appel.
     #[serde(default)]
     pub call_app: Option<String>,
+}
+
+/// `call_app` d'une réunion en présentiel : seul le micro du Mac est écouté.
+pub const ROOM: &str = "room";
+
+impl Meeting {
+    /// Réunion en présentiel : toutes les voix passent par le micro (pas de son d'app).
+    pub fn in_person(&self) -> bool {
+        self.call_app.as_deref() == Some(ROOM)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

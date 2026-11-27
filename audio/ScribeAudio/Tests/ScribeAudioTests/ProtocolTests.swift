@@ -355,6 +355,31 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(CommandParser.parse(#"{"cmd":"shutdown"}"#), .success(.shutdown))
         XCTAssertEqual(CommandParser.parse(#"{"cmd":"diarize","meeting_id":"m1","audio_dir":"/a/b"}"#),
                        .success(.diarize(meetingId: "m1", audioDir: "/a/b")))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"diarize","meeting_id":"m1","audio_dir":"/a/b","file":"me.wav"}"#),
+                       .success(.diarize(meetingId: "m1", audioDir: "/a/b", file: "me.wav")))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"diarize","meeting_id":"m1","audio_dir":"/a/b","file":"../x"}"#),
+                       .failure(.invalidField(command: "diarize", field: "file")))
+        XCTAssertEqual(
+            CommandParser.parse(#"{"cmd":"retranscribe","meeting_id":"m1","audio_dir":"/a","language":"fr","items":[{"id":3,"file":"me.wav","t0":1.5,"t1":4}]}"#),
+            .success(.retranscribe(meetingId: "m1", audioDir: "/a", language: "fr", vocabulary: [],
+                                   items: [RetranscribeItem(id: 3, file: "me.wav", t0: 1.5, t1: 4)])))
+        XCTAssertEqual(
+            CommandParser.parse(#"{"cmd":"retranscribe","meeting_id":"m1","audio_dir":"/a","language":"fr","items":[{"id":3,"file":"../x.wav","t0":1,"t1":2}]}"#),
+            .failure(.invalidField(command: "retranscribe", field: "items")))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"pause"}"#), .success(.pause))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"resume"}"#), .success(.resume))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"mute","on":true}"#), .success(.mute(on: true)))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"request_permission","kind":"system_audio"}"#),
+                       .success(.requestPermission(.systemAudio)))
+    }
+
+    func testParseStartRoom() {
+        guard case let .success(.start(o)) = CommandParser.parse(#"{"cmd":"start","apps":[],"room":true}"#) else {
+            return XCTFail("start attendu")
+        }
+        XCTAssertTrue(o.room)
+        guard case let .success(.start(d)) = CommandParser.parse(#"{"cmd":"start"}"#) else { return XCTFail("start attendu") }
+        XCTAssertFalse(d.room)
     }
 
     func testBadCommands() {

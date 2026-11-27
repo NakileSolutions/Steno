@@ -743,3 +743,19 @@ input[type='checkbox'].switch:focus-visible { outline: 2px solid var(--focus); o
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Impression / PDF : seul le document préparé (`#print-doc`) est imprimé. */
+.print-doc { display: none; }
+@media print {
+  html.printing, html.printing body { height: auto !important; overflow: visible !important; background: #fff !important; }
+  html.printing #app { display: none !important; }
+  html.printing .print-doc {
+    display: block;
+    color: #111;
+    font: 11pt/1.55 -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+    padding: 0;
+  }
+  html.printing .print-doc h1 { font-size: 18pt; margin: 0 0 4pt; }
+  html.printing .print-doc h2 { font-size: 13pt; margin: 14pt 0 4pt; }
+  html.printing .print-doc a { color: #111; }
+}

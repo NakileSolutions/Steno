@@ -24,6 +24,8 @@ pub struct LiveState {
     pub meeting: Option<crate::model::Meeting>,
     pub levels: Levels,
     pub aside: bool,
+    /// Micro coupé dans Scribe : vos paroles ne sont pas transcrites.
+    pub mic_muted: bool,
     pub sidecar: String,
     pub last_error: Option<String>,
     pub pending_requests: i64,
@@ -38,6 +40,7 @@ impl Default for LiveState {
             meeting: None,
             levels: Levels { me: -90.0, them: -90.0 },
             aside: false,
+            mic_muted: false,
             sidecar: "stopped".into(),
             last_error: None,
             pending_requests: 0,
@@ -50,6 +53,8 @@ impl Default for LiveState {
 pub enum CoreEvent {
     Live(LiveState),
     Segment(Segment),
+    /// Phrase retirée de la transcription (jamais dite).
+    SegmentDeleted { meeting_id: String, id: i64 },
     Request(Request),
     Report { meeting_id: String, version: i64 },
     MeetingsChanged,
@@ -67,6 +72,9 @@ impl CoreEvent {
         Some(match self {
             CoreEvent::Live(st) => ("scribe://live", serde_json::to_value(st).ok()?),
             CoreEvent::Segment(s) => ("scribe://segment", serde_json::to_value(s).ok()?),
+            CoreEvent::SegmentDeleted { meeting_id, id } => {
+                ("scribe://segment_deleted", serde_json::json!({ "meeting_id": meeting_id, "id": id }))
+            }
             CoreEvent::Request(r) => ("scribe://request", serde_json::to_value(r).ok()?),
             CoreEvent::Report { meeting_id, version } => {
                 ("scribe://report", serde_json::json!({ "meeting_id": meeting_id, "version": version }))

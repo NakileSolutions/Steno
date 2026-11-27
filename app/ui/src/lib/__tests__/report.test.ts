@@ -54,3 +54,11 @@ describe('splitReport', () => {
     expect(isEmptyBody('- garder le verrou')).toBe(false);
   });
 });
+
+describe('changements importants', () => {
+  it('isole la section ⚠️ Changements importants', () => {
+    const p = splitReport('# T\n\n## En bref\nok\n\n## ⚠️ Changements importants\n- **TVA belge** : 19 % → 21 %\n\n## Décisions\n- x');
+    expect(p.changes?.body).toBe('- **TVA belge** : 19 % → 21 %');
+    expect(p.rest).not.toContain('Changements');
+  });
+});

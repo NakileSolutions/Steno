@@ -2,13 +2,17 @@
   import { api, openExternal } from '../../lib/api';
   import type { MeetingDetail, Report } from '../../lib/types';
   import { time, shortDate } from '../../lib/format';
-  import { copyText, downloadText, slug, toast, toastError } from '../../lib/ui.svelte';
+  import { copyText, slug, toast, toastError } from '../../lib/ui.svelte';
+  import { copyRich, plainText, printDocument, reportHtml, saveExport, type ExportFormat } from '../../lib/exporting';
+  import Menu, { type MenuItem } from '../../lib/components/Menu.svelte';
   import { initial, speakerColor, speakerName } from '../../lib/components/speakers';
   import { isEmptyBody, splitReport } from '../../lib/report';
   import Markdown from '../../lib/components/Markdown.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import AgentLogo from '../../lib/components/AgentLogo.svelte';
   import { agentName } from '../../lib/agents';
+  import ContextEditor from '../../lib/components/ContextEditor.svelte';
+  import type { MeetingContext } from '../../lib/types';
 
   let { detail, reload }: { detail: MeetingDetail; reload: () => Promise<void> } = $props();
 
@@ -69,19 +73,45 @@
       toastError(e);
     }
   }
+  const docTitle = $derived(m.title ?? 'Réunion');
+  const docDate = $derived(`${shortDate(m.started_at)} à ${time(m.started_at)}`);
+  const baseName = $derived(`${m.started_at.slice(0, 10)}-${slug(m.title ?? m.id)}`);
+
+  /** Copie mise en forme : se colle telle quelle dans Teams, Slack, Outlook ou Gmail. */
   async function copy() {
-    if (report && (await copyText(report.markdown))) toast('Compte rendu copié.');
+    if (!report) return;
+    const ok = await copyRich(reportHtml(docTitle, docDate, report.markdown), `${docTitle} — ${docDate}\n\n${plainText(report.markdown)}`);
+    if (ok) toast('Compte rendu copié : collez-le dans Teams, Slack ou un mail.');
+    else toastError('Copie impossible.');
   }
-  async function exportMd() {
+  async function copyMarkdown() {
+    if (report && (await copyText(report.markdown))) toast('Markdown copié.');
+  }
+  async function save(format: ExportFormat) {
     try {
-      const md = await api.exportMeeting(m.id);
-      await copyText(md);
-      downloadText(`${m.started_at.slice(0, 10)}-${slug(m.title ?? m.id)}.md`, md);
-      toast('Export markdown copié et téléchargé.');
+      const where = await saveExport(m.id, format, format === 'markdown' ? baseName : `${baseName}-transcription`);
+      if (where) toast(`Enregistré : ${where.split('/').pop()}`);
     } catch (e) {
       toastError(e);
     }
   }
+  async function print() {
+    if (!report) return;
+    try {
+      await printDocument(reportHtml(docTitle, docDate, report.markdown));
+    } catch (e) {
+      toastError(e);
+    }
+  }
+  const exportItems: MenuItem[] = [
+    { label: 'Copier pour Teams, Slack ou un mail', icon: 'copy', hint: 'mis en forme', action: copy },
+    { label: 'Copier le markdown', icon: 'copy', action: copyMarkdown },
+    { label: 'Imprimer ou enregistrer en PDF…', icon: 'printer', action: print, separatorBefore: true },
+    { label: 'Enregistrer en Markdown…', icon: 'download', hint: '.md, avec la transcription', action: () => save('markdown') },
+    { label: 'Transcription en texte…', icon: 'download', hint: '.txt', action: () => save('txt'), separatorBefore: true },
+    { label: 'Sous-titres SRT…', icon: 'download', hint: '.srt', action: () => save('srt') },
+    { label: 'Sous-titres WebVTT…', icon: 'download', hint: '.vtt', action: () => save('vtt') },
+  ];
 
   async function toggleAction(id: number, done: boolean) {
     try {
@@ -95,6 +125,22 @@
   // Mise en page : « En bref » en tête, Décisions et Actions en cartes, le reste en document.
   const parts = $derived(report ? splitReport(report.markdown) : null);
   const brief = $derived(parts?.brief && !isEmptyBody(parts.brief.body) ? parts.brief : null);
+  const changes = $derived(parts?.changes && !isEmptyBody(parts.changes.body) ? parts.changes : null);
+
+  // Contexte : résumé dans l'en-tête du panneau ; un changement invite à régénérer.
+  let ctxSummary = $state('');
+  let ctxDirty = $state(false);
+  function onContext(c: MeetingContext, user = true) {
+    const bits = [];
+    if (c.text.trim()) bits.push('contexte');
+    if (c.files.length) bits.push(`${c.files.length} document${c.files.length > 1 ? 's' : ''}`);
+    if (c.template) bits.push('format choisi');
+    ctxSummary = bits.join(' · ');
+    if (user) ctxDirty = true;
+  }
+  $effect(() => {
+    api.getMeetingContext(m.id).then((c) => onContext(c, false)).catch(() => {});
+  });
   const decisions = $derived(parts?.decisions && !isEmptyBody(parts.decisions.body) ? parts.decisions : null);
   const mdActions = $derived(parts?.actions && !isEmptyBody(parts.actions.body) ? parts.actions : null);
   /** Actions extraites (cases à cocher) : seulement pour la version courante du compte rendu. */
@@ -124,13 +170,34 @@
         {#if pending?.op === 'regenerate'}<span class="spin" aria-hidden="true"></span>{:else}<Icon name="refresh" size={14} />{/if}{pending?.op === 'regenerate' ? 'Régénération…' : 'Régénérer'}
       </button>
       <span class="vsep" aria-hidden="true"></span>
-      <button class="btn sm icon ghost" onclick={copy} title="Copier le markdown" aria-label="Copier le markdown"><Icon name="copy" size={15} /></button>
-      <button class="btn sm icon ghost" onclick={exportMd} title="Exporter en markdown (copie + fichier .md)" aria-label="Exporter en markdown"><Icon name="download" size={15} /></button>
+      <button class="btn sm icon ghost" onclick={copy} title="Copier le compte rendu mis en forme (Teams, Slack, mail)" aria-label="Copier le compte rendu"><Icon name="copy" size={15} /></button>
+      <Menu icon="share" items={exportItems} title="Exporter" />
     </div>
 
     <p class="faint small gen">{#if report.provider}<AgentLogo id={report.provider} name={agentName(report.provider)} size={14} />{:else}<Icon name="ask" size={12} />{/if}<span class="ellipsis">Généré {report.provider ? `par ${agentName(report.provider)}` : ''} à <span class="tnum">{time(report.generated_at)}</span>{report.model ? ` · ${report.model}` : ''}</span></p>
 
+    {#if !m.confidential}
+      <details class="ctxbox">
+        <summary><Icon name="paperclip" size={14} />Contexte, documents et format{#if ctxSummary}<span class="faint small">{' — '}{ctxSummary}</span>{/if}</summary>
+        <div class="ctxbody">
+          <ContextEditor meetingId={m.id} onchange={(c) => onContext(c)} />
+          {#if ctxDirty}
+            <div class="row redo">
+              <p class="small muted grow">Régénérez le compte rendu pour tenir compte de ces changements (l’ancienne version reste consultable).</p>
+              <button class="btn sm primary" onclick={() => { ctxDirty = false; regenerate(); }} disabled={!!pending}><Icon name="refresh" size={14} />Régénérer</button>
+            </div>
+          {/if}
+        </div>
+      </details>
+    {/if}
+
     <article class="report" class:stale={!!pending}>
+      {#if changes}
+        <section class="rcard chg" aria-labelledby="rp-chg">
+          <h2 class="rc-h" id="rp-chg"><span class="rc-ic"><Icon name="warn" size={14} stroke={1.8} /></span>Changements importants</h2>
+          <div class="rc-body"><Markdown source={changes.body} /></div>
+        </section>
+      {/if}
       {#if brief}
         <section class="brief" aria-labelledby="rp-brief">
           <h2 class="brief-h" id="rp-brief"><Icon name="ask" size={14} stroke={1.8} />{brief.heading}</h2>
@@ -241,6 +308,13 @@
         <button class="btn primary" onclick={regenerate}>Générer le compte rendu</button>
       {/if}
     </div>
+    {#if !m.confidential}
+      <section class="ctxempty">
+        <h2 class="bh"><Icon name="paperclip" size={15} />Contexte, documents et format <span class="faint small">facultatif</span></h2>
+        {#if m.status === 'processing'}<p class="faint small hint">Ajouté avant la fin de la préparation, il est pris en compte ; sinon, régénérez le compte rendu ensuite.</p>{/if}
+        <ContextEditor meetingId={m.id} onchange={(c) => onContext(c, false)} />
+      </section>
+    {/if}
   {/if}
 </div>
 
@@ -350,6 +424,16 @@
   .rc-body :global(.md > p) { padding: 12px 16px; margin: 0; }
   .rc-body :global(.md > table) { margin: 0; border: 0; border-radius: 0; }
   .doc { margin-top: 30px; }
+  .chg { border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
+  .chg .rc-ic { color: var(--warn); background: var(--warn-soft); }
+  .ctxbox { margin: -6px 0 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .ctxbox summary { display: flex; align-items: center; gap: 8px; padding: 10px 14px; cursor: pointer; font-weight: 600; font-size: var(--fs-ui); color: var(--text-2); list-style: none; }
+  .ctxbox summary::-webkit-details-marker { display: none; }
+  .ctxbox[open] summary { border-bottom: 1px solid var(--line); }
+  .ctxbody { padding: 14px; }
+  .redo { margin-top: 12px; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); }
+  .ctxempty { margin-top: 28px; }
+  .ctxempty .hint { margin: -4px 0 10px; }
   .block { margin-top: 34px; }
   .bh { display: flex; align-items: center; gap: 8px; font-size: var(--fs-h3); margin-bottom: 10px; }
   .bc { font-size: var(--fs-micro); font-weight: 600; color: var(--text-3); background: var(--surface-2); border-radius: var(--r-pill); padding: 1px 7px; font-variant-numeric: tabular-nums; }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { groupByDay, groupHits, isOverdue } from '../group';
+import { groupByDay, groupHits, insertChrono, isOverdue } from '../group';
 import type { MeetingSummary, SearchHit } from '../types';
 
 beforeEach(() => {
@@ -49,5 +49,16 @@ describe('isOverdue', () => {
   it('une échéance libre (« vendredi ») ou absente n’est jamais en retard', () => {
     expect(isOverdue({ status: 'open', due: 'vendredi' })).toBe(false);
     expect(isOverdue({ status: 'open', due: null })).toBe(false);
+  });
+});
+
+describe('insertChrono', () => {
+  it('range une phrase arrivée en retard à sa place', () => {
+    const l: { id: number; t0: number | null }[] = [{ id: 1, t0: 2 }, { id: 2, t0: 35 }];
+    expect(insertChrono(l, { id: 3, t0: 24 })).toBe(1);
+    expect(l.map((x) => x.id)).toEqual([1, 3, 2]);
+    insertChrono(l, { id: 4, t0: 40 });
+    insertChrono(l, { id: 5, t0: null });
+    expect(l.map((x) => x.id)).toEqual([1, 3, 2, 4, 5]);
   });
 });

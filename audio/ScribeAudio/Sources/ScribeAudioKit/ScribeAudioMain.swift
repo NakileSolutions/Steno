@@ -18,6 +18,7 @@ public enum ScribeAudioMain {
       scribe-audio --spike-record <secondes> <dossier> [--apps teams,slack]
                                                      enregistre me.wav et them.wav (spike S1)
       scribe-audio --spike-transcribe <fichier.wav>  transcrit un fichier, temps par phrase (spike S2)
+      scribe-audio --spike-compare-asr <f.wav>…     compare Parakeet v3 et Canary (français imposé)
       scribe-audio --list-audio-processes [--apps teams,slack]
                                                      liste les processus audio vus par Core Audio
                                                      et l'app reconnue pour chacun
@@ -78,6 +79,17 @@ public enum ScribeAudioMain {
             let file = URL(fileURLWithPath: (args[1] as NSString).expandingTildeInPath)
             Task {
                 let code = await Spikes.transcribe(file: file)
+                exit(code)
+            }
+
+        case "--spike-compare-asr":
+            let files = args.dropFirst().map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+            guard !files.isEmpty else {
+                fputs(usage + "\n", stderr)
+                exit(64)
+            }
+            Task {
+                let code = await Spikes.compareASR(files: files)
                 exit(code)
             }
 

@@ -143,8 +143,12 @@ describe('compatibilité avec un cœur plus ancien', () => {
     expect(normalizeLiveState({ state: 'idle' } as unknown as LiveState).call.active).toBe(false);
   });
   it('laisse un état à jour tel quel', () => {
-    const s = st('idle', true, 'X', 'slack', 'Slack') as unknown as LiveState;
+    const s = { ...st('idle', true, 'X', 'slack', 'Slack'), mic_muted: false } as unknown as LiveState;
     expect(normalizeLiveState(s)).toBe(s);
+  });
+  it('complète mic_muted pour un cœur plus ancien', () => {
+    const s = st('idle', true, 'X', 'slack', 'Slack') as unknown as LiveState;
+    expect(normalizeLiveState(s).mic_muted).toBe(false);
   });
   it('convertit auto_detect_teams et complète call_apps', () => {
     const old = { audio: { auto_detect_teams: false, silence_ms: 1000 } } as unknown as Settings;

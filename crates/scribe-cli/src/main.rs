@@ -360,7 +360,7 @@ fn log_event(ev: &CoreEvent) {
         CoreEvent::Report { meeting_id, version } => println!("» compte rendu v{version} : {meeting_id}"),
         CoreEvent::Notify { title, body, .. } => println!("🔔 {title} — {body}"),
         CoreEvent::CommandDetected { .. } => println!("🔔 commande vocale détectée"),
-        CoreEvent::Live(_) | CoreEvent::MeetingsChanged => {}
+        CoreEvent::Live(_) | CoreEvent::MeetingsChanged | CoreEvent::SegmentDeleted { .. } => {}
     }
 }
 

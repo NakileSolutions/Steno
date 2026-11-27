@@ -52,6 +52,16 @@ export function duration(fromIso: string, toIso: string | null, now = Date.now()
   return clockDuration(s, false);
 }
 
+/** Durée courte d'une tâche : « 8 s », « 1 min 36 s ». `null` si une borne manque. */
+export function shortDuration(fromIso: string | null, toIso: string | null): string | null {
+  if (!fromIso || !toIso) return null;
+  const s = Math.round((new Date(toIso).getTime() - new Date(fromIso).getTime()) / 1000);
+  if (!Number.isFinite(s) || s < 0) return null;
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  return s % 60 ? `${m} min ${s % 60} s` : `${m} min`;
+}
+
 export function clockDuration(totalSeconds: number, withSeconds = true): string {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);

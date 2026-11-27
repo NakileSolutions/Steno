@@ -2,7 +2,7 @@
   import type { Request } from '../types';
   import { api, openExternal } from '../api';
   import { extractLinks, plainText, stripTldr } from '../markdown';
-  import { INTENT_LABEL, ORIGIN_LABEL, STATUS_CLASS, STATUS_LABEL, time } from '../format';
+  import { INTENT_LABEL, ORIGIN_LABEL, STATUS_CLASS, STATUS_LABEL, shortDuration, time } from '../format';
   import { toastError } from '../ui.svelte';
   import Markdown from './Markdown.svelte';
   import Icon from './Icon.svelte';
@@ -19,6 +19,7 @@
   // Les sources sont listées à part seulement si la réponse ne les présente pas déjà.
   const sources = $derived(/(\*\*|#+\s*)Sources/i.test(req.answer_md ?? '') ? [] : extractLinks(req.answer_md));
   const pending = $derived(req.status === 'queued' || req.status === 'running');
+  const took = $derived(req.status === 'done' ? shortDuration(req.started_at, req.finished_at) : null);
   const showAnswer = $derived(!compact || open);
   let el: HTMLElement | undefined = $state();
 
@@ -44,6 +45,7 @@
     </span>
     <span class="grow"></span>
     {#if showMeta}<time class="faint tiny">{time(req.created_at)}</time>{/if}
+    {#if took}<span class="faint tiny" title="Durée de la recherche">en {took}</span>{/if}
     <span class="badge status {STATUS_CLASS[req.status]}">
       {#if pending}<span class="spin" aria-hidden="true"></span>{/if}
       {STATUS_LABEL[req.status] ?? req.status}

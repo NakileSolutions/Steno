@@ -200,7 +200,8 @@ test.describe('réunions', () => {
   test('renommer un intervenant', async ({ page }) => {
     await open(page, '/meetings/daily-orion?tab=transcript');
     const detail = page.getByRole('region', { name: 'Détail de la réunion' });
-    await detail.locator('.toolbar').getByRole('button', { name: 'Eux-2', exact: true }).click();
+    // Sans nom donné, « Eux-2 » s'affiche « Intervenant 2 ».
+    await detail.locator('.toolbar').getByRole('button', { name: 'Intervenant 2', exact: true }).click();
     const input = detail.getByLabel('Nom affiché pour Eux-2');
     await input.fill('Paul');
     await input.press('Enter');
@@ -288,6 +289,25 @@ test.describe('écoute', () => {
     await live.getByRole('button', { name: 'Arrêter l’écoute' }).click();
     await expect(live.getByText(/Traitement/).first()).toBeVisible();
     await expect(nav(page).getByRole('button', { name: 'Démarrer l’écoute' })).toBeVisible({ timeout: 8000 });
+  });
+
+  test('réunion en présentiel, pause, micro coupé et rappel aux participants', async ({ page }) => {
+    await open(page, '/live');
+    const live = main(page);
+    await live.getByRole('button', { name: /présentiel/ }).click();
+    await expect(live.getByText('En présentiel')).toBeVisible();
+    // Pas de son d'app en présentiel : un seul indicateur de niveau (le micro).
+    await expect(live.locator('.meters .meter')).toHaveCount(1);
+    await expect(live.getByText('Prévenez les participants que la réunion est transcrite.')).toBeVisible();
+    await live.getByRole('button', { name: 'Masquer le rappel' }).click();
+    await expect(live.getByText('Prévenez les participants')).toHaveCount(0);
+    await live.getByRole('button', { name: 'Pause' }).click();
+    await expect(live.getByText(/Écoute en pause/)).toBeVisible();
+    await live.getByRole('button', { name: 'Reprendre' }).click();
+    await expect(live.getByText(/Écoute en pause/)).toHaveCount(0);
+    await live.getByRole('button', { name: 'Couper mon micro' }).click();
+    await expect(live.getByRole('button', { name: 'Micro coupé' })).toBeVisible();
+    await live.getByRole('button', { name: 'Arrêter l’écoute' }).click();
   });
 });
 
@@ -584,7 +604,11 @@ test.describe('apps de visio', () => {
 test('assistant de premier lancement', async ({ page }) => {
   await page.goto('/#/onboarding');
   await expect(page.getByRole('heading', { name: 'Permissions macOS' })).toBeVisible();
-  await expect(page.getByText('Accessibilité')).toBeVisible();
+  const perms = page.locator('.perms');
+  await expect(perms.getByText('Accessibilité', { exact: true })).toBeVisible();
+  // Droit refusé : bouton vers la bonne page des Réglages Système ; pas encore demandé : « Autoriser ».
+  await expect(perms.locator('li.denied').getByRole('button', { name: 'Ouvrir les Réglages Système' })).toBeVisible();
+  await expect(perms.locator('li.unknown').getByRole('button', { name: 'Autoriser' })).toBeVisible();
   await page.getByRole('button', { name: 'Suivant' }).click();
   await expect(page.getByRole('heading', { name: 'Agent IA' })).toBeVisible();
   const agents = page.getByRole('radiogroup', { name: 'Agent IA' });
@@ -657,4 +681,63 @@ test.describe('thème sombre', () => {
     await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(247, 246, 243)');
     await ctx.close();
   });
+});
+
+
+test('contexte, documents et format perso pendant la réunion ; arrêt en un clic', async ({ page }) => {
+  await open(page, '/live');
+  await nav(page).getByRole('button', { name: 'Démarrer l’écoute' }).click();
+  const live = main(page);
+  await live.getByRole('button', { name: 'Contexte' }).click();
+  const dlg = page.getByRole('dialog', { name: 'Contexte du compte rendu' });
+  await expect(dlg).toBeVisible();
+  await dlg.getByLabel('Contexte').fill('Point Nova : surveiller la TVA belge.');
+  await dlg.locator('input[type=file]').setInputFiles({ name: 'regles-tva.md', mimeType: 'text/markdown', buffer: Buffer.from('TVA Belgique : 19 %') });
+  await expect(dlg.getByText('regles-tva.md')).toBeVisible();
+  await dlg.locator('input[type=file]').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from('x') });
+  await expect(page.getByText(/Format non pris en charge/)).toBeVisible();
+  // Nouveau format perso, enregistré et sélectionné.
+  await dlg.getByLabel('Format du compte rendu').selectOption('__new');
+  await dlg.getByLabel('Nom du format').fill('Note COMEX bis');
+  await dlg.getByLabel('Consignes du format').fill('Deux puces, ton exécutif.');
+  await dlg.getByRole('button', { name: 'Enregistrer et utiliser' }).click();
+  await expect(dlg.getByLabel('Format du compte rendu')).toHaveValue('perso-note-comex-bis');
+  await dlg.getByRole('button', { name: 'Terminé' }).click();
+  await expect(dlg).toBeHidden();
+  // Réouverture : tout est conservé.
+  await live.getByRole('button', { name: 'Contexte' }).click();
+  await expect(dlg.getByLabel('Contexte')).toHaveValue('Point Nova : surveiller la TVA belge.');
+  await dlg.getByRole('button', { name: 'Terminé' }).click();
+  // Par défaut, l'arrêt se fait en un clic, sans fenêtre.
+  await live.getByRole('button', { name: 'Arrêter l’écoute' }).click();
+  await expect(page.getByRole('dialog', { name: 'Arrêter l’écoute' })).toHaveCount(0);
+  await expect(live.getByRole('button', { name: 'Arrêter l’écoute' })).toHaveCount(0);
+});
+
+test('option : fenêtre de contexte à l’arrêt, Entrée pour arrêter directement', async ({ page }) => {
+  await open(page, '/settings?section=reports');
+  await page.getByRole('switch', { name: /Proposer contexte, documents et format à l’arrêt/ }).check();
+  await page.getByRole('button', { name: 'Enregistrer' }).click();
+  await open(page, '/live');
+  await nav(page).getByRole('button', { name: 'Démarrer l’écoute' }).click();
+  const live = main(page);
+  await live.getByRole('button', { name: 'Arrêter l’écoute' }).click();
+  const dlg = page.getByRole('dialog', { name: 'Arrêter l’écoute' });
+  await expect(dlg.getByRole('button', { name: 'Arrêter et rédiger' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(live.getByRole('button', { name: 'Arrêter l’écoute' })).toHaveCount(0);
+});
+
+test('réglages : formats de compte rendu perso', async ({ page }) => {
+  await open(page, '/settings?section=reports');
+  await expect(page.getByLabel('Format par défaut')).toHaveValue('standard');
+  await expect(page.getByLabel('Nom du format').first()).toHaveValue('Note COMEX');
+  await page.getByRole('button', { name: 'Nouveau format' }).click();
+  await page.getByLabel('Nom du format').last().fill('Résumé exécutif');
+  await page.getByLabel(/Consignes du format/).last().fill('Cinq lignes au plus.');
+  await page.getByRole('button', { name: 'Enregistrer' }).click();
+  await expect(page.getByLabel('Format par défaut').locator('option', { hasText: 'Résumé exécutif' })).toHaveCount(1);
+  await page.getByLabel('Format par défaut').selectOption({ label: 'Mail de synthèse' });
+  await page.getByRole('button', { name: 'Enregistrer' }).click();
+  await expect(page.getByLabel('Format par défaut')).toHaveValue('mail');
 });

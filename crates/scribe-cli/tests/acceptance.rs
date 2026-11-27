@@ -31,6 +31,7 @@ fn env() -> &'static PathBuf {
             std::env::set_var("SCRIBE_HOME", &home);
             std::env::set_var("PATH", path);
             std::env::set_var("FAKE_CLAUDE_LOG", home.join("fake-claude.log"));
+            std::env::set_var("FAKE_CLAUDE_PROMPTS", home.join("fake-claude-prompts.log"));
             std::env::set_var("FAKE_AGY_LOG", home.join("fake-agy.log"));
             std::env::set_var("FAKE_GROK_LOG", home.join("fake-grok.log"));
             std::env::remove_var("ANTHROPIC_API_KEY");
@@ -482,5 +483,80 @@ async fn peripheriques_audio_et_signal() {
     }
     assert_eq!(played, Some(true));
     assert!(!c.db().requests(&id).unwrap().is_empty());
+    c.shutdown();
+}
+
+/// Phase 2 : contexte, document joint et format de sortie perso arrivent dans la demande de
+/// compte rendu ; la régénération produit une nouvelle version.
+#[tokio::test(flavor = "multi_thread")]
+async fn contexte_documents_et_format_du_compte_rendu() {
+    use base64::Engine;
+    let c = core("contexte", None);
+    let m = scribe_core::model::Meeting {
+        id: "ctx-1".into(),
+        title: Some("Point Nova".into()),
+        title_source: Some("user".into()),
+        started_at: scribe_core::now_iso(),
+        ended_at: Some(scribe_core::now_iso()),
+        status: "done".into(),
+        confidential: false,
+        agent_provider: None,
+        agent_session_id: None,
+        correlation: Some("on_demand".into()),
+        call_app: None,
+    };
+    c.db().insert_meeting(&m).unwrap();
+    c.db()
+        .insert_segment(&scribe_core::db::NewSegment {
+            meeting_id: m.id.clone(),
+            ts: scribe_core::now_iso(),
+            t0: Some(1.0),
+            t1: Some(4.0),
+            channel: "them".into(),
+            speaker: "Eux".into(),
+            text: "On passe la TVA belge à 21 %, c'est validé.".into(),
+            private: false,
+            is_echo: false,
+        })
+        .unwrap();
+
+    // Format perso enregistré dans les réglages, réutilisable.
+    let mut s = c.settings();
+    s.report.templates.push(scribe_core::settings::CustomTemplate {
+        id: String::new(),
+        name: "Note COMEX".into(),
+        instructions: "Trois puces maximum, ton exécutif.".into(),
+    });
+    let s = c.save_settings(s).unwrap();
+    let fmt = s.report.templates[0].id.clone();
+    assert_eq!(fmt, "perso-note-comex");
+    assert!(c.report_templates().iter().any(|t| t.id == "mail" && t.builtin));
+    assert!(c.report_templates().iter().any(|t| t.id == fmt && !t.builtin));
+
+    let data = base64::engine::general_purpose::STANDARD.encode("Belgique : TVA à 19 % (règle 2025).\n");
+    let f = c.add_context_file(&m.id, "regles-tva.md", &data).unwrap();
+    assert_eq!((f.kind.as_str(), f.chars), ("texte", 35));
+    assert!(c.add_context_file(&m.id, "photo.png", &data).is_err(), "format refusé");
+    let ctx = c.set_meeting_context(&m.id, "Réunion Nova : surveiller la TVA.", Some(&fmt)).unwrap();
+    assert_eq!(ctx.files.len(), 1);
+    assert!(c.set_meeting_context(&m.id, "x", Some("inconnu")).is_err());
+
+    c.regenerate_report(&m.id).unwrap();
+    wait_until("compte rendu", 60, || c.db().get_report(&m.id).unwrap().is_some()).await;
+    let prompts = std::fs::read_to_string(env().join("fake-claude-prompts.log")).unwrap();
+    let last: String = prompts
+        .lines()
+        .filter_map(|l| serde_json::from_str::<String>(l).ok())
+        .filter(|p| p.contains("Point Nova"))
+        .last()
+        .expect("demande de compte rendu");
+    assert!(last.contains("Réunion Nova : surveiller la TVA."));
+    assert!(last.contains("Document « regles-tva.md »") && last.contains("TVA à 19 %"));
+    assert!(last.contains("Format demandé « Note COMEX »") && last.contains("Trois puces maximum"));
+    assert!(last.contains("Changements importants"));
+
+    // Document retiré : il ne figure plus dans la demande suivante.
+    c.delete_context_file(f.id).unwrap();
+    assert!(c.meeting_context(&m.id).unwrap().files.is_empty());
     c.shutdown();
 }

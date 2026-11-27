@@ -18,6 +18,9 @@ pub const COMMANDS: &[&str] = &[
     "detect_agents", "list_audio_devices", "list_models", "test_agent", "list_connectors", "refresh_connectors", "update_connector", "list_repos",
     "add_repo", "update_repo", "remove_repo", "pick_folder", "check_wake_word", "generate_variants",
     "check_variants", "wake_detect", "wake_test_record", "doctor", "delete_all_data", "log_ui_error",
+    "get_permissions", "request_permission", "open_permission_settings", "complete_onboarding",
+    "delete_segment", "set_mic_muted", "save_export", "print_window", "pause_meeting", "resume_meeting",
+    "get_meeting_context", "set_meeting_context", "add_context_file", "delete_context_file", "list_report_templates",
 ];
 
 struct Args(Value);
@@ -52,7 +55,10 @@ pub async fn dispatch(core: &Core, cmd: &str, args: Value) -> Result<Value, Stri
     let db = core.db();
     match cmd {
         "live_state" => ok(core.live_state()),
-        "start_meeting" => ok(core.start_meeting(a.opt("title")?).await.map_err(e)?),
+        "start_meeting" => ok(core
+            .start_meeting_with(a.opt("title")?, a.opt("in_person")?.unwrap_or(false))
+            .await
+            .map_err(e)?),
         "stop_meeting" => ok(core.stop_meeting().await.map_err(e)?),
         "set_aside" => {
             core.set_aside(a.get("on")?);
@@ -77,8 +83,22 @@ pub async fn dispatch(core: &Core, cmd: &str, args: Value) -> Result<Value, Stri
         "update_note" => ok(db.update_note(a.get("id")?, &a.s("text")?).map_err(e)?),
         "delete_note" => ok(db.delete_note(a.get("id")?).map_err(e)?),
         "regenerate_report" => ok(core.regenerate_report(&a.s("id")?).map_err(e)?),
+        "get_meeting_context" => ok(core.meeting_context(&a.s("id")?).map_err(e)?),
+        "set_meeting_context" => {
+            let template: Option<String> = a.opt("template")?;
+            ok(core.set_meeting_context(&a.s("id")?, &a.s("text")?, template.as_deref()).map_err(e)?)
+        }
+        "add_context_file" => ok(core.add_context_file(&a.s("id")?, &a.s("name")?, &a.s("data")?).map_err(e)?),
+        "delete_context_file" => ok(core.delete_context_file(a.get("fileId")?).map_err(e)?),
+        "list_report_templates" => ok(core.report_templates()),
         "correlate" => ok(core.correlate(&a.s("id")?).map_err(e)?),
-        "export_meeting" => ok(core.export_meeting(&a.s("id")?).map_err(e)?),
+        "export_meeting" => {
+            let format: Option<String> = a.opt("format")?;
+            ok(core.export_meeting_as(&a.s("id")?, format.as_deref().unwrap_or("markdown")).map_err(e)?)
+        }
+        // Fenêtre d'enregistrement et impression : seulement dans l'app (l'interface web
+        // télécharge le fichier ou appelle `window.print()` elle-même).
+        "save_export" | "print_window" => ok(Value::Null),
         "search" => ok(db.search(&a.s("query")?, 100).map_err(e)?),
         "list_actions" => ok(db.list_actions(&a.opt::<ActionFilter>("filter")?.unwrap_or_default()).map_err(e)?),
         "set_action_status" => {
@@ -143,6 +163,17 @@ pub async fn dispatch(core: &Core, cmd: &str, args: Value) -> Result<Value, Stri
         }
         "doctor" => ok(crate::doctor::run(core, false).await),
         "delete_all_data" => ok(core.delete_all_data().map_err(e)?),
+        "get_permissions" => ok(core.permissions()),
+        "request_permission" => ok(core.request_permission(&a.get::<String>("kind")?).map_err(e)?),
+        "open_permission_settings" => ok(core.open_permission_settings(&a.get::<String>("kind")?).map_err(e)?),
+        "complete_onboarding" => ok(core.complete_onboarding().map_err(e)?),
+        "pause_meeting" => ok(core.pause_meeting(true).map_err(e)?),
+        "resume_meeting" => ok(core.pause_meeting(false).map_err(e)?),
+        "set_mic_muted" => {
+            core.set_mic_muted(a.get("on")?);
+            ok(())
+        }
+        "delete_segment" => ok(core.delete_segment(a.get::<i64>("id")?).map_err(e)?),
         "log_ui_error" => {
             tracing::error!(target: "ui", "{}", a.s("message").unwrap_or_default());
             ok(())

@@ -248,6 +248,13 @@ enum Spikes {
             print("Diarisation : ÉCHEC — \(error)")
             return 1
         }
+        // Retranscription de fin de réunion : facultative, un échec ne bloque pas l'installation.
+        do {
+            _ = try await models.finalRecognizer(language: "fr")
+            print("Retranscription (Canary) : OK")
+        } catch {
+            print("Retranscription (Canary) : indisponible — \(error) (téléchargée à la première réunion)")
+        }
         return 0
     }
 

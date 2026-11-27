@@ -8,7 +8,8 @@
 import type {
   Action, ActionFilter, AgentInfo, AudioDevices, Connector, Decision, DoctorItem, EventMap, EventName,
   LiveState, Meeting, MeetingDetail, MeetingFilter, MeetingSummary, ModelInfo, Note, Repo, Report,
-  Request, SearchHit, Segment, Settings, TestAgentResult, VariantCheck, WakeCheck, WakeDetect,
+  Permissions, PermissionKind, Request, SearchHit, Segment, Settings, TestAgentResult, VariantCheck, WakeCheck, WakeDetect,
+  ContextFile, MeetingContext, ReportTemplate,
 } from './types';
 import { normalizeLiveState, normalizeSettings } from './listening';
 
@@ -202,12 +203,22 @@ export async function openExternal(url: string): Promise<void> {
   return (await backendPromise).openExternal(url);
 }
 
+/** Contenu d'un fichier en base64 (sans l'en-tête `data:`). */
+export async function fileBase64(file: Blob): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
 export const api = {
   // Direct
   liveState: () => call<LiveState>('live_state').then(normalizeLiveState),
-  startMeeting: (title?: string) => call<Meeting>('start_meeting', title ? { title } : {}),
+  startMeeting: (title?: string, inPerson = false) =>
+    call<Meeting>('start_meeting', { ...(title ? { title } : {}), ...(inPerson ? { in_person: true } : {}) }),
   stopMeeting: () => call<null>('stop_meeting'),
   setAside: (on: boolean) => call<null>('set_aside', { on }),
+  setMicMuted: (on: boolean) => call<null>('set_mic_muted', { on }),
   setLiveConfidential: (on: boolean) => call<null>('set_live_confidential', { on }),
 
   // Demandes
@@ -232,8 +243,23 @@ export const api = {
   updateNote: (id: number, text: string) => call<null>('update_note', { id, text }),
   deleteNote: (id: number) => call<null>('delete_note', { id }),
   regenerateReport: (id: string) => call<null>('regenerate_report', { id }),
+
+  // Contexte, documents et format du compte rendu
+  getMeetingContext: (id: string) => call<MeetingContext>('get_meeting_context', { id }),
+  setMeetingContext: (id: string, text: string, template: string | null) =>
+    call<MeetingContext>('set_meeting_context', { id, text, template }),
+  /** Joint un fichier choisi dans la page : son contenu part en base64, le texte est extrait par le cœur. */
+  addContextFile: async (id: string, file: File) =>
+    call<ContextFile>('add_context_file', { id, name: file.name, data: await fileBase64(file) }),
+  deleteContextFile: (fileId: number) => call<null>('delete_context_file', { fileId }),
+  listReportTemplates: () => call<ReportTemplate[]>('list_report_templates'),
   correlate: (id: string) => call<null>('correlate', { id }),
-  exportMeeting: (id: string) => call<string>('export_meeting', { id }),
+  exportMeeting: (id: string, format: 'markdown' | 'txt' | 'srt' | 'vtt' = 'markdown') =>
+    call<string>('export_meeting', format === 'markdown' ? { id } : { id, format }),
+  saveExport: (id: string, format: 'markdown' | 'txt' | 'srt' | 'vtt') => call<string | null>('save_export', { id, format }),
+  printWindow: () => call<null>('print_window'),
+  pauseMeeting: () => call<null>('pause_meeting'),
+  resumeMeeting: () => call<null>('resume_meeting'),
 
   // Recherche, décisions, actions
   search: (query: string) => call<SearchHit[]>('search', { query }),
@@ -281,4 +307,11 @@ export const api = {
   // Divers
   doctor: () => call<DoctorItem[]>('doctor'),
   deleteAllData: () => call<null>('delete_all_data'),
+
+  // Permissions macOS et premier lancement
+  getPermissions: () => call<Permissions>('get_permissions'),
+  requestPermission: (kind: PermissionKind) => call<null>('request_permission', { kind }),
+  openPermissionSettings: (kind: PermissionKind) => call<null>('open_permission_settings', { kind }),
+  completeOnboarding: () => call<null>('complete_onboarding'),
+  deleteSegment: (id: number) => call<null>('delete_segment', { id }),
 };

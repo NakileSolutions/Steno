@@ -85,6 +85,7 @@ inconnus (compatibilité ascendante).
 {"type":"state","state":"listening"}
 {"type":"wake_test","text":"scribe cherche quelque chose"}
 {"type":"diarization","meeting_id":"…","turns":[{"t0":12.0,"t1":18.5,"speaker":"S1"}]}
+{"type":"retranscription","meeting_id":"…","items":[{"id":42,"text":"Ce deuxième sujet…"}]}
 {"type":"error","code":"tap_failed","message":"…","recoverable":true}
 ```
 
@@ -93,6 +94,7 @@ inconnus (compatibilité ascendante).
   et en réponse à `{"cmd":"permissions"}`.
 - `t0` / `t1` : secondes depuis le `start` (horloge de la session de capture).
 - `segment.private` : `true` pendant un aparté (seulement pour `channel = "me"`).
+- `segment.speaker` (facultatif, `channel = "them"`, non émis aujourd'hui : les intervenants sont identifiés en fin de réunion seulement) : intervenant reconnu (« S1 »…) ; le cœur l'enregistrerait comme « Eux-1 »…
 - `call` : un appel commence ou se termine dans une app surveillée (voir `watch`). `app` est
   l'identifiant de l'app (`teams`, `slack`, `zoom`…) ; `title` peut être `null`
   (accessibilité refusée ou titre introuvable). Un événement par app : plusieurs appels
@@ -113,14 +115,22 @@ inconnus (compatibilité ascendante).
 ```json
 {"cmd":"watch","apps":[{"id":"teams","name":"Microsoft Teams","bundles":["com.microsoft.teams2","com.microsoft.teams"]},{"id":"slack","name":"Slack","bundles":["com.tinyspeck.slackmacgap"]}]}
 {"cmd":"start","vocabulary":["Scribe","Atlas"],"silence_ms":1000,"keep_audio":false,"audio_dir":"/…/Caches/Scribe/<meeting_id>","apps":["slack"],"input_device":null}
+{"cmd":"start",…,"apps":[],"room":true}   // présentiel : micro seul, sans tap ni voice processing
 {"cmd":"set_input","device":"BuiltInMicrophoneDevice"}
 {"cmd":"devices"}
 {"cmd":"play","sound":"detect","device":null}
 {"cmd":"stop"}
 {"cmd":"aside","on":true}
+{"cmd":"pause"}             // capture en pause : silence sur les deux canaux (`state: paused`)
+{"cmd":"resume"}            // reprise (`state: listening`)
+{"cmd":"mute","on":true}     // micro coupé dans Scribe : silence à la place du micro
 {"cmd":"wake_test","seconds":8}
 {"cmd":"diarize","meeting_id":"…","audio_dir":"/…/Caches/Scribe/<meeting_id>"}
+{"cmd":"diarize","meeting_id":"…","audio_dir":"…","file":"me.wav"}   // présentiel : le micro (défaut : them.wav)
+{"cmd":"retranscribe","meeting_id":"…","audio_dir":"…","language":"fr","vocabulary":["Atlas"],
+ "items":[{"id":42,"file":"them.wav","t0":12.0,"t1":18.5}]}
 {"cmd":"permissions"}
+{"cmd":"request_permission","kind":"microphone"}   // ou "system_audio", "accessibility"
 {"cmd":"shutdown"}
 ```
 
@@ -140,6 +150,11 @@ inconnus (compatibilité ascendante).
   `them.wav` (et `me.wav`) dans `audio_dir` ; sinon aucun fichier audio n'est écrit.
 - `diarize` : le sidecar lit `them.wav` et répond par `diarization` (ou `error`).
   Le cœur attribue ensuite `Eux-1`, `Eux-2`… aux segments `them` selon le chevauchement.
+- `retranscribe` (fin de réunion, avant la diarisation, si `audio.final_transcription` ≠ `off`) :
+  chaque phrase est retranscrite depuis `me.wav` / `them.wav` avec Canary 1B v2, langue imposée.
+  `retranscription` ne liste que les phrases dont le nouveau texte est exploitable (non vide,
+  sans boucle de répétition) ; les autres gardent le texte du direct. Le cœur remplace le texte
+  (`segments.text`, index plein texte compris) et émet `scribe://segment` pour chacune.
 - Sans `start`, le sidecar ne capture rien mais continue de surveiller les apps et émet
   `call`. Le cœur n'en déduit **jamais** un démarrage : il met à jour `LiveState.call` et,
   si `audio.auto_detect_calls`, envoie une notification (« Appel Slack détecté… »).
@@ -260,12 +275,17 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
     "silence_ms": 1000,
     "vocabulary": [],
     "end_grace_s": 60,
-    "shortcuts": { "toggle": "Ctrl+Alt+S", "aside": "Ctrl+Alt+Space", "quick_note": "Ctrl+Alt+N" }
+    "shortcuts": { "toggle": "Ctrl+Alt+S", "aside": "Ctrl+Alt+Space", "quick_note": "Ctrl+Alt+N" },
+    "final_transcription": "fr"   // langue de la retranscription de fin de réunion, ou "off"
   },
   "correlation": { "mode": "on_demand", "budget": 30, "exclude_words": ["1:1", "RH", "entretien", "perso"] },
   "privacy": { "audio_retention_days": 0, "transcript_retention_days": null,
                "auto_export_dir": null, "excluded_titles": [] },
-  "profile": { "name": "", "role": "", "team": "", "jira_key_pattern": "[A-Z][A-Z0-9]+-\\d+" }
+  "profile": { "name": "", "role": "", "team": "", "jira_key_pattern": "[A-Z][A-Z0-9]+-\\d+",
+               "theme": "auto" },  // auto | light | dark (thème natif de toutes les fenêtres)
+  "report": { "default_template": "standard",   // format utilisé quand la réunion n'en choisit pas
+              "ask_context_on_stop": false,      // fenêtre de contexte à l'arrêt (sinon arrêt en un clic)
+              "templates": [ { "id": "perso-note-comex", "name": "Note COMEX", "instructions": "…" } ] }
 }
 ```
 
@@ -365,7 +385,7 @@ type Settings = /* section 4 */;
 | Commande | Arguments | Retour |
 |---|---|---|
 | `live_state` | — | `LiveState` |
-| `start_meeting` | `title?: string` (sans titre : titre de l'appel en cours s'il y en a un ; le son capté est celui de cette app) | `Meeting` |
+| `start_meeting` | `title?: string, in_person?: boolean` (sans titre : titre de l'appel en cours s'il y en a un ; le son capté est celui de cette app. `in_person` : réunion en présentiel, micro du Mac seul, `call_app = "room"`, phrases « Salle » puis intervenants identifiés en fin de réunion sur `me.wav`) | `Meeting` |
 | `stop_meeting` | — | `null` |
 | `set_aside` | `on: boolean` | `null` |
 | `set_live_confidential` | `on: boolean` | `null` |
@@ -385,8 +405,15 @@ type Settings = /* section 4 */;
 | `update_note` | `id: number, text` | `null` |
 | `delete_note` | `id: number` | `null` |
 | `regenerate_report` | `id` | `null` |
+| `get_meeting_context` | `id` | `MeetingContext` `{meeting_id, text, template, files: ContextFile[]}` (sans le texte des documents) |
+| `set_meeting_context` | `id, text, template?` | `MeetingContext` (`template` : identifiant d'un format, `null` = format par défaut des réglages) |
+| `add_context_file` | `id, name, data` (contenu en base64, 20 Mo max) | `ContextFile` `{id, meeting_id, name, kind, size, chars, truncated, added_at}` : texte extrait à l'ajout (PDF, xlsx/xls/ods, csv, docx/doc/rtf/odt/html via `textutil`, md/txt/json…), 60 000 caractères gardés |
+| `delete_context_file` | `fileId` | `null` |
+| `list_report_templates` | — | `Template[]` `{id, name, description, instructions, builtin}` : formats intégrés (`standard`, `daily`, `client`, `atelier`, `arbitrage`, `mail`, `slack`) puis formats perso (`report.templates`) |
 | `correlate` | `id` | `null` |
-| `export_meeting` | `id` | `string` (markdown) |
+| `export_meeting` | `id, format?: "markdown" \| "txt" \| "srt" \| "vtt"` | `string` (markdown complet par défaut ; `txt`/`srt`/`vtt` : transcription seule) |
+| `save_export` | `id, format` | `string \| null` (app : fenêtre « Enregistrer sous… » puis écriture ; null si annulé ou hors app) |
+| `print_window` | — | `null` (app : impression de la fenêtre, donc PDF ; hors app : `window.print()` côté interface) |
 | `search` | `query` | `SearchHit[]` |
 | `list_actions` | `filter: { status?, owner?, from?, to? }` | `Action[]` |
 | `set_action_status` | `id: number, status` | `null` |
@@ -415,6 +442,14 @@ type Settings = /* section 4 */;
 | `doctor` | — | `DoctorItem[]` |
 | `delete_all_data` | — | `null` |
 | `log_ui_error` | `message` | `null` (consigné dans logs/scribe.log) |
+| `get_permissions` | — | `{ microphone, system_audio, accessibility: "granted" \| "denied" \| "unknown", available: boolean }` (redemande l'état au sidecar ; `available` = sidecar lancé) |
+| `request_permission` | `kind: "microphone" \| "system_audio" \| "accessibility"` | `null` (invite macOS affichée par le sidecar ; sans effet si déjà répondu) |
+| `open_permission_settings` | `kind` | `null` (ouvre la page des Réglages Système du droit ; adresses fixes) |
+| `complete_onboarding` | — | `null` (assistant terminé ou passé : il ne se rouvre plus) |
+| `pause_meeting` | — | `null` (écoute en pause : la réunion continue, rien n'est transcrit ; `LiveState.state = "paused"`) |
+| `resume_meeting` | — | `null` (reprise de l'écoute) |
+| `set_mic_muted` | `on: boolean` | `null` (micro coupé dans Scribe : rien de ce que vous dites n'est transcrit ; rétabli à la fin de la réunion ; `LiveState.mic_muted`) |
+| `delete_segment` | `id: number` | `null` (phrase jamais dite retirée ; événement `scribe://segment_deleted`) |
 
 ### Événements (`listen`)
 
@@ -422,6 +457,7 @@ type Settings = /* section 4 */;
 |---|---|
 | `scribe://live` | `LiveState` (à chaque changement d'état, niveaux au plus 4×/s) |
 | `scribe://segment` | `Segment` |
+| `scribe://segment_deleted` | `{ meeting_id, id }` (phrase retirée) |
 | `scribe://request` | `Request` (création et chaque changement de statut) |
 | `scribe://report` | `{ meeting_id: string, version: number }` |
 | `scribe://meetings` | `null` (la liste a changé) |

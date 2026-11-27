@@ -15,6 +15,11 @@ demandes fournies. Format exact :
 ## Mes notes
 ```
 
+- Si la demande contient un **contexte** ou des **documents** : lis-les d'abord. Quand la réunion
+  change ou contredit ce qu'ils disent, ajoute juste après « En bref » une section
+  `## ⚠️ Changements importants` (`- **Sujet** : avant → après (source)`), sinon omets-la.
+- Si la demande indique un **format demandé**, ses consignes priment sur le format ci-dessus
+  (structure, ton, longueur) ; le bloc ```json``` final reste obligatoire.
 - Les actions s'écrivent `- **Qui** — quoi — échéance` (échéance « — » si aucune).
 - « Mes notes » : fusionne les notes de l'utilisateur avec ce qui a été dit, comme le ferait
   un bon preneur de notes ; garde leur sens.

@@ -5,11 +5,12 @@ import type { Backend, Unlisten } from './api';
 import type {
   Action, ActionFilter, DoctorItem, EventMap, EventName, LiveState, Meeting, MeetingDetail,
   MeetingFilter, MeetingSummary, Note, Repo, Request, SearchHit, Segment, Settings,
-  VariantCheck, WakeCheck, WakeDetect,
+  PermissionKind, PermissionValue, VariantCheck, WakeCheck, WakeDetect,
+  ContextFile, MeetingContext, ReportTemplate,
 } from './types';
 import {
   LIVE_SCRIPT, TEAMS_TITLE, defaultSettings, iso, nextIds, seedAgents, seedAudioDevices, seedConnectors,
-  seedHistoryRequests, seedMeetings, seedModels, seedRepos, type MeetingStore,
+  seedHistoryRequests, seedMeetings, seedModels, seedRepos, type MeetingStore, MOCK_BUILTIN_TEMPLATES,
 } from './mock-data';
 import { detectWake, fold } from './wake';
 import { effortLabel, normalizeAgentSettings } from './agents';
@@ -69,6 +70,7 @@ export function createMockBackend(): Backend {
   const unplugged = new Set<string>();
   let reqSeq = 100;
   let wakeTestCount = 0;
+  const permissions: Record<PermissionKind, PermissionValue> = { microphone: 'granted', system_audio: 'unknown', accessibility: 'denied' };
 
   const liveStore = () => meetings.find((m) => m.meeting.status === 'live');
   const find = (id: string) => {
@@ -83,6 +85,7 @@ export function createMockBackend(): Backend {
     meeting: null,
     levels: { me: -90, them: -90 },
     aside: false,
+    mic_muted: false,
     sidecar: 'running',
     last_error: null,
     pending_requests: 0,
@@ -270,6 +273,7 @@ export function createMockBackend(): Backend {
       live.state = 'idle';
       live.meeting = null;
       live.aside = false;
+      live.mic_muted = false;
       emitLive();
       emit('scribe://meetings', null);
     }, 3000);
@@ -409,6 +413,20 @@ export function createMockBackend(): Backend {
     return next as unknown as Settings;
   }
 
+  // --- Contexte des réunions ---
+  const contexts = new Map<string, MeetingContext>();
+  let nextFileId = 1;
+  const ctxOf = (id: string): MeetingContext => {
+    find(id);
+    if (!contexts.has(id)) contexts.set(id, { meeting_id: id, text: '', template: null, files: [] });
+    return contexts.get(id)!;
+  };
+  const templatesList = (): ReportTemplate[] => [
+    ...MOCK_BUILTIN_TEMPLATES.map((t) => ({ ...t, instructions: '', builtin: true })),
+    ...(settings.report?.templates ?? []).map((t) => ({ id: t.id, name: t.name, description: t.instructions.slice(0, 90), instructions: t.instructions, builtin: false })),
+  ];
+  const KINDS: Record<string, string> = { pdf: 'pdf', xlsx: 'tableur', xls: 'tableur', ods: 'tableur', csv: 'csv', docx: 'document', doc: 'document', rtf: 'document', md: 'texte', txt: 'texte', json: 'texte' };
+
   // --- Commandes ---
   type Args = Record<string, unknown>;
   const handlers: Record<string, (a: Args) => unknown> = {
@@ -418,11 +436,11 @@ export function createMockBackend(): Backend {
       const start = new Date();
       const id = `reunion-${start.getTime()}`;
       const meeting: Meeting = {
-        id, title: (a.title as string) || (live.call.active && live.call.title) || 'Réunion',
-        title_source: a.title ? 'user' : live.call.active && live.call.title ? 'call_window' : null,
+        id, title: (a.title as string) || (!a.in_person && live.call.active && live.call.title) || (a.in_person ? 'Réunion en présentiel' : 'Réunion'),
+        title_source: a.title ? 'user' : !a.in_person && live.call.active && live.call.title ? 'call_window' : null,
         started_at: iso(start), ended_at: null, status: 'live', confidential: false,
         agent_provider: settings.agent.provider, correlation: settings.correlation.mode,
-        call_app: live.call.active ? live.call.app : null,
+        call_app: a.in_person ? 'room' : live.call.active ? live.call.app : null,
       };
       meetings.unshift({ meeting, segments: [], speakers: [{ label: 'Moi', display_name: null }], notes: [], requests: [], reports: [], refs: [], decisions: [], actions: [], drafts: [] });
       scriptPos = 0;
@@ -435,6 +453,11 @@ export function createMockBackend(): Backend {
       const s = liveStore();
       if (!s) throw 'Aucune réunion en cours.';
       finishMeeting(s);
+      return null;
+    },
+    set_mic_muted: (a) => {
+      live.mic_muted = !!a.on;
+      emitLive();
       return null;
     },
     set_aside: (a) => {
@@ -570,8 +593,32 @@ export function createMockBackend(): Backend {
     export_meeting: (a) => {
       const s = find(a.id as string);
       const report = s.reports.at(-1)?.markdown ?? `# ${s.meeting.title ?? s.meeting.id}`;
-      const tr = s.segments.filter((x) => !x.private && !x.is_echo).map((x) => `- **${s.speakers.find((p) => p.label === x.speaker)?.display_name ?? x.speaker}** (${x.ts.slice(11, 19)}) : ${x.text}`);
+      const segs = s.segments.filter((x) => !x.private && !x.is_echo);
+      const who = (l: string) => s.speakers.find((p) => p.label === l)?.display_name ?? l;
+      const st = (t: number, sep: string) => {
+        const ms = Math.round(Math.max(0, t) * 1000);
+        const p = (n: number, w = 2) => String(n).padStart(w, '0');
+        return `${p(Math.floor(ms / 3600000))}:${p(Math.floor(ms / 60000) % 60)}:${p(Math.floor(ms / 1000) % 60)}${sep}${p(ms % 1000, 3)}`;
+      };
+      if (a.format === 'txt') return `${s.meeting.title ?? 'Réunion'}\n\n${segs.map((x) => `[${x.ts.slice(11, 19)}] ${who(x.speaker)} : ${x.text}`).join('\n')}\n`;
+      if (a.format === 'srt') return segs.map((x, i) => `${i + 1}\n${st(x.t0 ?? 0, ',')} --> ${st(x.t1 ?? (x.t0 ?? 0) + 2, ',')}\n${who(x.speaker)} : ${x.text}\n`).join('\n');
+      if (a.format === 'vtt') return `WEBVTT\n\n${segs.map((x) => `${st(x.t0 ?? 0, '.')} --> ${st(x.t1 ?? (x.t0 ?? 0) + 2, '.')}\n<v ${who(x.speaker)}>${x.text}\n`).join('\n')}`;
+      const tr = segs.map((x) => `- **${who(x.speaker)}** (${x.ts.slice(11, 19)}) : ${x.text}`);
       return `${report}\n\n## Transcription\n\n${tr.join('\n')}\n`;
+    },
+    save_export: () => null,
+    print_window: () => null,
+    pause_meeting: () => {
+      if (live.state !== 'listening') throw 'Aucune écoute en cours.';
+      live.state = 'paused';
+      emitLive();
+      return null;
+    },
+    resume_meeting: () => {
+      if (live.state !== 'paused') throw 'L’écoute n’est pas en pause.';
+      live.state = 'listening';
+      emitLive();
+      return null;
     },
     search: (a) => {
       const q = String(a.query ?? '').trim();
@@ -614,6 +661,19 @@ export function createMockBackend(): Backend {
     get_settings: () => clone(settings),
     save_settings: (a) => {
       settings = clone(a.settings as Settings);
+      // Comme le cœur : formats perso nommés, identifiant unique dérivé du nom.
+      if (settings.report) {
+        const ids = new Set(MOCK_BUILTIN_TEMPLATES.map((t) => t.id));
+        settings.report.templates = settings.report.templates
+          .filter((t) => t.name.trim())
+          .map((t) => {
+            let id = t.id && !MOCK_BUILTIN_TEMPLATES.some((b) => b.id === t.id) ? t.id : `perso-${fold(t.name.trim()).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+            const base = id;
+            for (let n = 2; ids.has(id); n++) id = `${base}-${n}`;
+            ids.add(id);
+            return { ...t, id, name: t.name.trim() };
+          });
+      }
       storeSettings(settings);
       forgetDisabledCall();
       return clone(settings);
@@ -731,6 +791,53 @@ export function createMockBackend(): Backend {
         { name: 'Politique lecture seule', status: 'ok', message: 'Test « poste sur Slack » : refusé comme attendu.', fix: null },
       ];
       return items;
+    },
+    get_permissions: () => ({ ...permissions, available: true }),
+    request_permission: (a) => {
+      const k = String(a.kind) as PermissionKind;
+      if (!(k in permissions)) throw `Permission inconnue : ${k}`;
+      if (permissions[k] === 'unknown') setTimeout(() => (permissions[k] = 'granted'), 600);
+      return null;
+    },
+    open_permission_settings: (a) => {
+      const k = String(a.kind) as PermissionKind;
+      if (!(k in permissions)) throw `Permission inconnue : ${k}`;
+      // Simule l'utilisateur qui coche Scribe dans les Réglages Système.
+      setTimeout(() => (permissions[k] = 'granted'), 1200);
+      return null;
+    },
+    complete_onboarding: () => null,
+    get_meeting_context: (a) => clone(ctxOf(String(a.id))),
+    set_meeting_context: (a) => {
+      const c = ctxOf(String(a.id));
+      const t = (a.template as string | null) || null;
+      if (t && !templatesList().some((x) => x.id === t)) throw `Format de compte rendu inconnu : ${t}`;
+      c.text = String(a.text ?? '').trim();
+      c.template = t;
+      return clone(c);
+    },
+    add_context_file: (a) => {
+      const c = ctxOf(String(a.id));
+      const name = String(a.name);
+      const kind = KINDS[name.split('.').pop()?.toLowerCase() ?? ''];
+      if (!kind) throw `Format non pris en charge : « ${name} » (PDF, Excel, CSV, Word, Markdown ou texte)`;
+      const size = Math.floor((String(a.data).length * 3) / 4);
+      const f: ContextFile = { id: nextFileId++, meeting_id: c.meeting_id, name, kind, size, chars: Math.min(size, 60000), truncated: size > 60000, added_at: iso(new Date()) };
+      c.files.push(f);
+      return clone(f);
+    },
+    delete_context_file: (a) => {
+      for (const c of contexts.values()) c.files = c.files.filter((f) => f.id !== Number(a.fileId));
+      return null;
+    },
+    list_report_templates: () => templatesList(),
+    delete_segment: (a) => {
+      const id = Number(a.id);
+      const s = meetings.find((x) => x.segments.some((g) => g.id === id));
+      if (!s) throw 'Phrase introuvable.';
+      s.segments = s.segments.filter((g) => g.id !== id);
+      emit('scribe://segment_deleted', { meeting_id: s.meeting.id, id });
+      return null;
     },
     delete_all_data: () => {
       meetings = [];

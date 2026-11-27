@@ -85,7 +85,7 @@
 </script>
 
 <div class="field">
-  <label class="field-label" for="wake">Mot d’appel<span class="hint">Doit être dans les 2 premiers mots de la phrase, sur votre micro uniquement.</span></label>
+  <label class="field-label" for="wake">Mot d’appel<span class="hint">Seul, en début de phrase ; précédé d’un préfixe (« OK Scribe »), n’importe où dans la phrase. Micro uniquement.</span></label>
   <div class="field-body">
     <div class="row">
       <input id="wake" class="input lg wake" bind:value={settings.voice.wake_word} autocomplete="off" spellcheck="false" />

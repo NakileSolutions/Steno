@@ -6,8 +6,10 @@
 // - micro choisi (`start.input_device`, `set_input`) : réglé sur l'unité du nœud d'entrée ;
 //   s'il est absent ou débranché, repli sur le micro par défaut (`onDeviceMissing`), puis
 //   reprise dès qu'il réapparaît dans la liste des périphériques ;
-// - si le voice processing empêche le démarrage (certains périphériques agrégés), repli
-//   sans AEC, signalé dans les journaux.
+// - si le voice processing empêche le démarrage (casque Bluetooth en appel, certains
+//   agrégats), repli sur une capture directe par le HAL (`HALInputCapture`), qui ne touche
+//   pas à la sortie audio. Le voice processing n'est alors plus retenté pendant la capture :
+//   chaque essai reconfigure la sortie et perturbe le son de l'app de visio.
 
 import AudioToolbox
 import AVFoundation
@@ -43,6 +45,10 @@ final class MicCapture {
     private let wantsVoiceProcessing: Bool
     private let queue = DispatchQueue(label: "scribe.audio.mic.control")
     private var engine: AVAudioEngine?
+    /// Capture directe (sans voice processing).
+    private var hal: HALInputCapture?
+    /// Le voice processing a échoué : on ne le retente plus pendant cette capture.
+    private var voiceProcessingFailed = false
     private var configObserver: NSObjectProtocol?
     private var defaultInputListener: HALPropertyListener?
     private var devicesListener: HALPropertyListener?
@@ -117,7 +123,7 @@ final class MicCapture {
             guard let self else { return }
             let wanted = Self.normalized(uid)
             let label = wanted.map { "« \($0) »" } ?? "micro par défaut"
-            if wanted == self.requestedUID, !self.usingFallback, self.engine != nil {
+            if wanted == self.requestedUID, !self.usingFallback, self.engine != nil || self.hal != nil {
                 Log.info("micro : \(label) déjà utilisé")
                 return
             }
@@ -179,14 +185,27 @@ final class MicCapture {
     private func startEngine() throws {
         teardownEngine()
         let device = resolveDevice()
-        do {
-            try buildAndStart(voiceProcessing: wantsVoiceProcessing, device: device)
-        } catch {
-            guard wantsVoiceProcessing else { throw error }
-            Log.warn("micro avec voice processing impossible (\(error)) : repli sans annulation d'écho")
-            teardownEngine()
-            try buildAndStart(voiceProcessing: false, device: device)
+        if wantsVoiceProcessing && !voiceProcessingFailed {
+            do {
+                try buildAndStart(voiceProcessing: true, device: device)
+                return
+            } catch {
+                voiceProcessingFailed = true
+                Log.warn("micro avec voice processing impossible (\(error)) : capture directe sans annulation d'écho pour la suite")
+                teardownEngine()
+            }
         }
+        try startDirect(device: device)
+    }
+
+    /// Capture directe du micro (HAL), sans voice processing ni sortie audio.
+    private func startDirect(device: AudioDeviceID?) throws {
+        guard let id = device ?? AudioDevices.defaultInputDeviceID() else { throw MicError.noInputDevice }
+        let capture = HALInputCapture(device: id, onSamples: onSamples)
+        try capture.start()
+        hal = capture
+        voiceProcessingActive = false
+        Log.info("micro démarré (capture directe) : \(AudioDevices.describe(id)), \(Int(capture.rate)) Hz, \(capture.channelCount) canaux, AEC inactif")
     }
 
     /// `device` nil = micro par défaut du système (rien n'est réglé sur le nœud d'entrée).
@@ -254,6 +273,8 @@ final class MicCapture {
     }
 
     private func teardownEngine() {
+        hal?.stop()
+        hal = nil
         if let configObserver {
             NotificationCenter.default.removeObserver(configObserver)
         }

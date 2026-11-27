@@ -5,6 +5,8 @@ export type ReportSection = { heading: string; body: string };
 
 export type ReportParts = {
   brief: ReportSection | null;
+  /** « ⚠️ Changements importants » : ce qui change par rapport au contexte fourni. */
+  changes: ReportSection | null;
   decisions: ReportSection | null;
   actions: ReportSection | null;
   /** Le reste du document (titre `#` retiré), sections dans l'ordre d'origine. */
@@ -14,8 +16,9 @@ export type ReportParts = {
 const fold = (s: string) =>
   s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
-function kind(heading: string): 'brief' | 'decisions' | 'actions' | null {
-  const h = fold(heading);
+function kind(heading: string): 'brief' | 'changes' | 'decisions' | 'actions' | null {
+  const h = fold(heading).replace(/^[^a-z0-9]+/, '');
+  if (/^changements? importants?\b/.test(h)) return 'changes';
   if (/^(en bref|resume|tl;?dr)\b/.test(h)) return 'brief';
   if (/^decisions?\b/.test(h)) return 'decisions';
   if (/^actions?\b/.test(h)) return 'actions';
@@ -28,7 +31,7 @@ export function isEmptyBody(body: string): boolean {
 }
 
 export function splitReport(md: string): ReportParts {
-  const parts: ReportParts = { brief: null, decisions: null, actions: null, rest: '' };
+  const parts: ReportParts = { brief: null, changes: null, decisions: null, actions: null, rest: '' };
   const lines = (md ?? '').replace(/\r\n?/g, '\n').split('\n');
   const rest: string[] = [];
   let cur: { k: ReturnType<typeof kind>; heading: string; body: string[] } | null = null;

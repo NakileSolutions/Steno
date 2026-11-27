@@ -6,6 +6,7 @@
 pub mod agents;
 pub mod api;
 pub mod core;
+pub mod context;
 pub mod correlate;
 pub mod db;
 pub mod doctor;
@@ -18,6 +19,7 @@ pub mod live;
 pub mod maintenance;
 pub mod model;
 pub mod paths;
+pub mod permissions;
 pub mod policy;
 pub mod prompts;
 pub mod report;

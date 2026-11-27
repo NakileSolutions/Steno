@@ -1,6 +1,7 @@
 // Détection du mot d'appel côté interface (faux backend et aperçus) : même règle que le cœur,
-// en plus simple. Le mot d'appel doit être dans les 2 premiers mots ; en mode strict, précédé
-// d'un préfixe. Le verbe qui suit détermine l'intention (recherche par défaut).
+// en plus simple. Précédé d'un préfixe (« OK Scribe »), le mot d'appel est reconnu n'importe où
+// dans la phrase ; seul (hors mode strict), dans les 2 premiers mots. Le verbe qui suit
+// détermine l'intention (recherche par défaut).
 
 import type { Settings, WakeDetect } from './types';
 
@@ -13,12 +14,10 @@ export function detectWake(text: string, voice: Settings['voice']): WakeDetect {
   const wake = new Set([fold(voice.wake_word), ...voice.variants.map(fold)].filter(Boolean));
   const prefixes = voice.prefixes.map(fold);
   let idx = -1;
-  for (let i = 0; i < Math.min(2, folded.length); i++) {
-    if (wake.has(folded[i])) {
-      if (voice.strict && !(i === 1 && prefixes.includes(folded[0]))) continue;
-      idx = i;
-      break;
-    }
+  for (let i = 0; i < folded.length; i++) {
+    if (!wake.has(folded[i])) continue;
+    const prefixed = i > 0 && prefixes.includes(folded[i - 1]);
+    if (prefixed || (!voice.strict && i < 2)) idx = i;
   }
   if (idx < 0) return { detected: false, intent: null, query: null };
   const orig = words(text);

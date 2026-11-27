@@ -30,8 +30,8 @@ pub fn live_state(st: State<'_, AppState>) -> LiveState {
 }
 
 #[tauri::command]
-pub async fn start_meeting(st: State<'_, AppState>, title: Option<String>) -> R<Meeting> {
-    st.core.start_meeting(title).await.map_err(er)
+pub async fn start_meeting(st: State<'_, AppState>, title: Option<String>, in_person: Option<bool>) -> R<Meeting> {
+    st.core.start_meeting_with(title, in_person.unwrap_or(false)).await.map_err(er)
 }
 
 #[tauri::command]
@@ -132,13 +132,79 @@ pub fn regenerate_report(st: State<'_, AppState>, id: String) -> R<()> {
 }
 
 #[tauri::command]
+pub fn get_meeting_context(st: State<'_, AppState>, id: String) -> R<scribe_core::context::MeetingContext> {
+    st.core.meeting_context(&id).map_err(er)
+}
+
+#[tauri::command]
+pub fn set_meeting_context(
+    st: State<'_, AppState>,
+    id: String,
+    text: String,
+    template: Option<String>,
+) -> R<scribe_core::context::MeetingContext> {
+    st.core.set_meeting_context(&id, &text, template.as_deref()).map_err(er)
+}
+
+/// Extraction du texte (PDF, classeurs) hors du fil principal.
+#[tauri::command]
+pub async fn add_context_file(
+    st: State<'_, AppState>,
+    id: String,
+    name: String,
+    data: String,
+) -> R<scribe_core::context::ContextFile> {
+    let core = st.core.clone();
+    tauri::async_runtime::spawn_blocking(move || core.add_context_file(&id, &name, &data))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(er)
+}
+
+#[tauri::command]
+pub fn delete_context_file(st: State<'_, AppState>, file_id: i64) -> R<()> {
+    st.core.delete_context_file(file_id).map_err(er)
+}
+
+#[tauri::command]
+pub fn list_report_templates(st: State<'_, AppState>) -> Vec<scribe_core::report::Template> {
+    st.core.report_templates()
+}
+
+#[tauri::command]
 pub fn correlate(st: State<'_, AppState>, id: String) -> R<()> {
     st.core.correlate(&id).map_err(er)
 }
 
 #[tauri::command]
-pub fn export_meeting(st: State<'_, AppState>, id: String) -> R<String> {
-    st.core.export_meeting(&id).map_err(er)
+pub fn export_meeting(st: State<'_, AppState>, id: String, format: Option<String>) -> R<String> {
+    st.core.export_meeting_as(&id, format.as_deref().unwrap_or("markdown")).map_err(er)
+}
+
+/// Fenêtre « Enregistrer sous… » puis écriture de l'export ; chemin choisi, ou null si annulé.
+#[tauri::command]
+pub async fn save_export(app: AppHandle, st: State<'_, AppState>, id: String, format: String) -> R<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let name = st.core.export_file_name(&id, &format).map_err(er)?;
+    let ext = scribe_core::export::extension(&format).map_err(er)?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Enregistrer l'export")
+        .set_file_name(name)
+        .add_filter(ext.to_uppercase(), &[ext])
+        .save_file(move |f| {
+            let _ = tx.send(f);
+        });
+    let Some(path) = rx.await.map_err(e)?.and_then(|p| p.into_path().ok()) else { return Ok(None) };
+    st.core.write_export(&id, &format, &path).map_err(er)?;
+    Ok(Some(path.display().to_string()))
+}
+
+/// Impression de la fenêtre principale (« Enregistrer au format PDF » dans la fenêtre système).
+#[tauri::command]
+pub fn print_window(window: tauri::WebviewWindow) -> R<()> {
+    window.print().map_err(e)
 }
 
 #[tauri::command]
@@ -175,6 +241,7 @@ pub fn get_settings(st: State<'_, AppState>) -> Settings {
 pub fn save_settings(app: AppHandle, st: State<'_, AppState>, settings: Settings) -> R<Settings> {
     let s = st.core.save_settings(settings).map_err(er)?;
     crate::shortcuts::register(&app, &st.core);
+    crate::apply_theme(&app, &s.profile.theme);
     Ok(s)
 }
 
@@ -187,6 +254,7 @@ pub fn export_settings(st: State<'_, AppState>) -> R<String> {
 pub fn import_settings(app: AppHandle, st: State<'_, AppState>, toml: String) -> R<Settings> {
     let s = st.core.import_settings(&toml).map_err(er)?;
     crate::shortcuts::register(&app, &st.core);
+    crate::apply_theme(&app, &s.profile.theme);
     Ok(s)
 }
 
@@ -336,6 +404,48 @@ pub async fn doctor(st: State<'_, AppState>) -> R<Vec<DoctorItem>> {
 #[tauri::command]
 pub fn delete_all_data(st: State<'_, AppState>) -> R<()> {
     st.core.delete_all_data().map_err(er)
+}
+
+// ------------------------------------------------------------------ permissions macOS
+
+#[tauri::command]
+pub fn get_permissions(st: State<'_, AppState>) -> R<scribe_core::permissions::Permissions> {
+    Ok(st.core.permissions())
+}
+
+#[tauri::command]
+pub fn request_permission(st: State<'_, AppState>, kind: String) -> R<()> {
+    st.core.request_permission(&kind).map_err(er)
+}
+
+#[tauri::command]
+pub fn open_permission_settings(st: State<'_, AppState>, kind: String) -> R<()> {
+    st.core.open_permission_settings(&kind).map_err(er)
+}
+
+#[tauri::command]
+pub fn pause_meeting(st: State<'_, AppState>) -> R<()> {
+    st.core.pause_meeting(true).map_err(er)
+}
+
+#[tauri::command]
+pub fn resume_meeting(st: State<'_, AppState>) -> R<()> {
+    st.core.pause_meeting(false).map_err(er)
+}
+
+#[tauri::command]
+pub fn set_mic_muted(st: State<'_, AppState>, on: bool) {
+    st.core.set_mic_muted(on);
+}
+
+#[tauri::command]
+pub fn delete_segment(st: State<'_, AppState>, id: i64) -> R<()> {
+    st.core.delete_segment(id).map_err(er)
+}
+
+#[tauri::command]
+pub fn complete_onboarding(st: State<'_, AppState>) -> R<()> {
+    st.core.complete_onboarding().map_err(er)
 }
 
 #[tauri::command]

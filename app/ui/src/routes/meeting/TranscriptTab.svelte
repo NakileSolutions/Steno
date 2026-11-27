@@ -3,8 +3,11 @@
   import { api, onEvent } from '../../lib/api';
   import type { MeetingDetail, Segment } from '../../lib/types';
   import { offset, timeS } from '../../lib/format';
+  import { insertChrono } from '../../lib/group';
   import { setQuery } from '../../lib/router.svelte';
-  import { toastError } from '../../lib/ui.svelte';
+  import { copyText, slug, toast, toastError } from '../../lib/ui.svelte';
+  import { saveExport, type ExportFormat } from '../../lib/exporting';
+  import Menu, { type MenuItem } from '../../lib/components/Menu.svelte';
   import { initial, speakerColor, speakerName } from '../../lib/components/speakers';
   import Icon from '../../lib/components/Icon.svelte';
 
@@ -31,12 +34,53 @@
     load();
   });
 
-  onMount(() =>
-    onEvent('scribe://segment', (s) => {
-      if (s.meeting_id !== m.id || (s.private && !showPrivate)) return;
-      if (!segments.some((x) => x.id === s.id)) segments.push(s);
-    }),
-  );
+  onMount(() => {
+    const uns = [
+      onEvent('scribe://segment', (s) => {
+        if (s.meeting_id !== m.id || (s.private && !showPrivate)) return;
+        const i = segments.findIndex((x) => x.id === s.id);
+        if (i >= 0) segments[i] = s;
+        else insertChrono(segments, s);
+      }),
+      onEvent('scribe://segment_deleted', ({ meeting_id, id }) => {
+        if (meeting_id === m.id) segments = segments.filter((x) => x.id !== id);
+      }),
+    ];
+    return () => uns.forEach((u) => u());
+  });
+
+  const baseName = $derived(`${m.started_at.slice(0, 10)}-${slug(m.title ?? m.id)}-transcription`);
+  async function save(format: ExportFormat) {
+    try {
+      const where = await saveExport(m.id, format, baseName);
+      if (where) toast(`Enregistré : ${where.split('/').pop()}`);
+    } catch (e) {
+      toastError(e);
+    }
+  }
+  async function copyTranscript() {
+    try {
+      if (await copyText(await api.exportMeeting(m.id, 'txt'))) toast('Transcription copiée.');
+    } catch (e) {
+      toastError(e);
+    }
+  }
+  const exportItems: MenuItem[] = [
+    { label: 'Copier la transcription', icon: 'copy', action: copyTranscript },
+    { label: 'Enregistrer en texte…', icon: 'download', hint: '.txt', action: () => save('txt'), separatorBefore: true },
+    { label: 'Sous-titres SRT…', icon: 'download', hint: '.srt', action: () => save('srt') },
+    { label: 'Sous-titres WebVTT…', icon: 'download', hint: '.vtt', action: () => save('vtt') },
+  ];
+
+  /** Retire une phrase qui n'a pas été dite (erreur de transcription). */
+  async function removeSegment(s: Segment) {
+    try {
+      await api.deleteSegment(s.id);
+      segments = segments.filter((x) => x.id !== s.id);
+    } catch (e) {
+      toastError(e);
+    }
+  }
 
   const visible = $derived(segments.filter((s) => !s.is_echo));
   const echoCount = $derived(segments.length - visible.length);
@@ -98,7 +142,7 @@
     >
       {#if key.startsWith('bar-')}<span class="avatar mini" aria-hidden="true">{initial(speakerName(label, detail.speakers))}</span>{/if}
       {speakerName(label, detail.speakers)}
-      {#if speakerName(label, detail.speakers) !== label}<span class="orig">{label}</span>{/if}
+      {#if detail.speakers.find((s) => s.label === label)?.display_name}<span class="orig">{label}</span>{/if}
     </button>
   {/if}
 {/snippet}
@@ -113,6 +157,7 @@
     <label class="check small priv-toggle" title="Les phrases dites en aparté ne sont jamais envoyées à l’IA">
       <input class="switch" type="checkbox" role="switch" bind:checked={showPrivate} /> Afficher les phrases privées{#if showPrivate && privateCount} ({privateCount}){/if}
     </label>
+    <Menu icon="share" items={exportItems} title="Exporter la transcription (apartés exclus)" />
   </div>
 
   {#if !loaded}
@@ -141,6 +186,7 @@
             {/if}
           </p>
         </div>
+        <button class="del" onclick={() => removeSegment(s)} title="Supprimer cette phrase (jamais dite)" aria-label="Supprimer cette phrase"><Icon name="trash" size={13} /></button>
       </li>
     {/each}
   </ol>
@@ -203,7 +249,10 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent);
   }
   .segs { list-style: none; margin: 0; padding: 0; }
-  .seg { display: grid; grid-template-columns: 58px 32px 1fr; column-gap: 10px; padding-top: 14px; align-items: start; }
+  .del { all: unset; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; color: var(--text-3); opacity: 0; cursor: pointer; transition: opacity var(--t-fast) var(--ease); }
+  .seg:hover .del, .del:focus-visible { opacity: 1; }
+  .del:hover { color: var(--err); background: var(--err-soft); }
+  .seg { display: grid; grid-template-columns: 58px 32px 1fr 24px; column-gap: 10px; padding-top: 14px; align-items: start; }
   .seg.cont { padding-top: 0; }
   .ts { font-size: var(--fs-micro); color: var(--text-3); padding-top: 0; line-height: 24px; text-align: right; transition: opacity var(--t-fast) var(--ease); }
   .seg.cont .ts { opacity: 0; }

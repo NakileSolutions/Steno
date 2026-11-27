@@ -5,6 +5,7 @@
   import { navigate } from '../../lib/router.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import TagInput from '../../lib/components/TagInput.svelte';
+  import { DEFAULT_CONSENT_MESSAGE } from '../../lib/listening';
 
   let { settings = $bindable() }: { settings: Settings } = $props();
 
@@ -70,6 +71,14 @@
       <button class="btn sm" onclick={pickExport}><Icon name="folder" size={13} />Choisir…</button>
       {#if settings.privacy.auto_export_dir}<button class="btn sm ghost" onclick={() => (settings.privacy.auto_export_dir = null)}>Désactiver</button>{/if}
     </div>
+  </div>
+</div>
+<div class="field">
+  <label class="field-label" for="consent-msg">Prévenir les participants<span class="hint">Le RGPD impose d’informer les personnes transcrites. Le message se copie depuis la vue En direct, pour le coller dans le chat de l’appel.</span></label>
+  <div class="field-body">
+    <label class="check toggle"><span>Le rappeler au début de chaque écoute</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.privacy.consent_reminder} /></label>
+    <textarea id="consent-msg" class="input" rows="4" bind:value={settings.privacy.consent_message}></textarea>
+    <button class="btn sm ghost" type="button" onclick={() => (settings.privacy.consent_message = DEFAULT_CONSENT_MESSAGE)}>Revenir au message par défaut</button>
   </div>
 </div>
 <div class="field">

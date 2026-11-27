@@ -9,7 +9,11 @@ export function speakerColor(label: string): string {
 }
 
 export function speakerName(label: string, speakers: Speaker[]): string {
-  return speakers.find((s) => s.label === label)?.display_name || label;
+  const named = speakers.find((s) => s.label === label)?.display_name;
+  if (named) return named;
+  // Intervenants reconnus à la voix : « Eux-3 » → « Intervenant 3 ».
+  const n = /^Eux-(\d+)$/.exec(label);
+  return n ? `Intervenant ${n[1]}` : label;
 }
 
 /** Initiale affichée dans la pastille d'un intervenant. */

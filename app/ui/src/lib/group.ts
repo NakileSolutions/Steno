@@ -32,3 +32,22 @@ export function groupHits(hits: SearchHit[]): HitGroup[] {
 export function isOverdue(a: Pick<Action, 'status' | 'due'>, today: Date = new Date()): boolean {
   return a.status === 'open' && !!a.due && /^\d{4}-\d{2}-\d{2}/.test(a.due) && a.due.slice(0, 10) < isoDate(today);
 }
+
+/**
+ * Insère une phrase à sa place chronologique (début `t0`) : les deux canaux arrivent avec un
+ * décalage, une longue phrase du micro après les réponses courtes de l'appel. Renvoie l'indice.
+ */
+export function insertChrono<T extends { t0: number | null }>(list: T[], item: T): number {
+  if (item.t0 == null) {
+    list.push(item);
+    return list.length - 1;
+  }
+  let i = list.length;
+  while (i > 0) {
+    const prev = list[i - 1].t0;
+    if (prev == null || prev <= item.t0) break;
+    i--;
+  }
+  list.splice(i, 0, item);
+  return i;
+}

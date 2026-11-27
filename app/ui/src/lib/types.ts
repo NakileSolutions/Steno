@@ -134,6 +134,8 @@ export type LiveState = {
   meeting: Meeting | null;
   levels: { me: number; them: number };
   aside: boolean;
+  /** Micro coupé dans Scribe : vos paroles ne sont pas transcrites. */
+  mic_muted: boolean;
   sidecar: 'running' | 'starting' | 'stopped' | 'missing' | 'error';
   last_error: string | null;
   pending_requests: number;
@@ -207,6 +209,14 @@ export type WakeCheck = {
 export type VariantCheck = { accepted: string[]; rejected: { variant: string; reason: string }[] };
 
 export type WakeDetect = { detected: boolean; intent: string | null; query: string | null };
+
+/** Droits macOS demandés par Scribe. */
+export type PermissionKind = 'microphone' | 'system_audio' | 'accessibility';
+export type PermissionValue = 'granted' | 'denied' | 'unknown';
+export type Permissions = Record<PermissionKind, PermissionValue> & {
+  /** Capture audio démarrée : état à jour, demandes possibles. */
+  available: boolean;
+};
 
 export type DoctorItem = {
   name: string;
@@ -288,6 +298,8 @@ export type Settings = {
     /** Obsolète : la fin d'un appel ne termine plus la réunion. Conservé tel quel s'il est présent. */
     end_grace_s?: number;
     shortcuts: { toggle: string; aside: string; quick_note: string };
+    /** Retranscription de fin de réunion, langue imposée (`fr`…) ; `off` = transcription du direct. */
+    final_transcription?: string;
   };
   correlation: { mode: 'off' | 'on_demand' | 'auto'; budget: number; exclude_words: string[] };
   privacy: {
@@ -295,9 +307,35 @@ export type Settings = {
     transcript_retention_days: number | null;
     auto_export_dir: string | null;
     excluded_titles: string[];
+    /** Rappeler, au début de l'écoute, de prévenir les participants. */
+    consent_reminder: boolean;
+    /** Message d'information à coller dans le chat de l'appel. */
+    consent_message: string;
   };
-  profile: { name: string; role: string; team: string; jira_key_pattern: string };
+  profile: { name: string; role: string; team: string; jira_key_pattern: string; theme?: 'auto' | 'light' | 'dark' };
+  /** Comptes rendus : format par défaut, contexte proposé à l'arrêt, formats perso (enregistrés sur ce Mac). */
+  report: ReportSettings;
 };
+
+export type CustomTemplate = { id: string; name: string; instructions: string };
+export type ReportSettings = { default_template: string; ask_context_on_stop: boolean; templates: CustomTemplate[] };
+
+/** Format de compte rendu : intégré (`builtin`) ou perso. */
+export type ReportTemplate = { id: string; name: string; description: string; instructions: string; builtin: boolean };
+
+export type ContextFile = {
+  id: number;
+  meeting_id: string;
+  name: string;
+  kind: 'pdf' | 'tableur' | 'csv' | 'document' | 'texte' | string;
+  size: number;
+  chars: number;
+  truncated: boolean;
+  added_at: string;
+};
+
+/** Contexte d'une réunion : texte libre, format choisi (`null` = défaut) et documents joints. */
+export type MeetingContext = { meeting_id: string; text: string; template: string | null; files: ContextFile[] };
 
 export type MeetingFilter = {
   query?: string;
@@ -316,6 +354,7 @@ export type ActionFilter = { status?: 'open' | 'done'; owner?: string; from?: st
 export type EventMap = {
   'scribe://live': LiveState;
   'scribe://segment': Segment;
+  'scribe://segment_deleted': { meeting_id: string; id: number };
   'scribe://request': Request;
   'scribe://report': { meeting_id: string; version: number };
   'scribe://meetings': null;

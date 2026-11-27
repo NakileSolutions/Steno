@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 const MIGRATIONS: &[&str] = &[
     include_str!("migrations/001_init.sql"),
     include_str!("migrations/002_call_app.sql"),
+    include_str!("migrations/003_context.sql"),
 ];
 
 fn migrations() -> Migrations<'static> {

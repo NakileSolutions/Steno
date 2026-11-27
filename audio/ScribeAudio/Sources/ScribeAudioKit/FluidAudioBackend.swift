@@ -15,6 +15,7 @@
 //     `speakerId` / `startTimeSeconds` / `endTimeSeconds` ;
 //   - placement sur le Neural Engine (configuration CoreML par défaut de FluidAudio).
 
+import CoreML
 import FluidAudio
 import Foundation
 
@@ -58,6 +59,55 @@ final class FluidAudioBackend: SpeechBackend {
         try await manager.prepareModels()
         return FluidDiarizer(manager: manager)
     }
+
+    /// Charge Canary 1B v2 (int4, seule variante publiée) sur CPU + GPU.
+    ///
+    /// Le chargement par défaut de FluidAudio vise le Neural Engine : la compilation ANE de
+    /// l'encodeur a dépassé 35 min ici sans aboutir. Sur le GPU, le modèle se charge en quelques
+    /// secondes. `SCRIBE_CANARY_UNITS=ane` rétablit le Neural Engine.
+    static func loadCanary(_ lang: CanaryLanguage) async throws -> CanaryManager {
+        let dir = try await CanaryModels.download(precision: .int4)
+        let cpu = MLModelConfiguration()
+        cpu.computeUnits = .cpuOnly
+        let accel = MLModelConfiguration()
+        accel.computeUnits = ProcessInfo.processInfo.environment["SCRIBE_CANARY_UNITS"] == "ane"
+            ? .cpuAndNeuralEngine : .cpuAndGPU
+        func model(_ name: String, _ config: MLModelConfiguration) throws -> MLModel {
+            try MLModel(contentsOf: dir.appendingPathComponent("\(name).mlmodelc"), configuration: config)
+        }
+        let models = CanaryModels(
+            preprocessor: try model(ModelNames.Canary.preprocessor, cpu),
+            encoder: try model(ModelNames.Canary.encoderInt4, accel),
+            decoder: try model(ModelNames.Canary.decoderInt4, accel),
+            projection: try model(ModelNames.Canary.projection, accel),
+            tokenizer: try Tokenizer(vocabPath: dir.appendingPathComponent(ModelNames.Canary.vocabularyFile))
+        )
+        return try CanaryManager(models: models, source: lang, target: lang)
+    }
+
+    func loadFinalRecognizer(language: String) async throws -> FinalRecognizer {
+        guard let lang = CanaryLanguage(rawValue: language) else {
+            throw SpeechModelError.unavailable("langue non prise en charge par Canary : \(language)")
+        }
+        let manager = try await Self.loadCanary(lang)
+        return CanaryRecognizer(manager: manager, language: language)
+    }
+}
+
+// MARK: - Retranscription : Canary 1B v2 (langue imposée)
+
+final class CanaryRecognizer: FinalRecognizer {
+    let name: String
+    private let manager: CanaryManager
+
+    init(manager: CanaryManager, language: String) {
+        self.manager = manager
+        self.name = "canary-1b-v2-\(language)"
+    }
+
+    func transcribe(_ samples: [Float]) async throws -> String {
+        try await manager.transcribe(audio: samples)
+    }
 }
 
 // MARK: - ASR : Parakeet TDT v3
@@ -74,13 +124,17 @@ final class ParakeetRecognizer: SpeechRecognizer {
     }
 
     func transcribe(_ samples: [Float]) async throws -> String {
+        try await transcribeDetailed(samples).text
+    }
+
+    func transcribeDetailed(_ samples: [Float]) async throws -> (text: String, confidence: Float?) {
         var audio = samples
         if audio.count < Self.minimumSamples {
             audio += [Float](repeating: 0, count: Self.minimumSamples - audio.count)
         }
         var state = TdtDecoderState.make(decoderLayers: await manager.decoderLayerCount)
         let result = try await manager.transcribe(audio, decoderState: &state, language: .french)
-        return result.text
+        return (result.text, result.confidence)
     }
 }
 
@@ -122,4 +176,38 @@ final class FluidDiarizer: SpeakerDiarizer {
                            end: Double($0.endTimeSeconds))
         }
     }
+}
+
+// MARK: - Spike : comparaison de modèles (seul fichier autorisé à dépendre de FluidAudio)
+
+extension Spikes {
+    /// Parakeet v3 (filtre « french ») contre Nemotron Unified 0.6B (langue imposée : fr).
+
+    static func compareASR(files: [URL]) async -> Int32 {
+        do {
+            let t0 = Date()
+            let parakeet = AsrManager(config: .default)
+            try await parakeet.loadModels(try await AsrModels.downloadAndLoad(version: .v3))
+            print(String(format: "Parakeet v3 chargé en %.1f s", Date().timeIntervalSince(t0)))
+            let t1 = Date()
+            let canary = try await FluidAudioBackend.loadCanary(.french)
+            print(String(format: "Canary 1B v2 (fr) chargé en %.1f s", Date().timeIntervalSince(t1)))
+            for file in files {
+                let samples = try loadMono16k(file)
+                print("\n== \(file.lastPathComponent) (\(String(format: "%.1f", Double(samples.count) / 16000)) s) ==")
+                var state = TdtDecoderState.make(decoderLayers: await parakeet.decoderLayerCount)
+                var s = Date()
+                let p = try await parakeet.transcribe(samples, decoderState: &state, language: .french)
+                print(String(format: "Parakeet v3 (%.2f s, confiance %.2f) : %@", Date().timeIntervalSince(s), p.confidence, p.text))
+                s = Date()
+                let n = try await canary.transcribe(audio: samples)
+                print(String(format: "Canary fr (%.2f s) : %@", Date().timeIntervalSince(s), n))
+            }
+            return 0
+        } catch {
+            print("ERREUR : \(error)")
+            return 1
+        }
+    }
+
 }

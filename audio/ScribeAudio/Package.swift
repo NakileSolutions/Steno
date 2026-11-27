@@ -10,7 +10,7 @@ let package = Package(
     platforms: [
         // Les process taps Core Audio exigent macOS 14.2 : le code concerné est annoté
         // `@available(macOS 14.2, *)` et le binaire refuse de démarrer en dessous.
-        .macOS(.v14),
+        .macOS("14.2"),
     ],
     products: [
         .executable(name: "scribe-audio", targets: ["ScribeAudio"]),

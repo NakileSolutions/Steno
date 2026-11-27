@@ -74,7 +74,7 @@ impl CommandAssembler {
                 out.push(a);
             }
         }
-        if det.starts_with_wake(&u.text) {
+        if det.contains_wake(&u.text) {
             self.pending = Some(Pending {
                 ids: vec![u.id],
                 parts: vec![u.text.clone()],

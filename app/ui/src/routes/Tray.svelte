@@ -49,6 +49,29 @@
     }
   }
 
+  async function startRoom() {
+    busy = true;
+    try {
+      await api.startMeeting(undefined, true);
+    } catch (e) {
+      toastError(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function togglePause() {
+    busy = true;
+    try {
+      if (s.state === 'paused') await api.resumeMeeting();
+      else await api.pauseMeeting();
+    } catch (e) {
+      toastError(e);
+    } finally {
+      busy = false;
+    }
+  }
+
   async function ask(e: SubmitEvent) {
     e.preventDefault();
     const q = query.trim();
@@ -90,13 +113,28 @@
 
       {#if active}
         <div class="meters">
-          <Meter db={s.levels.me} label="Micro" icon="mic" active />
-          <Meter db={s.levels.them} label={themLabel} icon="speaker" active />
+          <Meter db={s.mic_muted ? -90 : s.levels.me} label={s.mic_muted ? 'Micro coupé' : 'Micro'} icon={s.mic_muted ? 'micoff' : 'mic'} active />
+          {#if m.call_app !== 'room'}<Meter db={s.levels.them} label={themLabel} icon="speaker" active />{/if}
         </div>
         <div class="row ctl">
           <button class="btn danger grow stop" onclick={toggle} disabled={busy}>
             <span class="sq" aria-hidden="true"></span>Arrêter l’écoute
           </button>
+          <button
+            class="btn sm icon"
+            onclick={togglePause}
+            disabled={busy}
+            title={s.state === 'paused' ? 'Reprendre l’écoute' : 'Mettre l’écoute en pause'}
+            aria-label={s.state === 'paused' ? 'Reprendre l’écoute' : 'Mettre l’écoute en pause'}
+          ><Icon name={s.state === 'paused' ? 'play' : 'pause'} size={15} /></button>
+          <button
+            class="btn sm icon mute"
+            class:on={s.mic_muted}
+            aria-pressed={s.mic_muted}
+            onclick={() => api.setMicMuted(!s.mic_muted).catch(toastError)}
+            title={s.mic_muted ? 'Rétablir votre micro dans Scribe' : 'Couper votre micro dans Scribe'}
+            aria-label={s.mic_muted ? 'Rétablir votre micro dans Scribe' : 'Couper votre micro dans Scribe'}
+          ><Icon name={s.mic_muted ? 'micoff' : 'mic'} size={15} /></button>
           <label class="check small conf" title="Aucun appel à l’IA pour cette réunion">
             <input class="switch" type="checkbox" role="switch" checked={!!m.confidential} onchange={(e) => api.setLiveConfidential(e.currentTarget.checked).catch(toastError)} />
             Confidentielle
@@ -121,6 +159,9 @@
       {/if}
       <button class="btn primary go" onclick={toggle} disabled={busy || s.state === 'processing'}>
         <Icon name="play" size={14} stroke={2} />Démarrer l’écoute
+      </button>
+      <button class="btn sm ghost room" onclick={startRoom} disabled={busy || s.state === 'processing'} title="Sans app de visio : seul le micro du Mac est écouté">
+        <Icon name="user" size={14} />Réunion en présentiel
       </button>
     {/if}
   </section>
@@ -306,4 +347,6 @@
   .none { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 22px 8px; }
   .none-ic { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); color: var(--text-3); }
   .tf { padding: 8px 10px; border-top: 1px solid var(--line); flex: none; }
+  .mute.on { background: var(--err-soft); color: var(--err); border-color: transparent; }
+  .room { gap: 6px; align-self: center; margin-top: 4px; }
 </style>

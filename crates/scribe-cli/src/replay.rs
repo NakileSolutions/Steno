@@ -66,14 +66,25 @@ pub fn run(file: &Path, speed: f64, exit_at_end: bool) -> Result<()> {
                 *capturing = false;
                 emit(&json!({"type": "state", "state": "stopped"}))
             }
+            "pause" => {
+                *capturing = false;
+                emit(&json!({"type": "state", "state": "paused"}))
+            }
+            "resume" => {
+                *capturing = true;
+                emit(&json!({"type": "state", "state": "listening"}))
+            }
             "aside" => *aside = c.get("on").and_then(|x| x.as_bool()).unwrap_or(false),
             // Liste des apps surveillées : le rejeu annonce les appels du fichier tels quels.
-            "watch" | "set_input" | "play" => {}
+            // Micro coupé : sans effet sur un rejeu (les phrases du fichier sont déjà écrites).
+            "watch" | "set_input" | "play" | "mute" => {}
             "devices" => emit(&fake_devices()),
             "wake_test" => emit(&json!({"type": "wake_test", "text": "Scribe, cherche quelque chose."})),
             "diarize" => emit(&json!({"type": "error", "code": "diarize_failed",
                                       "message": "diarisation indisponible en simulation", "recoverable": true})),
-            "permissions" => emit(&json!({"type": "permissions", "microphone": "granted", "system_audio": "granted", "accessibility": "granted"})),
+            // Rejeu : pas d'audio, la transcription du fichier est gardée telle quelle.
+            "retranscribe" => emit(&json!({"type": "retranscription", "meeting_id": c["meeting_id"], "items": []})),
+            "permissions" | "request_permission" => emit(&json!({"type": "permissions", "microphone": "granted", "system_audio": "granted", "accessibility": "granted"})),
             "shutdown" => return false,
             _ => emit(&json!({"type": "error", "code": "bad_command", "message": c.to_string(), "recoverable": true})),
         }

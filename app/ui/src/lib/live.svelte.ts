@@ -11,6 +11,7 @@ export const live = $state<{ s: LiveState; ready: boolean }>({
     meeting: null,
     levels: { me: -90, them: -90 },
     aside: false,
+    mic_muted: false,
     sidecar: 'starting',
     last_error: null,
     pending_requests: 0,

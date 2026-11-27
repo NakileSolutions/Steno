@@ -2,6 +2,14 @@
 
 À utiliser pour les demandes `search` et `check`, et pour la corrélation après la réunion.
 
+**En direct, la vitesse prime** (la réunion continue pendant que tu cherches) :
+- commence par la source la plus probable et arrête-toi dès que tu as la réponse : une
+  question sur le code ne demande ni Jira, ni Confluence, ni Datadog ;
+- un projet est cité (« Atlas ») : travaille dans son dossier (liste « Projets ») ; ne
+  lance jamais de recherche sur tout un dossier parent ;
+- préfère un accès ciblé (`Read` d'un fichier connu, `Glob` sur un chemin précis) à une
+  recherche large ; une question simple se règle en 1 à 3 appels.
+
 1. **Extraire les entités** de la demande et du contexte récent : clés de tickets (motif
    `{{JIRA}}`), noms de services (`ms-*`…), fonctions, endpoints, environnements (prod,
    recette…), plages horaires (« depuis hier », « cette nuit »). Résous « ça », « ce ticket »

@@ -34,6 +34,9 @@ def opt(name):
 
 
 prompt = sys.stdin.read()
+if os.environ.get("FAKE_CLAUDE_PROMPTS"):
+    with open(os.environ["FAKE_CLAUDE_PROMPTS"], "a") as f:
+        f.write(json.dumps(prompt) + "\n")
 session = opt("--resume") or opt("--session-id") or str(uuid.uuid4())
 settings = {}
 if opt("--settings"):

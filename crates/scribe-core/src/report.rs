@@ -8,6 +8,106 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
 
+/// Modèle de compte rendu : consignes ajoutées à la procédure de compte rendu.
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+pub struct Template {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub instructions: String,
+    pub builtin: bool,
+}
+
+pub struct BuiltinTemplate {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    pub instructions: &'static str,
+}
+
+/// Modèles intégrés. `standard` n'ajoute rien à la procédure.
+pub const BUILTIN_TEMPLATES: &[BuiltinTemplate] = &[
+    BuiltinTemplate { id: "standard", name: "Standard", description: "Décisions, actions, questions ouvertes, points techniques.", instructions: "" },
+    BuiltinTemplate {
+        id: "daily",
+        name: "Daily / point d'équipe",
+        description: "Court : par personne, ce qui est fait, en cours, bloqué.",
+        instructions: "Réunion courte et récurrente. « En bref » tient en une ligne. Ajoute après « En bref » une section \
+            « ## Tour de table » : une puce par personne, `**Nom** — fait : … ; en cours : … ; blocages : …`. \
+            Mets les blocages en évidence. Reste bref dans les autres sections et omets « Points techniques évoqués » s'il n'y a rien de notable.",
+    },
+    BuiltinTemplate {
+        id: "client",
+        name: "Point client",
+        description: "Présentable au client : demandes, engagements, prochaines étapes.",
+        instructions: "Compte rendu destiné à être partagé avec le client : ton neutre et professionnel, aucune remarque interne \
+            ni familiarité. Ajoute après « Décisions » une section « ## Demandes du client » et une section « ## Engagements pris » \
+            (qui s'engage à quoi, pour quand), puis « ## Prochaines étapes ». Distingue ce que le client a validé de ce qui reste à valider.",
+    },
+    BuiltinTemplate {
+        id: "atelier",
+        name: "Atelier / spécification",
+        description: "Détaillé : besoins, règles de gestion, cas limites, points à trancher.",
+        instructions: "Atelier de conception : sois détaillé et précis. Ajoute après « Décisions » les sections « ## Besoins exprimés », \
+            « ## Règles de gestion » (une règle par puce, formulée de façon testable, avec les valeurs chiffrées citées) et \
+            « ## Cas limites et exceptions ». Les « Questions ouvertes » indiquent qui doit trancher.",
+    },
+    BuiltinTemplate {
+        id: "arbitrage",
+        name: "Comité / arbitrage",
+        description: "Options étudiées, arguments, décision et qui l'a prise.",
+        instructions: "Réunion de décision. Ajoute avant « Décisions » une section « ## Options étudiées » : pour chaque option, \
+            ses arguments pour et contre tels qu'exprimés. Chaque décision précise qui l'a prise ou validée et sa justification.",
+    },
+    BuiltinTemplate {
+        id: "mail",
+        name: "Mail de synthèse",
+        description: "Prêt à envoyer : objet, synthèse, décisions, actions.",
+        instructions: "Rédige le compte rendu sous forme de mail prêt à envoyer aux participants, à la place du format habituel : \
+            un titre `# Objet : …`, une formule d'appel courte, un paragraphe de synthèse, puis « ## Décisions », \
+            « ## Actions — qui / quoi / échéance » et « ## Prochaines étapes », et une formule de politesse. Ton cordial et professionnel, \
+            aucune remarque interne ; omets les sections techniques et les recherches.",
+    },
+    BuiltinTemplate {
+        id: "slack",
+        name: "Message Slack / Teams",
+        description: "Court, à coller dans un canal : 10 lignes au plus.",
+        instructions: "Rédige un message court à coller dans Slack ou Teams, à la place du format habituel : un titre `# …`, \
+            puis 10 lignes au plus : 2 lignes de synthèse, les décisions et les actions (`**Qui** — quoi — échéance`) en puces. \
+            Pas d'autre section.",
+    },
+];
+
+/// Tous les modèles : intégrés puis perso.
+pub fn templates(s: &crate::settings::Settings) -> Vec<Template> {
+    let mut out: Vec<Template> = BUILTIN_TEMPLATES
+        .iter()
+        .map(|t| Template {
+            id: t.id.into(),
+            name: t.name.into(),
+            description: t.description.into(),
+            instructions: t.instructions.into(),
+            builtin: true,
+        })
+        .collect();
+    for t in &s.report.templates {
+        out.push(Template {
+            id: t.id.clone(),
+            name: t.name.clone(),
+            description: crate::text::truncate(&t.instructions, 90),
+            instructions: t.instructions.clone(),
+            builtin: false,
+        });
+    }
+    out
+}
+
+/// Modèle par identifiant.
+pub fn template(s: &crate::settings::Settings, id: &str) -> Option<Template> {
+    templates(s).into_iter().find(|t| t.id == id)
+}
+
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct ActionJson {
@@ -161,6 +261,15 @@ pub fn meeting_date(m: &Meeting) -> String {
 }
 
 /// Génère (ou régénère) le compte rendu d'une réunion.
+/// Contexte, documents et modèle de la réunion, pour la demande de compte rendu.
+pub fn report_context(inner: &Inner, meeting: &Meeting) -> Result<crate::prompts::ReportContext> {
+    let c = inner.db.meeting_context(&meeting.id)?;
+    let s = inner.settings();
+    let id = c.template.clone().unwrap_or_else(|| s.report.default_template.clone());
+    let template = template(&s, &id).or_else(|| template(&s, "standard")).map(|t| (t.name, t.instructions));
+    Ok(crate::prompts::ReportContext { text: c.text, docs: inner.db.context_texts(&meeting.id)?, template })
+}
+
 pub async fn generate(inner: &Inner, meeting_id: &str) -> Result<()> {
     let meeting = inner.db.get_meeting(meeting_id)?.context("réunion introuvable")?;
     if meeting.confidential {
@@ -188,7 +297,8 @@ pub async fn generate(inner: &Inner, meeting_id: &str) -> Result<()> {
         inner.emit(CoreEvent::MeetingsChanged);
         return Ok(());
     }
-    let prompt = crate::prompts::report(&meeting, &date, &transcript, &notes, &requests);
+    let ctx = report_context(inner, &meeting)?;
+    let prompt = crate::prompts::report(&meeting, &date, &transcript, &notes, &requests, &ctx);
     let res = inner
         .run_agent(Some(&meeting), Tier::Summary, ToolAccess::None, SessionMode::None, prompt, 0, None)
         .await;

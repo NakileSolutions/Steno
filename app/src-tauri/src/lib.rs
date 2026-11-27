@@ -3,6 +3,7 @@
 
 mod commands;
 mod shortcuts;
+mod notify;
 mod tray;
 
 use scribe_core::core::CoreOptions;
@@ -10,7 +11,6 @@ use scribe_core::events::CoreEvent;
 use scribe_core::live::SidecarSpec;
 use scribe_core::{Core, Db};
 use tauri::{Emitter, Manager, WindowEvent};
-use tauri_plugin_notification::NotificationExt;
 
 pub struct AppState {
     pub core: Core,
@@ -33,6 +33,46 @@ fn sidecar_spec() -> SidecarSpec {
         program: next_to_exe.map(|p| p.display().to_string()).unwrap_or_else(|| "scribe-audio".into()),
         args: vec![],
     }
+}
+
+/// Lancée par le Finder, le Dock ou l'ouverture de session, l'app hérite du PATH minimal de
+/// launchd (`/usr/bin:/bin:…`) : les CLI d'agent (`~/.local/bin/claude`, Homebrew, nvm…) y
+/// sont introuvables. On reprend le PATH du shell de connexion de l'utilisateur, complété
+/// des dossiers d'installation courants.
+fn complete_path() {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut dirs: Vec<String> = std::env::var("PATH").unwrap_or_default().split(':').map(String::from).collect();
+    let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/zsh".into());
+    let marker = "__SCRIBE_PATH__";
+    let login_path = std::process::Command::new(&shell)
+        .args(["-ilc", &format!("printf '{marker}%s{marker}' \"$PATH\"")])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()
+        .and_then(|o| {
+            let out = String::from_utf8_lossy(&o.stdout).to_string();
+            let start = out.find(marker)? + marker.len();
+            let end = start + out[start..].find(marker)?;
+            Some(out[start..end].to_string())
+        });
+    let extra = [
+        format!("{home}/.local/bin"),
+        "/opt/homebrew/bin".into(),
+        "/opt/homebrew/sbin".into(),
+        "/usr/local/bin".into(),
+        format!("{home}/.npm-global/bin"),
+        format!("{home}/.bun/bin"),
+        format!("{home}/.volta/bin"),
+        format!("{home}/.cargo/bin"),
+    ];
+    for d in login_path.iter().flat_map(|p| p.split(':').map(String::from)).chain(extra) {
+        if !d.is_empty() && !dirs.contains(&d) {
+            dirs.push(d);
+        }
+    }
+    std::env::set_var("PATH", dirs.join(":"));
+    tracing::info!("PATH complété ({} dossiers)", dirs.len());
 }
 
 fn init_logs() {
@@ -74,8 +114,9 @@ fn forward_events(app: tauri::AppHandle, core: Core) {
             };
             match &ev {
                 CoreEvent::Live(st) => tray::refresh(&app, st),
-                CoreEvent::Notify { title, body, .. } => {
-                    let _ = app.notification().builder().title(title).body(body).show();
+                CoreEvent::Notify { title, body, route } => notify::show(&app, title, body, route.as_deref()),
+                CoreEvent::Request(r) if matches!(r.status.as_str(), "done" | "error" | "cancelled") => {
+                    tray::refresh_answers(&app)
                 }
                 // Le sidecar joue le signal sur la sortie choisie ; sinon, repli sur le son système.
                 CoreEvent::CommandDetected { played: false } => play_feedback(&core),
@@ -91,15 +132,19 @@ fn forward_events(app: tauri::AppHandle, core: Core) {
     });
 }
 
+/// Argument passé par l'agent de lancement à l'ouverture de session.
+const AUTOSTART_ARG: &str = "--autostart";
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logs();
+    complete_path();
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::show_main(app, None)))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![AUTOSTART_ARG])))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -110,21 +155,43 @@ pub fn run() {
                 db,
                 CoreOptions { hook_exe: std::env::current_exe().ok(), sidecar: Some(sidecar_spec()), agent_override: None },
             )?;
-            let first_run = core.db().get_runtime("onboarded")?.is_none();
+            // L'assistant s'ouvre tant qu'il n'a pas été terminé ou passé (`complete_onboarding`),
+            // même si l'app a été relancée entre-temps.
+            let first_run = !core.onboarded()?;
             app.manage(AppState { core: core.clone() });
             let c = core.clone();
             tauri::async_runtime::spawn(async move { c.start_background() });
             forward_events(app.handle().clone(), core.clone());
             tray::setup(app.handle())?;
             shortcuts::register(app.handle(), &core);
+            apply_theme(app.handle(), &core.settings().profile.theme);
             if first_run {
                 use tauri_plugin_autostart::ManagerExt;
-                let _ = app.autolaunch().enable();
-                core.db().set_runtime("onboarded", "1")?;
+                if !app.autolaunch().is_enabled().unwrap_or(false) {
+                    let _ = app.autolaunch().enable();
+                }
                 tray::show_main(app.handle(), None);
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.eval("location.hash = '#/onboarding'");
                 }
+            } else {
+                // L'app a pu être déplacée (ex. vers /Applications) : on réécrit l'agent de
+                // lancement avec le chemin et les arguments actuels.
+                use tauri_plugin_autostart::ManagerExt;
+                match app.autolaunch().is_enabled() {
+                    Ok(true) => {
+                        if let Err(e) = app.autolaunch().enable() {
+                            tracing::warn!("mise à jour du lancement à l'ouverture de session : {e}");
+                        }
+                    }
+                    Ok(false) => {}
+                    Err(e) => tracing::warn!("état du lancement à l'ouverture de session : {e}"),
+                }
+            }
+            if !first_run && !std::env::args().any(|a| a == AUTOSTART_ARG) {
+                // Lancement manuel : on montre la fenêtre. À l'ouverture de session, l'app
+                // reste discrète dans la barre de menu.
+                tray::show_main(app.handle(), None);
             }
             Ok(())
         })
@@ -165,6 +232,11 @@ pub fn run() {
             commands::update_note,
             commands::delete_note,
             commands::regenerate_report,
+            commands::get_meeting_context,
+            commands::set_meeting_context,
+            commands::add_context_file,
+            commands::delete_context_file,
+            commands::list_report_templates,
             commands::correlate,
             commands::export_meeting,
             commands::search,
@@ -195,11 +267,21 @@ pub fn run() {
             commands::doctor,
             commands::delete_all_data,
             commands::log_ui_error,
+            commands::get_permissions,
+            commands::request_permission,
+            commands::open_permission_settings,
+            commands::complete_onboarding,
+            commands::delete_segment,
+            commands::set_mic_muted,
+            commands::save_export,
+            commands::print_window,
+            commands::pause_meeting,
+            commands::resume_meeting,
         ])
         .build(tauri::generate_context!())
         .expect("erreur au démarrage de Scribe")
-        .run(|app, ev| {
-            if let tauri::RunEvent::ExitRequested { api, code, .. } = ev {
+        .run(|app, ev| match ev {
+            tauri::RunEvent::ExitRequested { api, code, .. } => {
                 // Pas de fenêtre ouverte ≠ quitter : seul « Quitter » ferme l'app.
                 if code.is_none() {
                     api.prevent_exit();
@@ -207,6 +289,11 @@ pub fn run() {
                     app.state::<AppState>().core.shutdown();
                 }
             }
+            // Clic sur l'icône dans le Finder, le Launchpad ou Spotlight alors que l'app tourne
+            // déjà (dans la barre de menu) : macOS envoie « reopen », pas un second lancement.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => tray::show_main(app, None),
+            _ => {}
         });
 }
 
@@ -228,4 +315,15 @@ mod tests {
         contract.sort();
         assert_eq!(registered, contract);
     }
+}
+
+/// Apparence de toutes les fenêtres : `light`, `dark`, ou `auto` (suit macOS). Le thème
+/// natif de la fenêtre pilote aussi `prefers-color-scheme` dans la vue web.
+pub fn apply_theme(app: &tauri::AppHandle, theme: &str) {
+    let t = match theme {
+        "light" => Some(tauri::Theme::Light),
+        "dark" => Some(tauri::Theme::Dark),
+        _ => None,
+    };
+    app.set_theme(t);
 }

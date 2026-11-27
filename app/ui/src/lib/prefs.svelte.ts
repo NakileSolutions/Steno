@@ -2,7 +2,7 @@
 // noms des apps de visio).
 
 import { api } from './api';
-import { DEFAULT_CALL_APPS, DEFAULT_STOP_VERB, formatShortcut, stopPhrase } from './listening';
+import { DEFAULT_CALL_APPS, DEFAULT_CONSENT_MESSAGE, DEFAULT_STOP_VERB, formatShortcut, stopPhrase } from './listening';
 import type { CallApp, Settings } from './types';
 
 export const prefs = $state({
@@ -13,6 +13,9 @@ export const prefs = $state({
   /** Micro choisi (`null` = micro par défaut du système) et son nom au moment du choix. */
   inputDevice: null as string | null,
   inputDeviceName: null as string | null,
+  /** Rappel d'information des participants au début de l'écoute, et le message à copier. */
+  consentReminder: true,
+  consentMessage: DEFAULT_CONSENT_MESSAGE,
 });
 
 export function setPrefs(s: Settings): void {
@@ -21,6 +24,8 @@ export function setPrefs(s: Settings): void {
   prefs.toggle = s.audio.shortcuts.toggle || 'Ctrl+Alt+S';
   prefs.inputDevice = s.audio.input_device ?? null;
   prefs.inputDeviceName = s.audio.input_device_name ?? null;
+  prefs.consentReminder = s.privacy?.consent_reminder ?? true;
+  prefs.consentMessage = s.privacy?.consent_message || DEFAULT_CONSENT_MESSAGE;
   if (Array.isArray(s.audio.call_apps)) prefs.callApps = s.audio.call_apps.map((a) => ({ ...a }));
 }
 

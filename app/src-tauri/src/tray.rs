@@ -3,7 +3,7 @@
 //! Le menu suit l'état en direct (libellés mis à jour à chaque événement `Live`).
 
 use scribe_core::events::LiveState;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Wry};
 
@@ -11,7 +11,60 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Wry};
 pub struct TrayItems {
     status: MenuItem<Wry>,
     toggle: MenuItem<Wry>,
+    /// « Démarrer une réunion en présentiel » (masqué pendant l'écoute).
+    room: MenuItem<Wry>,
     confidential: CheckMenuItem<Wry>,
+    mute: CheckMenuItem<Wry>,
+    /// « Dernières réponses » : les 5 dernières demandes terminées.
+    answers: Submenu<Wry>,
+}
+
+/// Nombre de réponses listées dans le menu.
+const RECENT_ANSWERS: i64 = 5;
+
+/// Route de l'interface qui affiche une demande (même règle que la notification).
+pub fn request_route(r: &scribe_core::model::Request) -> String {
+    match &r.meeting_id {
+        Some(m) => format!("/meetings/{m}?tab=requests&request={}", r.id),
+        None => format!("/search?request={}", r.id),
+    }
+}
+
+/// Libellé court d'une réponse dans le menu.
+fn answer_label(r: &scribe_core::model::Request) -> String {
+    let base = r.summary.clone().filter(|s| !s.trim().is_empty()).unwrap_or_else(|| r.query.clone());
+    let icon = match r.status.as_str() {
+        "done" => "",
+        "error" => "⚠️ ",
+        "cancelled" => "⊘ ",
+        _ => "… ",
+    };
+    let one_line = base.split_whitespace().collect::<Vec<_>>().join(" ");
+    let short: String = one_line.chars().take(60).collect();
+    format!("{icon}{short}{}", if one_line.chars().count() > 60 { "…" } else { "" })
+}
+
+/// Reconstruit le sous-menu des dernières réponses.
+pub fn refresh_answers(app: &AppHandle) {
+    let Some(items) = app.try_state::<TrayItems>() else { return };
+    let core = app.state::<crate::AppState>().core.clone();
+    let recent = core.recent_requests(RECENT_ANSWERS).unwrap_or_default();
+    if let Ok(old) = items.answers.items() {
+        for it in old {
+            let _ = items.answers.remove(&it);
+        }
+    }
+    if recent.is_empty() {
+        if let Ok(empty) = MenuItem::with_id(app, "answers-empty", "Aucune réponse pour l'instant", false, None::<&str>) {
+            let _ = items.answers.append(&empty);
+        }
+        return;
+    }
+    for r in &recent {
+        if let Ok(it) = MenuItem::with_id(app, format!("req:{}", r.id), answer_label(r), true, None::<&str>) {
+            let _ = items.answers.append(&it);
+        }
+    }
 }
 
 /// Libellés selon l'état (fonction pure, testée).
@@ -47,6 +100,9 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let status = MenuItem::with_id(app, "status", status_txt, false, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle", toggle_txt, true, None::<&str>)?;
     let confidential = CheckMenuItem::with_id(app, "confidential", "Réunion confidentielle (aucune IA)", true, false, None::<&str>)?;
+    let room = MenuItem::with_id(app, "room", "Démarrer une réunion en présentiel", true, None::<&str>)?;
+    let mute = CheckMenuItem::with_id(app, "mute", "Couper mon micro dans Scribe", false, false, None::<&str>)?;
+    let answers = Submenu::with_id(app, "answers", "Dernières réponses", true)?;
     let quick = MenuItem::with_id(app, "quick", "Demande rapide…", true, None::<&str>)?;
     let live = MenuItem::with_id(app, "live", "Voir la transcription en direct", true, None::<&str>)?;
     let open = MenuItem::with_id(app, "open", "Ouvrir Scribe", true, None::<&str>)?;
@@ -55,9 +111,10 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let sep = || PredefinedMenuItem::separator(app);
     let menu = Menu::with_items(
         app,
-        &[&status, &sep()?, &toggle, &confidential, &sep()?, &quick, &live, &open, &settings, &sep()?, &quit],
+        &[&status, &sep()?, &toggle, &room, &mute, &confidential, &sep()?, &answers, &quick, &live, &open, &settings, &sep()?, &quit],
     )?;
-    app.manage(TrayItems { status, toggle, confidential: confidential.clone() });
+    app.manage(TrayItems { status, toggle, room, confidential: confidential.clone(), mute: mute.clone(), answers });
+    refresh_answers(app);
 
     TrayIconBuilder::with_id("scribe")
         .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray@2x.png"))?)
@@ -81,13 +138,30 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                         }
                     });
                 }
+                "room" => {
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = core.start_meeting_with(None, true).await {
+                            tracing::warn!("{e:#}");
+                        }
+                    });
+                }
                 "confidential" => {
                     let checked = app.state::<TrayItems>().confidential.is_checked().unwrap_or(false);
                     if let Err(e) = core.set_live_confidential(checked) {
                         tracing::warn!("{e:#}");
                     }
                 }
+                "mute" => {
+                    let checked = app.state::<TrayItems>().mute.is_checked().unwrap_or(false);
+                    core.set_mic_muted(checked);
+                }
                 "quick" => show_panel(app),
+                id if id.starts_with("req:") => {
+                    let rid = &id[4..];
+                    if let Ok(Some(r)) = core.db().get_request(rid) {
+                        show_main(app, Some(&request_route(&r)));
+                    }
+                }
                 "live" => show_main(app, Some("/live")),
                 "open" => show_main(app, None),
                 "settings" => show_main(app, Some("/settings")),
@@ -116,6 +190,10 @@ pub fn refresh(app: &AppHandle, st: &LiveState) {
         if let Some(m) = &st.meeting {
             let _ = items.confidential.set_checked(m.confidential);
         }
+        let _ = items.room.set_enabled(st.meeting.is_none());
+        // Couper le micro n'a de sens que pendant l'écoute.
+        let _ = items.mute.set_enabled(st.meeting.is_some());
+        let _ = items.mute.set_checked(st.mic_muted);
     }
     if let Some(tray) = app.tray_by_id("scribe") {
         let _ = tray.set_tooltip(Some(format!("Scribe — {status}")));

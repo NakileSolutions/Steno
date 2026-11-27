@@ -10,7 +10,7 @@ SHELL := /bin/bash
 UNAME := $(shell uname -s)
 ARCH := $(shell uname -m)
 TRIPLE := $(shell rustc -vV | sed -n 's/host: //p')
-APP_DIR := $(HOME)/Applications
+APP_DIR ?= /Applications
 BIN_DIR ?= $(HOME)/.local/bin
 SIDECAR := app/src-tauri/binaries/scribe-audio-$(TRIPLE)
 TAURI := app/ui/node_modules/.bin/tauri
@@ -77,7 +77,7 @@ endif
 	cp target/release/scribe $(BIN_DIR)/scribe
 	@echo ""
 	@echo "✅ Installé. CLI : $(BIN_DIR)/scribe (ajoutez ce dossier à votre PATH si besoin)."
-	@echo "   Lancez Scribe depuis ~/Applications, puis vérifiez avec : scribe doctor"
+	@echo "   Lancez Scribe depuis $(APP_DIR), puis vérifiez avec : scribe doctor"
 
 test: test-rust test-ui test-e2e
 
