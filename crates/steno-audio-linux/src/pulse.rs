@@ -42,6 +42,8 @@ pub struct SinkLite {
     pub index: u32,
     pub name: String,
     pub monitor_source: String,
+    /// Casque ou écouteurs (port actif, type d'appareil, Bluetooth).
+    pub headphones: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -51,6 +53,14 @@ pub struct DeviceSnapshot {
     pub sinks: Vec<SinkLite>,
     pub default_source: Option<String>,
     pub default_sink: Option<String>,
+}
+
+impl DeviceSnapshot {
+    /// La sortie par défaut est-elle un casque ? `None` si elle est inconnue.
+    pub fn default_output_is_headphones(&self) -> Option<bool> {
+        let name = self.default_sink.as_ref()?;
+        self.sinks.iter().find(|s| &s.name == name).map(|s| s.headphones)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -413,7 +423,9 @@ fn list_devices(ctx: &Rc<RefCell<Context>>, reply: Sender<Result<DeviceSnapshot>
                 let name = s.name.as_deref().unwrap_or("").to_string();
                 let props = node_props(&name, &s.proplist, s.driver.as_deref());
                 let mut a = acc.borrow_mut();
-                a.snap.sinks.push(SinkLite { index: s.index, name: name.clone(), monitor_source: s.monitor_source_name.as_deref().unwrap_or("").to_string() });
+                let port = s.active_port.as_ref().and_then(|p| p.name.as_deref().map(String::from));
+                let headphones = crate::devices::is_headphones(&props, port.as_deref());
+                a.snap.sinks.push(SinkLite { index: s.index, name: name.clone(), monitor_source: s.monitor_source_name.as_deref().unwrap_or("").to_string(), headphones });
                 a.snap.outputs.push(AudioDeviceInfo {
                     id: name.clone(),
                     name: s.description.as_deref().unwrap_or(&name).to_string(),

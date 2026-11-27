@@ -3,12 +3,23 @@
   // ouvrir directement la bonne page des Réglages Système. Utilisé par l'assistant de premier
   // lancement et par Réglages → Permissions. L'état est relu régulièrement, pour refléter un
   // changement fait dans les Réglages Système.
+  //
+  // Linux : rien à autoriser. On montre le serveur son (PulseAudio, ou PipeWire avec
+  // pipewire-pulse) et l'état de la capture remonté par le sidecar (micro, audio des apps),
+  // avec un bouton vers les réglages du son.
   import { onMount } from 'svelte';
   import { api } from '../api';
   import type { PermissionKind, Permissions } from '../types';
   import { toastError } from '../ui.svelte';
   import Icon from './Icon.svelte';
   import { t, tk } from '../i18n.svelte';
+  import { isLinux } from '../platform';
+
+  const LINUX_ROWS: { kind: PermissionKind; label: string; why: string }[] = [
+    { kind: 'microphone', label: tk('Micro'), why: tk('Transcrire votre voix et détecter le mot d’appel.') },
+    { kind: 'system_audio', label: tk('Audio des apps'), why: tk('Entendre les autres participants dans l’app de l’appel (Teams, Slack, Zoom…).') },
+  ];
+  const LINUX_LABEL = { granted: tk('Disponible'), denied: tk('Inaccessible'), unknown: tk('Vérifié au démarrage de l’écoute') };
 
   const ROWS: { kind: PermissionKind; label: string; why: string; pane: string; optional?: boolean }[] = [
     { kind: 'microphone', label: tk('Micro'), why: tk('Transcrire votre voix et détecter le mot d’appel.'), pane: tk('Micro') },
@@ -24,6 +35,9 @@
 
   let perms = $state<Permissions | null>(null);
   let asked = $state<Partial<Record<PermissionKind, boolean>>>({});
+
+  /** Linux (d'après l'agent utilisateur, comme le reste de l'interface). */
+  const linux = isLinux;
 
   async function refresh() {
     try {
@@ -66,6 +80,44 @@
   const ICON = { granted: 'check', denied: 'x', unknown: 'warn' } as const;
 </script>
 
+{#if linux}
+<ul class="perms">
+  <li class={perms?.sound_server ? 'granted' : perms ? 'denied' : 'unknown'}>
+    <span class="st"><Icon name={perms?.sound_server ? 'check' : perms ? 'x' : 'warn'} size={14} stroke={2} /></span>
+    <div class="grow">
+      <p>
+        <strong>{t('Serveur son')}</strong>
+        <span class="badge {perms?.sound_server ? 'ok' : perms ? 'err' : 'warn'}">{perms ? (perms.sound_server ? t('Joignable') : t('Introuvable')) : '…'}</span>
+      </p>
+      {#if perms?.sound_server}
+        <p class="small muted mono">{perms.sound_server}</p>
+      {:else if perms}
+        <p class="small hint">{t('Aucun serveur PulseAudio ou PipeWire joignable : installez pipewire-pulse (sudo apt install pipewire-pulse), puis reconnectez-vous.')}</p>
+      {/if}
+    </div>
+  </li>
+  {#each LINUX_ROWS as r (r.kind)}
+    {@const v = perms?.[r.kind] ?? 'unknown'}
+    <li class={v}>
+      <span class="st"><Icon name={ICON[v]} size={14} stroke={2} /></span>
+      <div class="grow">
+        <p>
+          <strong>{t(r.label)}</strong>
+          <span class="badge {BADGE[v]}">{perms ? t(LINUX_LABEL[v]) : '…'}</span>
+        </p>
+        <p class="small muted">{t(r.why)}</p>
+        {#if v === 'denied'}
+          <p class="small hint">{t('Vérifiez le serveur son et le périphérique choisi dans les réglages du son. Une app confinée (Flatpak, Snap) peut aussi en être empêchée.')}</p>
+        {/if}
+      </div>
+      <div class="acts">
+        <button class="btn ghost sm" onclick={() => openSettings(r.kind)}>{t('Réglages du son')}</button>
+      </div>
+    </li>
+  {/each}
+</ul>
+<p class="small faint">{t('Sous Linux, aucune autorisation n’est à accorder : Sténo capte le micro et le son des apps par le serveur son.')}</p>
+{:else}
 <ul class="perms">
   {#each ROWS as r (r.kind)}
     {@const v = perms?.[r.kind] ?? 'unknown'}
@@ -97,6 +149,7 @@
     </li>
   {/each}
 </ul>
+{/if}
 {#if perms && !perms.available}
   <p class="small warnc"><Icon name="warn" size={13} /> {t('Capture audio non démarrée : l’état affiché peut être ancien et les demandes directes sont indisponibles.')}</p>
 {/if}

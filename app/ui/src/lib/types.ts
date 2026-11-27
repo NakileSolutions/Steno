@@ -210,12 +210,22 @@ export type VariantCheck = { accepted: string[]; rejected: { variant: string; re
 
 export type WakeDetect = { detected: boolean; intent: string | null; query: string | null };
 
-/** Droits macOS demandés par Sténo. */
+/** Droits demandés par Sténo (macOS ; sous Linux, seul l'état de la capture micro / audio des apps compte). */
 export type PermissionKind = 'microphone' | 'system_audio' | 'accessibility' | 'calendar';
 export type PermissionValue = 'granted' | 'denied' | 'unknown';
 export type Permissions = Record<PermissionKind, PermissionValue> & {
   /** Capture audio démarrée : état à jour, demandes possibles. */
   available: boolean;
+  /** Système du cœur (absent d'un cœur plus ancien). */
+  platform?: 'macos' | 'linux' | 'other';
+  /** Linux : serveur son joignable (« PulseAudio (on PipeWire 1.0.5) »), `null` s'il est introuvable. */
+  sound_server?: string | null;
+  /** Session graphique : `wayland`, `x11`, `null` si inconnue. */
+  session?: string | null;
+  /** Raccourcis globaux utilisables (`false` sous Wayland), `null` si l'app ne l'a pas encore indiqué. */
+  global_shortcuts?: boolean | null;
+  /** Ligne de commande de l'app à compléter par `--toggle`, `--aside`, `--note` ou `--show`. */
+  app_command?: string | null;
 };
 
 export type DoctorItem = {
@@ -242,7 +252,7 @@ export type VoiceVerbs = {
 export type CallApp = {
   id: string;
   name: string;
-  /** Préfixes d'identifiant de bundle macOS (auxiliaires compris). */
+  /** macOS : préfixes d'identifiant de bundle (auxiliaires compris). Linux : nom d'exécutable ou identifiant Flatpak / Snap (préfixe, sans casse). */
   bundles: string[];
   enabled: boolean;
   /** Navigateur : tout le son du navigateur est capté, autres onglets compris. */
@@ -315,7 +325,7 @@ export type Settings = {
     consent_message: string;
   };
   profile: { name: string; role: string; team: string; jira_key_pattern: string; theme?: 'auto' | 'light' | 'dark'; language?: 'auto' | 'fr' | 'en' };
-  /** Comptes rendus : format par défaut, contexte proposé à l'arrêt, formats perso (enregistrés sur ce Mac). */
+  /** Comptes rendus : format par défaut, contexte proposé à l'arrêt, formats perso (enregistrés sur cet ordinateur). */
   report: ReportSettings;
   /** Mises à jour : vérification (API GitHub publique) et installation automatique hors réunion. */
   updates?: { check: boolean; auto_install: boolean };
@@ -373,7 +383,7 @@ export type Participant = { name: string; email: string | null; source: 'calenda
 
 export type CalendarAttendee = { name: string | null; email: string | null; status: string; organizer: boolean; me: boolean };
 
-/** Événement du calendrier macOS, avec la réunion prévue qui lui correspond éventuellement. */
+/** Événement du calendrier (macOS), avec la réunion prévue qui lui correspond éventuellement. */
 export type UpcomingEvent = {
   id: string;
   title: string;

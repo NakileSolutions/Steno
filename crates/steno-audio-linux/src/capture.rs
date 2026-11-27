@@ -227,9 +227,9 @@ impl Session {
         };
         let me = make(Channel::Me, me_wav);
         let them = make(Channel::Them, them_wav);
-        let aec = if !cfg.room && crate::aec::enabled_by_env() { EchoCanceller3::new() } else { None };
+        let aec = if !cfg.room && crate::aec::wanted(devices.default_output_is_headphones()) { EchoCanceller3::new() } else { None };
         if !cfg.room {
-            log::info(if aec.is_some() { "annulation d'écho active (WebRTC AEC3)" } else { "annulation d'écho inactive" });
+            log::info(if aec.is_some() { "annulation d'écho active (WebRTC AEC3, sortie sur haut-parleurs)" } else { "annulation d'écho inactive (casque ou désactivée)" });
         }
         // Le même verrou sert aux rappels du serveur son et aux segments (aparté).
         let shared = Arc::new(Shared { flags: flags.clone(), aec: Mutex::new(aec), mixer: Mutex::new(Mixer::default()), me_feed: Mutex::new(Some(me.sender())), them_feed: Mutex::new(Some(them.sender())) });
@@ -476,8 +476,25 @@ impl Session {
         }
     }
 
+    /// Annulation d'écho selon la sortie : casque branché → inutile, haut-parleurs → nécessaire.
+    fn update_aec(&self, devices: &DeviceSnapshot) {
+        if self.cfg.room {
+            return;
+        }
+        let wanted = crate::aec::wanted(devices.default_output_is_headphones());
+        let mut aec = self.shared.aec.lock().unwrap();
+        if wanted && aec.is_none() {
+            *aec = EchoCanceller3::new();
+            log::info("sortie sur haut-parleurs : annulation d'écho activée");
+        } else if !wanted && aec.is_some() {
+            *aec = None;
+            log::info("sortie sur casque : annulation d'écho désactivée");
+        }
+    }
+
     /// Liste des périphériques modifiée : micro demandé revenu, sortie par défaut changée…
     pub fn devices_changed(&self, devices: &DeviceSnapshot) {
+        self.update_aec(devices);
         let reopen = {
             let m = self.mic.lock().unwrap();
             m.fallback && m.wanted.as_ref().map(|u| devices.inputs.iter().any(|d| &d.id == u)).unwrap_or(false)

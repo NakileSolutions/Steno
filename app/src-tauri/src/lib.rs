@@ -17,7 +17,8 @@ pub struct AppState {
 }
 
 /// Sidecar audio : `STENO_SIDECAR` (développement, ex. « steno replay fichier.jsonl »),
-/// sinon `steno-audio` à côté de l'exécutable (Contents/MacOS dans Steno.app).
+/// sinon `steno-audio` à côté de l'exécutable (Contents/MacOS dans Steno.app, même dossier que
+/// `steno-app` sous Linux), sinon `steno-audio` dans le PATH.
 fn sidecar_spec() -> SidecarSpec {
     if let Ok(cmd) = std::env::var("STENO_SIDECAR") {
         let parts: Vec<String> = cmd.split_whitespace().map(String::from).collect();
@@ -35,14 +36,15 @@ fn sidecar_spec() -> SidecarSpec {
     }
 }
 
-/// Lancée par le Finder, le Dock ou l'ouverture de session, l'app hérite du PATH minimal de
-/// launchd (`/usr/bin:/bin:…`) : les CLI d'agent (`~/.local/bin/claude`, Homebrew, nvm…) y
-/// sont introuvables. On reprend le PATH du shell de connexion de l'utilisateur, complété
-/// des dossiers d'installation courants.
+/// Lancée par le Finder, le Dock ou l'ouverture de session (launchd sur macOS, menu des
+/// applications ou démarrage automatique sous Linux), l'app hérite d'un PATH minimal : les
+/// CLI d'agent (`~/.local/bin/claude`, Homebrew, nvm…) y sont introuvables. On reprend le PATH
+/// du shell de connexion de l'utilisateur, complété des dossiers d'installation courants.
 fn complete_path() {
     let home = std::env::var("HOME").unwrap_or_default();
     let mut dirs: Vec<String> = std::env::var("PATH").unwrap_or_default().split(':').map(String::from).collect();
-    let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/zsh".into());
+    let default_shell = if cfg!(target_os = "macos") { "/bin/zsh" } else { "/bin/bash" };
+    let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| default_shell.into());
     let marker = "__STENO_PATH__";
     let login_path = std::process::Command::new(&shell)
         .args(["-ilc", &format!("printf '{marker}%s{marker}' \"$PATH\"")])
@@ -67,6 +69,9 @@ fn complete_path() {
         format!("{home}/.bun/bin"),
         format!("{home}/.volta/bin"),
         format!("{home}/.cargo/bin"),
+        // Linux : paquets Snap, Homebrew pour Linux.
+        "/snap/bin".into(),
+        "/home/linuxbrew/.linuxbrew/bin".into(),
     ];
     for d in login_path.iter().flat_map(|p| p.split(':').map(String::from)).chain(extra) {
         if !d.is_empty() && !dirs.contains(&d) {
@@ -94,15 +99,43 @@ fn init_logs() {
     }
 }
 
+/// Signal de détection d'une commande quand le sidecar ne l'a pas joué (sidecar arrêté) :
+/// son du système sur la sortie par défaut. Il n'est jamais injecté dans l'audio de l'appel.
 fn play_feedback(core: &Core) {
-    let mode = core.settings().voice.feedback;
-    if mode == "none" {
+    if core.settings().voice.feedback == "none" {
+        return;
     }
     #[cfg(target_os = "macos")]
     {
         // « headset » : le son système sort par la sortie par défaut, c'est-à-dire le casque
         // pendant un appel ; il n'est jamais injecté dans l'audio de Teams.
         let _ = std::process::Command::new("afplay").args(["-v", "0.4", "/System/Library/Sounds/Tink.aiff"]).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Thème sonore freedesktop : libcanberra d'abord (suit le thème du bureau), sinon paplay.
+        const SOUND: &str = "/usr/share/sounds/freedesktop/stereo/message.oga";
+        let candidates: [(&str, &[&str]); 2] =
+            [("canberra-gtk-play", &["-i", "message", "-d", "Sténo"]), ("paplay", &["--volume=26000", SOUND])];
+        for (prog, args) in candidates {
+            if prog == "paplay" && !std::path::Path::new(SOUND).exists() {
+                continue;
+            }
+            if let Ok(path) = which::which(prog) {
+                if let Ok(mut child) = std::process::Command::new(path)
+                    .args(args)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                {
+                    std::thread::spawn(move || {
+                        let _ = child.wait();
+                    });
+                    return;
+                }
+            }
+        }
     }
 }
 
@@ -142,15 +175,26 @@ const AUTOSTART_ARG: &str = "--autostart";
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logs();
-    complete_path();
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::show_main(app, None)))
+        // Second lancement : ses arguments arrivent ici (`--toggle`, `--aside`, `--note`,
+        // `--show`, ou rien : on montre la fenêtre). Il se termine ensuite tout seul.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            match (shortcuts::cli_action(&args), app.try_state::<AppState>()) {
+                (Some(action), Some(st)) => shortcuts::run_action(app, &st.core, action),
+                // Encore en démarrage (cœur pas prêt) ou sans action : on montre la fenêtre.
+                _ => tray::show_main(app, None),
+            }
+        }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![AUTOSTART_ARG])))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
+            // Ici plutôt qu'avant le constructeur : un second lancement (raccourci du bureau
+            // `steno-app --toggle`) se termine dans le greffon d'instance unique, sans attendre
+            // le shell de connexion.
+            complete_path();
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             steno_core::paths::ensure_dirs()?;
@@ -166,6 +210,7 @@ pub fn run() {
             app.manage(AppState { core: core.clone() });
             let c = core.clone();
             tauri::async_runtime::spawn(async move { c.start_background() });
+            notify::init(app.handle());
             forward_events(app.handle().clone(), core.clone());
             tray::setup(app.handle())?;
             shortcuts::register(app.handle(), &core);
@@ -193,10 +238,22 @@ pub fn run() {
                     Err(e) => tracing::warn!("état du lancement à l'ouverture de session : {e}"),
                 }
             }
-            if !first_run && !std::env::args().any(|a| a == AUTOSTART_ARG) {
+            let args: Vec<String> = std::env::args().collect();
+            let action = shortcuts::cli_action(&args);
+            if !first_run && !args.iter().any(|a| a == AUTOSTART_ARG) && action.is_none() {
                 // Lancement manuel : on montre la fenêtre. À l'ouverture de session, l'app
-                // reste discrète dans la barre de menu.
+                // reste discrète dans la barre d'état.
                 tray::show_main(app.handle(), None);
+            }
+            // Premier lancement par un raccourci du bureau (`steno-app --toggle`…) : l'action
+            // demandée est faite aussi.
+            if let Some(action) = action {
+                let (handle, c) = (app.handle().clone(), core.clone());
+                tauri::async_runtime::spawn(async move {
+                    // La session en direct démarre en arrière-plan (`start_background`).
+                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                    shortcuts::run_action(&handle, &c, action);
+                });
             }
             Ok(())
         })

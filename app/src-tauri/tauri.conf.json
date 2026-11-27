@@ -85,6 +85,19 @@
       "entitlements": null
     },
     "copyright": "© 2026 Nakile Solutions — licence MIT",
-    "publisher": "Nakile Solutions"
+    "publisher": "Nakile Solutions",
+    "linux": {
+      "deb": {
+        "depends": [
+          "libpulse0"
+        ],
+        "section": "utils",
+        "desktopTemplate": "../../packaging/linux/steno-deb.desktop",
+        "files": {
+          "/usr/bin/steno": "../../target/release/steno"
+        }
+      }
+    },
+    "longDescription": "Sténo transcrit vos appels (Teams, Slack, Zoom, Meet…) et vos réunions en présentiel, rédige le compte rendu et répond à vos questions à la voix, avec l'agent IA que vous avez déjà. La transcription tourne en local : aucun audio ne quitte l'ordinateur."
   }
 }

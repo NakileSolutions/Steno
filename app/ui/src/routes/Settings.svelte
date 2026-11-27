@@ -21,6 +21,8 @@
   import ImportSection from './settings/ImportSection.svelte';
   import { version } from '../../package.json';
   import { t } from '../lib/i18n.svelte';
+  import { isLinux, modKey } from '../lib/platform';
+  import DesktopShortcuts from '../lib/components/DesktopShortcuts.svelte';
 
   let settings = $state<Settings | null>(null);
   let saved = $state('');
@@ -87,7 +89,7 @@
       <button class="btn" onclick={revert}>{t('Annuler')}</button>
     {/if}
     {#if !immediate || dirty}
-      <button class="btn primary" onclick={save} disabled={!dirty || saving} title={t('Enregistrer (⌘S)')}>{saving ? t('Enregistrement…') : t('Enregistrer')}</button>
+      <button class="btn primary" onclick={save} disabled={!dirty || saving} title={t('Enregistrer ({k})', { k: `${modKey}S` })}>{saving ? t('Enregistrement…') : t('Enregistrer')}</button>
     {/if}
   </header>
 
@@ -102,8 +104,14 @@
         {:else if section.id === 'audio'}<AudioSection bind:settings={settings} />
         {:else if section.id === 'permissions'}
           <section class="perm-sec">
-            <p class="muted">{t('Droits accordés à Sténo par macOS. Un droit refusé ne peut être rétabli que dans les Réglages Système.')}</p>
-            <Permissions />
+            {#if isLinux}
+              <p class="muted">{t('Serveur son et capture audio. Sous Linux, aucune autorisation n’est à accorder.')}</p>
+              <Permissions />
+              <DesktopShortcuts shortcuts={settings.audio.shortcuts} always />
+            {:else}
+              <p class="muted">{t('Droits accordés à Sténo par macOS. Un droit refusé ne peut être rétabli que dans les Réglages Système.')}</p>
+              <Permissions />
+            {/if}
           </section>
         {:else if section.id === 'reports'}<ReportsSection bind:settings={settings} />
         {:else if section.id === 'updates'}<UpdatesSection bind:settings={settings} />

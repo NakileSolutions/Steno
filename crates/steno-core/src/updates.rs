@@ -1,7 +1,7 @@
 //! Mises à jour : détection des nouvelles versions publiées sur GitHub et installation depuis
 //! les sources.
 //!
-//! Sténo est compilé sur le Mac de chaque utilisateur (`make install`, signature ad hoc) : une
+//! Sténo est compilé sur l'ordinateur de chaque utilisateur (`make install`) : une
 //! mise à jour suit le même chemin. On lit la dernière version publiée (API GitHub, sans
 //! authentification ni donnée envoyée), puis, à la demande ou automatiquement, on amène le
 //! clone des sources sur le tag de cette version et on relance `make install`. L'app installée
@@ -90,7 +90,8 @@ fn parse_release(json: &str) -> Result<Option<Release>> {
 /// Dernière version publiée. `Ok(None)` : aucune version publiée.
 fn fetch_latest() -> Result<Option<Release>> {
     let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
-    let out = Command::new("/usr/bin/curl")
+    let curl = which::which("curl").or_else(|_| which::which_in("curl", Some(build_path()), std::env::temp_dir()));
+    let out = Command::new(curl.context("curl introuvable")?)
         .args(["-sS", "--max-time", "20", "-w", "\n%{http_code}"])
         .args(["-H", "Accept: application/vnd.github+json", "-H", "User-Agent: steno-updater"])
         .arg(&url)
@@ -305,7 +306,11 @@ fn run_install(dir: &Path, tag: &str, log: &Path) -> Result<()> {
         .stdout(f.try_clone()?)
         .stderr(f.try_clone()?)
         .status()
-        .context("make introuvable (outils de développement Xcode installés ?)")?;
+        .context(if cfg!(target_os = "macos") {
+            "make introuvable (outils de développement Xcode installés ?)"
+        } else {
+            "make introuvable (paquet build-essential installé ?)"
+        })?;
     if !out.success() {
         bail!("`make install` a échoué (voir {})", log.display());
     }
@@ -315,7 +320,7 @@ fn run_install(dir: &Path, tag: &str, log: &Path) -> Result<()> {
 
 /// PATH de la compilation : celui du processus, complété des emplacements habituels des outils
 /// (rustup, Cargo, Homebrew, Node). Lancée depuis l'app ou un terminal minimal, `make` doit
-/// trouver `cargo`, `rustc`, `npm` et `swift` comme lors de l'installation à la main.
+/// trouver `cargo`, `rustc`, `npm` (et `swift` sur macOS) comme lors de l'installation à la main.
 pub fn build_path() -> String {
     let home = std::env::var("HOME").unwrap_or_default();
     let mut dirs: Vec<String> = vec![];
@@ -332,8 +337,10 @@ pub fn build_path() -> String {
         format!("{home}/.cargo/bin"),
         "/opt/homebrew/opt/rustup/bin".into(),
         "/opt/homebrew/bin".into(),
+        "/home/linuxbrew/.linuxbrew/bin".into(),
         "/usr/local/bin".into(),
         format!("{home}/.volta/bin"),
+        format!("{home}/.local/bin"),
         "/usr/bin".into(),
         "/bin".into(),
     ] {
@@ -348,7 +355,8 @@ pub fn build_path() -> String {
 fn login_shell_path() -> String {
     static P: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     P.get_or_init(|| {
-        let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/zsh".into());
+        let default_shell = if cfg!(target_os = "macos") { "/bin/zsh" } else { "/bin/bash" };
+        let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| default_shell.into());
         let marker = "__STENO_PATH__";
         Command::new(&shell)
             .args(["-ilc", &format!("printf '{marker}%s{marker}' \"$PATH\"")])
@@ -372,6 +380,11 @@ pub fn missing_tools(path: &str) -> Vec<&'static str> {
     let mut tools: Vec<(&str, &str)> = vec![("cargo", "Rust (cargo)"), ("npm", "Node.js (npm)"), ("make", "make")];
     if cfg!(target_os = "macos") {
         tools.push(("swift", "Swift (outils de développement Xcode)"));
+    } else {
+        // Bibliothèques système de l'app (WebKitGTK, GTK…) trouvées par pkg-config ; le C
+        // (cc) vient de build-essential.
+        tools.push(("pkg-config", "pkg-config"));
+        tools.push(("cc", "cc (build-essential)"));
     }
     let cwd = std::env::temp_dir();
     tools
@@ -412,7 +425,7 @@ mod tests {
 
     #[test]
     fn outils_manquants() {
-        assert_eq!(missing_tools("/dossier/inexistant").len(), if cfg!(target_os = "macos") { 4 } else { 3 });
+        assert_eq!(missing_tools("/dossier/inexistant").len(), if cfg!(target_os = "macos") { 4 } else { 5 });
         assert!(missing_tools(&build_path()).iter().all(|t| !t.starts_with("make")), "make est présent sur la machine de test");
     }
 

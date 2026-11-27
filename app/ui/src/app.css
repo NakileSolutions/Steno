@@ -241,6 +241,13 @@ html.tray:not(.native-vibrancy) body {
   }
 }
 
+/* Panneau rapide dans Tauri hors macOS (Linux) : fenêtre transparente sans matière native ;
+   le popover dessine son propre fond, sans faux bureau derrière. */
+html.tray.transparent-panel,
+html.tray.transparent-panel body {
+  background: transparent;
+}
+
 /* ---------- Transitions entre vues (View Transitions API) ---------- */
 ::view-transition-old(root),
 ::view-transition-new(root) {

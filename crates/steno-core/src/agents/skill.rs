@@ -38,7 +38,7 @@ pub struct SkillStatus {
     pub cli: Option<String>,
 }
 
-/// Dossiers de skills des agents présents sur le Mac : `~/.claude/skills` (Claude Code) et
+/// Dossiers de skills des agents présents sur la machine : `~/.claude/skills` (Claude Code) et
 /// `~/.agents/skills` (dossier commun lu par Codex et d'autres CLI).
 pub fn skill_dirs(home: &Path) -> Vec<(&'static str, PathBuf)> {
     let mut out = vec![];

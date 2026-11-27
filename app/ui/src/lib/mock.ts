@@ -14,6 +14,7 @@ import {
 } from './mock-data';
 import { detectWake, fold } from './wake';
 import { effortLabel, normalizeAgentSettings } from './agents';
+import { isLinux } from './platform';
 
 // Skill « Sténo » simulé : pas encore installé.
 const skillStatus: SkillStatus = {
@@ -884,10 +885,24 @@ export function createMockBackend(): Backend {
     },
     doctor: async () => {
       await sleep(700);
+      const system: DoctorItem[] = isLinux
+        ? [
+            { name: 'Système', status: 'ok', message: 'Ubuntu 24.04.1 LTS', fix: null },
+            { name: 'Serveur son', status: 'ok', message: 'PulseAudio (on PipeWire 1.0.5)', fix: null },
+            {
+              name: 'Session',
+              status: 'warn',
+              message: 'Wayland : les raccourcis globaux de Sténo sont indisponibles',
+              fix: 'Paramètres → Clavier → Raccourcis personnalisés : « /usr/bin/steno-app --toggle » (démarrer/arrêter l’écoute), « /usr/bin/steno-app --aside » (aparté), « /usr/bin/steno-app --note » (note rapide).',
+            },
+          ]
+        : [
+            { name: 'Microphone', status: 'ok', message: 'Autorisé.', fix: null },
+            { name: 'Audio du système', status: 'warn', message: 'Pas encore demandé.', fix: 'Démarrez une réunion : macOS affichera la demande « Enregistrement audio du système ».' },
+            { name: 'Accessibilité', status: 'error', message: 'Refusée : le titre des appels (Teams, Slack, Zoom…) ne sera pas lu.', fix: 'Réglages Système → Confidentialité et sécurité → Accessibilité → cochez Sténo.' },
+          ];
       const items: DoctorItem[] = [
-        { name: 'Microphone', status: 'ok', message: 'Autorisé.', fix: null },
-        { name: 'Audio du système', status: 'warn', message: 'Pas encore demandé.', fix: 'Démarrez une réunion : macOS affichera la demande « Enregistrement audio du système ».' },
-        { name: 'Accessibilité', status: 'error', message: 'Refusée : le titre des appels (Teams, Slack, Zoom…) ne sera pas lu.', fix: 'Réglages Système → Confidentialité et sécurité → Accessibilité → cochez Sténo.' },
+        ...system,
         { name: 'Apps de visio', status: 'ok', message: `Surveillées : ${settings.audio.call_apps.filter((x) => x.enabled).map((x) => x.name).join(', ') || 'aucune'}.`, fix: null },
         { name: 'Sidecar audio', status: 'ok', message: 'steno-audio 0.1.0, modèle de transcription présent.', fix: null },
         { name: 'Agent IA', status: 'ok', message: `${agents.find((x) => x.id === settings.agent.provider)?.name ?? settings.agent.provider} détecté.`, fix: null },
@@ -895,7 +910,20 @@ export function createMockBackend(): Backend {
       ];
       return items;
     },
-    get_permissions: () => ({ ...permissions, available: true }),
+    get_permissions: () =>
+      isLinux
+        ? {
+            ...permissions,
+            microphone: 'granted',
+            system_audio: 'granted',
+            available: true,
+            platform: 'linux',
+            sound_server: 'PulseAudio (on PipeWire 1.0.5)',
+            session: 'wayland',
+            global_shortcuts: false,
+            app_command: '/usr/bin/steno-app',
+          }
+        : { ...permissions, available: true, platform: 'macos' },
     request_permission: (a) => {
       const k = String(a.kind) as PermissionKind;
       if (!(k in permissions)) throw `Permission inconnue : ${k}`;

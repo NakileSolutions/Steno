@@ -13,6 +13,7 @@
   import Icon from '../lib/components/Icon.svelte';
   import MeetingDetail from './MeetingDetail.svelte';
   import { i18n, t, tn } from '../lib/i18n.svelte';
+  import { isLinux } from '../lib/platform';
 
   let query = $state('');
   let period = $state<'all' | '7' | '30' | 'custom'>('all');
@@ -216,7 +217,7 @@
           {#if upcoming && !upcoming.planned.length && !freeEvents.length}
             <p class="faint small upempty">{t('Aucune réunion à venir.')}</p>
           {/if}
-          {#if upcoming && upcoming.calendar !== 'granted'}
+          {#if upcoming && upcoming.calendar !== 'granted' && !(isLinux && upcoming.calendar === 'unavailable')}
             <button class="btn ghost sm cal" onclick={connectCalendar}><Icon name="calendar" size={13} />{t('Afficher les réunions de mon calendrier')}</button>
           {/if}
         </div>

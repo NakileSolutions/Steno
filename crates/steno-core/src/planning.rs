@@ -1,4 +1,4 @@
-//! Préparation des réunions : réunions prévues, calendrier macOS, participants invités et
+//! Préparation des réunions : réunions prévues, calendrier (macOS), participants invités et
 //! préparation guidée par l'agent.
 //!
 //! - Une **réunion prévue** est une réunion au statut `planned` dont `started_at` est l'heure
@@ -180,6 +180,10 @@ pub async fn upcoming(inner: &Inner, days: i64) -> Result<Upcoming> {
     let perm = calendar_permission(inner);
     let mut events = vec![];
     let mut state = perm.clone();
+    // Linux : pas de calendrier du système tant que le sidecar n'en signale pas un (`granted`).
+    if cfg!(target_os = "linux") && perm != "granted" {
+        state = "unavailable".into();
+    }
     if perm == "granted" {
         let now = chrono::Local::now();
         let to = now + chrono::Duration::days(days.clamp(1, 31));

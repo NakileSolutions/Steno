@@ -44,6 +44,14 @@ pub fn transport(p: &NodeProps) -> &'static str {
     "other"
 }
 
+/// Casque ou écouteurs : port actif « headphones » / « headset » (prise jack), type d'appareil
+/// (`device.form_factor`), ou sortie Bluetooth (presque toujours des écouteurs en réunion).
+pub fn is_headphones(p: &NodeProps, active_port: Option<&str>) -> bool {
+    let port = active_port.unwrap_or("").to_lowercase();
+    let ff = p.form_factor.as_deref().unwrap_or("").to_lowercase();
+    port.contains("headphone") || port.contains("headset") || matches!(ff.as_str(), "headphone" | "headset" | "hands-free" | "handset") || transport(p) == "bluetooth"
+}
+
 /// Tri stable et déterministe : défaut d'abord, puis nom (ordre naturel), puis identifiant.
 pub fn sorted(mut devices: Vec<AudioDeviceInfo>) -> Vec<AudioDeviceInfo> {
     devices.sort_by(|a, b| b.is_default.cmp(&a.is_default).then_with(|| natural_cmp(&a.name, &b.name)).then_with(|| a.id.cmp(&b.id)));
@@ -107,6 +115,16 @@ mod tests {
         assert_eq!(transport(&p("alsa_output.pci-0000_01_00.1.hdmi-stereo", Some("pci"), None)), "other");
         assert_eq!(transport(&NodeProps { name: "steno_null".into(), driver: Some("module-null-sink.c".into()), ..Default::default() }), "virtual");
         assert_eq!(transport(&NodeProps { name: "x".into(), driver: Some("module-combine-sink.c".into()), ..Default::default() }), "aggregate");
+    }
+
+    #[test]
+    fn casques() {
+        let internal = NodeProps { name: "alsa_output.pci-0000_00_1f.3.analog-stereo".into(), bus: Some("pci".into()), ..Default::default() };
+        assert!(!is_headphones(&internal, Some("analog-output-speaker")));
+        assert!(is_headphones(&internal, Some("analog-output-headphones")));
+        assert!(is_headphones(&NodeProps { name: "bluez_output.AA_BB.1".into(), api: Some("bluez5".into()), ..Default::default() }, None));
+        assert!(is_headphones(&NodeProps { name: "alsa_output.usb-Jabra".into(), bus: Some("usb".into()), form_factor: Some("headset".into()), ..Default::default() }, None));
+        assert!(!is_headphones(&NodeProps { name: "alsa_output.usb-Speaker".into(), bus: Some("usb".into()), form_factor: Some("speaker".into()), ..Default::default() }, None));
     }
 
     #[test]

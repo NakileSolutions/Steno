@@ -1,0 +1,31 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Sténo
+GenericName=Meeting assistant
+GenericName[fr]=Assistant de réunion
+Comment=Local meeting assistant: live transcription, minutes and voice searches
+Comment[fr]=Assistant de réunion local : transcription en direct, comptes rendus et recherches à la voix
+Exec={{exec}}
+Icon={{icon}}
+Terminal=false
+Categories=Office;AudioVideo;Utility;
+Keywords=meeting;transcription;minutes;réunion;compte rendu;teams;slack;zoom;
+StartupNotify=true
+StartupWMClass=steno-app
+Actions=Toggle;Aside;Note;
+
+[Desktop Action Toggle]
+Name=Start or stop listening
+Name[fr]=Démarrer ou arrêter l'écoute
+Exec={{exec}} --toggle
+
+[Desktop Action Aside]
+Name=Aside on / off
+Name[fr]=Aparté (activer / désactiver)
+Exec={{exec}} --aside
+
+[Desktop Action Note]
+Name=Quick note
+Name[fr]=Note rapide
+Exec={{exec}} --note

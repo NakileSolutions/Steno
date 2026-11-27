@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_CALL_APPS, callAppId, callAppShortName, callLabel, callOffer, defaultCallApps, formatShortcut,
+  DEFAULT_CALL_APPS, LINUX_CALL_APPS, MACOS_CALL_APPS, callAppsFor, callAppId, callAppShortName, callLabel, callOffer, defaultCallApps, formatShortcut,
   isBrowserApp, isBuiltinCallApp, isListening, isValidBundle, meetingCallChip, normalizeLiveState,
   normalizeSettings, parseBundles, stopPhrase,
 } from '../listening';
@@ -95,7 +95,22 @@ describe('apps de visio par défaut', () => {
     const md = fs.readFileSync(path.resolve(__dirname, '../../../../../docs/contracts.md'), 'utf8');
     const m = md.match(/"call_apps": (\[[\s\S]*?\n\s*\])/);
     expect(m).not.toBeNull();
-    expect(JSON.parse(m![1])).toEqual(DEFAULT_CALL_APPS);
+    expect(JSON.parse(m![1])).toEqual(MACOS_CALL_APPS);
+    expect(DEFAULT_CALL_APPS).toBe(MACOS_CALL_APPS);
+  });
+  it('sous Linux : mêmes valeurs que le cœur (linux_call_apps), sans FaceTime', () => {
+    expect(callAppsFor('linux')).toBe(LINUX_CALL_APPS);
+    expect(callAppsFor('other')).toBe(MACOS_CALL_APPS);
+    expect(LINUX_CALL_APPS.map((a) => a.id)).toEqual(['teams', 'slack', 'zoom', 'webex', 'discord', 'browser']);
+    expect(LINUX_CALL_APPS.filter((a) => !a.enabled).map((a) => a.id)).toEqual(['browser']);
+    const rs = fs.readFileSync(path.resolve(__dirname, '../../../../../crates/steno-core/src/settings.rs'), 'utf8');
+    const block = rs.slice(rs.indexOf('const LINUX_BUNDLES'), rs.indexOf('fn is_macos_bundle'));
+    for (const a of LINUX_CALL_APPS) {
+      const line = block.slice(block.indexOf(`"${a.id}"`));
+      const body = line.slice(0, line.indexOf(']'));
+      const bundles = [...body.matchAll(/"([^"]+)"/g)].map((x) => x[1]).slice(1);
+      expect(bundles, a.id).toEqual(a.bundles);
+    }
   });
   it('defaultCallApps renvoie une copie modifiable', () => {
     const a = defaultCallApps();
@@ -131,6 +146,12 @@ describe('bundles', () => {
     expect(isValidBundle('example')).toBe(false);
     expect(isValidBundle('com example.app')).toBe(false);
     expect(isValidBundle('.com.app')).toBe(false);
+    // Linux : nom de programme ou identifiant Flatpak.
+    expect(isValidBundle('example', 'linux')).toBe(true);
+    expect(isValidBundle('teams-for-linux', 'linux')).toBe(true);
+    expect(isValidBundle('us.zoom.Zoom', 'linux')).toBe(true);
+    expect(isValidBundle('com example', 'linux')).toBe(false);
+    expect(isValidBundle('/usr/bin/zoom', 'linux')).toBe(false);
   });
 });
 
@@ -175,6 +196,16 @@ describe('formatShortcut', () => {
     expect(formatShortcut('Cmd+Shift+N')).toBe('⇧⌘N');
     expect(formatShortcut('CmdOrCtrl+Alt+Space')).toBe('⌥⌘ Espace');
     expect(formatShortcut('F5')).toBe('F5');
+    expect(formatShortcut('Ctrl+Alt+S', 'macos')).toBe('⌃⌥S');
+  });
+  it('sous Linux : noms des touches, Ctrl puis Alt puis Maj puis Super', () => {
+    expect(formatShortcut('Ctrl+Alt+S', 'linux')).toBe('Ctrl+Alt+S');
+    expect(formatShortcut('alt+ctrl+s', 'linux')).toBe('Ctrl+Alt+S');
+    expect(formatShortcut('Ctrl+Alt+Space', 'linux')).toBe('Ctrl+Alt+Espace');
+    expect(formatShortcut('Cmd+Shift+N', 'linux')).toBe('Maj+Super+N');
+    expect(formatShortcut('CmdOrCtrl+Enter', 'linux')).toBe('Ctrl+Entrée');
+    expect(formatShortcut('F5', 'linux')).toBe('F5');
+    expect(formatShortcut('', 'linux')).toBe('');
   });
   it('vide si rien n’est configuré', () => {
     expect(formatShortcut('')).toBe('');

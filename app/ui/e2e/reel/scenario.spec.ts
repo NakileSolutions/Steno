@@ -130,9 +130,12 @@ test('réunion complète : écoute manuelle, demandes, compte rendu, corrélatio
 test('réglages : apps de visio enregistrées par le cœur', async ({ page }) => {
   await go(page, '/settings?section=audio');
   const apps = page.getByRole('group', { name: 'Apps de visio' });
-  for (const name of ['Microsoft Teams', 'Slack', 'Zoom', 'Webex', 'Discord', 'FaceTime', 'Navigateur (Google Meet…)']) {
+  // Le cœur tourne sur la même machine que le test : FaceTime n'existe que sur macOS.
+  const mac = process.platform === 'darwin';
+  for (const name of ['Microsoft Teams', 'Slack', 'Zoom', 'Webex', 'Discord', ...(mac ? ['FaceTime'] : []), 'Navigateur (Google Meet…)']) {
     await expect(apps.getByText(name, { exact: true })).toBeVisible();
   }
+  if (!mac) await expect(apps.getByText('FaceTime', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Surveiller Navigateur (Google Meet…)')).not.toBeChecked();
   await expect(apps.getByText(/capte tout le son du navigateur/)).toBeVisible();
   await page.getByLabel('Surveiller Zoom').uncheck();

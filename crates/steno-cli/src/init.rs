@@ -29,10 +29,24 @@ fn yes(q: &str, default: bool) -> bool {
 pub async fn run(core: &Core) -> Result<()> {
     println!("Bienvenue dans Sténo. Six étapes, toutes modifiables ensuite dans l'app.\n");
 
-    // 1. Permissions
-    println!("1/6 — Permissions macOS");
-    println!("   Micro, « Enregistrement de l'écran et de l'audio système » et Accessibilité sont");
-    println!("   demandés au premier lancement de Steno.app. Vérification : `steno doctor`.\n");
+    // 1. Permissions (macOS) ou son (Linux)
+    if cfg!(target_os = "macos") {
+        println!("1/6 — Permissions macOS");
+        println!("   Micro, « Enregistrement de l'écran et de l'audio système » et Accessibilité sont");
+        println!("   demandés au premier lancement de Steno.app. Vérification : `steno doctor`.\n");
+    } else {
+        println!("1/6 — Son");
+        match steno_core::permissions::sound_server() {
+            Some(s) => println!("   Serveur son : {s}. Aucune autorisation à accorder."),
+            None => println!("   ⚠️ Aucun serveur son PulseAudio ou PipeWire joignable (installez pipewire-pulse)."),
+        }
+        if steno_core::permissions::session_type().as_deref() == Some("wayland") {
+            println!("   Wayland : liez « steno-app --toggle », « --aside » et « --note » à des raccourcis");
+            println!("   personnalisés (Paramètres → Clavier). Vérification : `steno doctor`.\n");
+        } else {
+            println!("   Vérification : `steno doctor`.\n");
+        }
+    }
 
     // 2. Agent
     println!("2/6 — Agent IA");

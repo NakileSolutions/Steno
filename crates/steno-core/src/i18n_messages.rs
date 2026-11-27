@@ -30,6 +30,7 @@ static TABLE: &[(&str, &str)] = &[
         "audio capture is not started: open System Settings",
     ),
     ("la session en direct n'est pas démarrée", "the live session is not started"),
+    ("la capture audio n'est pas démarrée", "audio capture is not started"),
     ("session en direct arrêtée", "live session stopped"),
     ("réunion introuvable", "meeting not found"),
     ("cette réunion n'est pas une réunion prévue", "this meeting is not a planned meeting"),
@@ -96,6 +97,7 @@ static TABLE: &[(&str, &str)] = &[
         "make introuvable (outils de développement Xcode installés ?)",
         "make not found (are the Xcode developer tools installed?)",
     ),
+    ("make introuvable (paquet build-essential installé ?)", "make not found (is the build-essential package installed?)"),
     ("`make install` a échoué (voir {})", "`make install` failed (see {})"),
     // ------------------------------------------------------------ sidecar.rs
     ("impossible de lancer le sidecar audio « {} »", "cannot start the audio sidecar “{}”"),
@@ -129,6 +131,11 @@ static TABLE: &[(&str, &str)] = &[
     ("permission inconnue : {}", "unknown permission: {}"),
     ("impossible d'ouvrir les Réglages Système", "cannot open System Settings"),
     ("Réglages Système : macOS uniquement", "System Settings: macOS only"),
+    ("aucun réglage à ouvrir pour ce droit sous Linux", "there is no setting to open for this permission on Linux"),
+    (
+        "réglages du son introuvables : installez gnome-control-center ou pavucontrol",
+        "sound settings not found: install gnome-control-center or pavucontrol",
+    ),
     // ------------------------------------------------------------ live.rs
     ("réunion prévue introuvable", "planned meeting not found"),
     ("sidecar absent", "sidecar missing"),
@@ -163,10 +170,15 @@ static TABLE: &[(&str, &str)] = &[
         "unsupported format: “{}” (PDF, Excel, CSV, Word, Markdown or text)",
     ),
     ("classeur illisible", "unreadable workbook"),
+    ("textutil introuvable", "textutil not found"),
+    ("document illisible (archive zip attendue)", "unreadable document (zip archive expected)"),
+    ("document illisible ({} absent)", "unreadable document ({} missing)"),
+    ("document illisible ({} n'est pas en UTF-8)", "unreadable document ({} is not UTF-8)"),
     (
-        "textutil introuvable (conversion des documents Word : macOS uniquement)",
-        "textutil not found (Word document conversion: macOS only)",
+        "document Word .doc illisible : installez antiword ou catdoc, ou enregistrez-le en .docx",
+        "unreadable Word .doc document: install antiword or catdoc, or save it as .docx",
     ),
+    ("impossible de lancer {}", "cannot start {}"),
     ("document illisible ({})", "unreadable document ({})"),
     ("« {} » dépasse {} Mo", "“{}” exceeds {} MB"),
     ("PDF illisible : {}", "unreadable PDF: {}"),
@@ -192,6 +204,9 @@ static TABLE: &[(&str, &str)] = &[
     ("Clé d'API", "API key"),
     ("Politique lecture seule", "Read-only policy"),
     ("Test réel « poste sur Slack »", "Live test “post on Slack”"),
+    ("Serveur son", "Sound server"),
+    ("Session", "Session"),
+    ("Modèles audio", "Audio models"),
     // ------------------------------------------------------------ doctor.rs : messages
     (
         "macOS {} : les process taps Core Audio demandent macOS 14.2+",
@@ -203,9 +218,26 @@ static TABLE: &[(&str, &str)] = &[
     ("surveillées et installées : {}", "monitored and installed: {}"),
     ("surveillées et installées : {} (absentes : {})", "monitored and installed: {} (missing: {})"),
     (
-        "hors macOS : capture audio indisponible (mode simulation possible)",
-        "not on macOS: audio capture unavailable (simulation mode available)",
+        "système non pris en charge : capture audio indisponible (mode simulation possible)",
+        "unsupported system: audio capture unavailable (simulation mode available)",
     ),
+    ("distribution inconnue (/etc/os-release illisible)", "unknown distribution (/etc/os-release unreadable)"),
+    (
+        "PipeWire tourne sans pipewire-pulse : le son des apps ne peut pas être capté",
+        "PipeWire is running without pipewire-pulse: app audio cannot be captured",
+    ),
+    ("aucun serveur son PulseAudio ou PipeWire joignable", "no PulseAudio or PipeWire sound server reachable"),
+    (
+        "Wayland : les raccourcis globaux de Sténo sont indisponibles",
+        "Wayland: Sténo's global shortcuts are unavailable",
+    ),
+    (
+        "X11 : raccourcis globaux refusés (déjà pris par une autre app ?)",
+        "X11: global shortcuts refused (already taken by another app?)",
+    ),
+    ("X11 : raccourcis globaux disponibles", "X11: global shortcuts available"),
+    ("aucune session graphique détectée", "no graphical session detected"),
+    ("modèle de transcription Parakeet absent de {}", "Parakeet transcription model missing from {}"),
     ("base en mémoire", "in-memory database"),
     ("sidecar steno-audio lancé", "steno-audio sidecar running"),
     ("sidecar steno-audio introuvable", "steno-audio sidecar not found"),
@@ -240,9 +272,34 @@ static TABLE: &[(&str, &str)] = &[
         "Recompiler avec `make install` (il est embarqué dans Steno.app).",
         "Rebuild with `make install` (it is bundled in Steno.app).",
     ),
+    ("Voir les journaux dans {}.", "See the logs in {}."),
     (
-        "Voir les journaux dans ~/Library/Application Support/Steno/logs.",
-        "See the logs in ~/Library/Application Support/Steno/logs.",
+        "Réinstaller avec `make install` : steno-audio doit se trouver à côté de steno-app.",
+        "Reinstall with `make install`: steno-audio must be next to steno-app.",
+    ),
+    (
+        "Installer pipewire-pulse (`sudo apt install pipewire-pulse`), puis se reconnecter.",
+        "Install pipewire-pulse (`sudo apt install pipewire-pulse`), then log in again.",
+    ),
+    (
+        "Installer PipeWire avec pipewire-pulse (`sudo apt install pipewire-pulse`) ou PulseAudio, puis se reconnecter.",
+        "Install PipeWire with pipewire-pulse (`sudo apt install pipewire-pulse`) or PulseAudio, then log in again.",
+    ),
+    (
+        "Paramètres → Clavier → Raccourcis personnalisés : « {} --toggle » (démarrer/arrêter l'écoute), « {} --aside » (aparté), « {} --note » (note rapide).",
+        "Settings → Keyboard → Custom Shortcuts: “{} --toggle” (start/stop listening), “{} --aside” (aside), “{} --note” (quick note).",
+    ),
+    (
+        "Lancer `make install` (téléchargement des modèles audio), ou indiquer leur dossier avec STENO_MODELS_DIR.",
+        "Run `make install` (downloads the audio models), or set their folder with STENO_MODELS_DIR.",
+    ),
+    (
+        "Vérifier le micro choisi dans les réglages du son (gnome-control-center sound ou pavucontrol), et que Sténo n'est pas confiné (Flatpak, Snap).",
+        "Check the selected microphone in the sound settings (gnome-control-center sound or pavucontrol), and that Sténo is not sandboxed (Flatpak, Snap).",
+    ),
+    (
+        "Vérifier le serveur son (`pactl info`) et que Sténo n'est pas confiné (Flatpak, Snap).",
+        "Check the sound server (`pactl info`) and that Sténo is not sandboxed (Flatpak, Snap).",
     ),
     (
         "Réglages Système → Confidentialité et sécurité → Micro → cocher Sténo.",
@@ -261,10 +318,7 @@ static TABLE: &[(&str, &str)] = &[
         "Install the agent's CLI and sign in, or choose another one in Settings → AI agent.",
     ),
     ("Réglages → Connecteurs → Rafraîchir.", "Settings → Connectors → Refresh."),
-    (
-        "Vérifier ~/Library/Application Support/Steno/policy.toml.",
-        "Check ~/Library/Application Support/Steno/policy.toml.",
-    ),
+    ("Vérifier {}.", "Check {}."),
     ("Désactiver tous les connecteurs et signaler le problème.", "Disable all connectors and report the problem."),
     // ------------------------------------------------------------ sidecar audio (Swift)
     (
@@ -313,6 +367,32 @@ static TABLE: &[(&str, &str)] = &[
     ("redémarrage du micro impossible : {}", "could not restart the microphone: {}"),
     ("accès à l'audio système refusé (OSStatus {} « {} »)", "system audio access denied (OSStatus {} “{}”)"),
     ("{} a échoué (OSStatus {} « {} »)", "{} failed (OSStatus {} “{}”)"),
+    // ------------------------------------------------------------ sidecar audio (Linux)
+    ("Modèle de transcription indisponible : {}", "Transcription model unavailable: {}"),
+    (
+        "Démarrage du micro impossible ({}). Nouvel essai toutes les 5 s.",
+        "Could not start the microphone ({}). Retrying every 5 s.",
+    ),
+    (
+        "Aucun flux audio de {} : l'app n'est pas lancée ou n'a pas encore ouvert l'audio. Le micro est capté ; le son des participants le sera dès que {} jouera du son.",
+        "No audio stream from {}: the app is not running or has not opened audio yet. The microphone is recorded; the other participants will be as soon as {} plays sound.",
+    ),
+    (
+        "Capture du son du système impossible ({}). Nouvel essai en cours.",
+        "Could not capture the system audio ({}). Retrying.",
+    ),
+    ("serveur son indisponible (PulseAudio / PipeWire)", "sound server unavailable (PulseAudio / PipeWire)"),
+    ("serveur son injoignable", "sound server unreachable"),
+    ("téléchargement de {} impossible : {}", "could not download {}: {}"),
+    (
+        "langue non prise en charge par Canary 180M Flash : {} (fr, en, es, de)",
+        "language not supported by Canary 180M Flash: {} (fr, en, es, de)",
+    ),
+    ("chargement de Parakeet impossible (fichiers dans {})", "could not load Parakeet (files in {})"),
+    ("chargement de Canary impossible (fichiers dans {})", "could not load Canary (files in {})"),
+    ("chargement des modèles de diarisation impossible", "could not load the diarization models"),
+    ("chargement de Silero VAD impossible", "could not load Silero VAD"),
+    ("aucun résultat du modèle", "no result from the model"),
     ("Commande illisible : JSON invalide.", "Unreadable command: invalid JSON."),
     ("Commande illisible : champ \"cmd\" absent.", "Unreadable command: missing \"cmd\" field."),
     ("Commande inconnue : \"{}\".", "Unknown command: \"{}\"."),
@@ -427,6 +507,14 @@ mod tests {
         assert_eq!(
             localize("en", "Capture du son de Teams impossible (err -1). Nouvel essai en cours."),
             "Could not capture audio from Teams (err -1). Retrying."
+        );
+        assert_eq!(
+            localize("en", "Voir les journaux dans /home/a/.local/share/Steno/logs."),
+            "See the logs in /home/a/.local/share/Steno/logs."
+        );
+        assert_eq!(
+            localize("en", "Paramètres → Clavier → Raccourcis personnalisés : « /usr/bin/steno-app --toggle » (démarrer/arrêter l'écoute), « /usr/bin/steno-app --aside » (aparté), « /usr/bin/steno-app --note » (note rapide)."),
+            "Settings → Keyboard → Custom Shortcuts: “/usr/bin/steno-app --toggle” (start/stop listening), “/usr/bin/steno-app --aside” (aside), “/usr/bin/steno-app --note” (quick note)."
         );
     }
 

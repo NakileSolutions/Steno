@@ -161,7 +161,7 @@
       <button class="btn primary go" onclick={toggle} disabled={busy || s.state === 'processing'}>
         <Icon name="play" size={14} stroke={2} />{t('Démarrer l’écoute')}
       </button>
-      <button class="btn sm ghost room" onclick={startRoom} disabled={busy || s.state === 'processing'} title={t('Sans app de visio : seul le micro du Mac est écouté')}>
+      <button class="btn sm ghost room" onclick={startRoom} disabled={busy || s.state === 'processing'} title={t('Sans app de visio : seul le micro de l’ordinateur est écouté')}>
         <Icon name="user" size={14} />{t('Réunion en présentiel')}
       </button>
     {/if}

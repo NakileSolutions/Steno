@@ -399,10 +399,11 @@ impl Core {
 
     // ------------------------------------------------------------------ direct
 
-    // ------------------------------------------------------------------ permissions macOS
+    // ------------------------------------------------------------------ permissions
 
-    /// Dernier état connu des permissions. Redemande l'état au sidecar : la lecture suivante
-    /// reflète un changement fait entre-temps dans les Réglages Système.
+    /// Dernier état connu des permissions, complété des informations système (serveur son,
+    /// session graphique, raccourcis globaux). Redemande l'état au sidecar : la lecture suivante
+    /// reflète un changement fait entre-temps dans les réglages du système.
     pub fn permissions(&self) -> crate::permissions::Permissions {
         self.inner.send_live(LiveCmd::RefreshPermissions);
         let mut p = self
@@ -414,14 +415,18 @@ impl Core {
             .and_then(|(s, _)| serde_json::from_str::<crate::permissions::Permissions>(&s).ok())
             .unwrap_or_default();
         p.available = self.inner.live_state.lock().unwrap().sidecar == "running";
-        p
+        crate::permissions::with_system_info(p, &self.inner.db)
     }
 
-    /// Affiche l'invite macOS du droit (sans effet s'il a déjà été accordé ou refusé).
+    /// Affiche l'invite macOS du droit (sans effet s'il a déjà été accordé ou refusé). Sous
+    /// Linux, le sidecar revérifie seulement l'accès (il n'y a pas d'invite).
     pub fn request_permission(&self, kind: &str) -> Result<()> {
         crate::permissions::check_kind(kind)?;
         if !self.inner.send_live(LiveCmd::RequestPermission(kind.to_string())) {
-            anyhow::bail!("la capture audio n'est pas démarrée : ouvrez les Réglages Système");
+            if cfg!(target_os = "macos") {
+                anyhow::bail!("la capture audio n'est pas démarrée : ouvrez les Réglages Système");
+            }
+            anyhow::bail!("la capture audio n'est pas démarrée");
         }
         Ok(())
     }

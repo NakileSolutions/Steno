@@ -410,11 +410,21 @@ async fn appel_slack_et_apps_desactivees() {
 fn liste_des_apps_surveillees() {
     let mut audio = steno_core::settings::AudioSettings::default();
     let ids: Vec<String> = steno_core::live::watch_list(&audio).into_iter().map(|a| a.id).collect();
-    assert_eq!(ids, ["teams", "slack", "zoom", "webex", "discord", "facetime"], "navigateur désactivé par défaut");
+    // FaceTime n'existe que sur macOS.
+    let expected: &[&str] = if cfg!(target_os = "linux") {
+        &["teams", "slack", "zoom", "webex", "discord"]
+    } else {
+        &["teams", "slack", "zoom", "webex", "discord", "facetime"]
+    };
+    assert_eq!(ids, expected, "navigateur désactivé par défaut");
     audio.call_apps.iter_mut().for_each(|a| a.enabled = a.id == "browser");
     let w = steno_core::live::watch_list(&audio);
     assert_eq!(w.len(), 1);
     assert!(w[0].bundles.iter().any(|b| b == "com.google.Chrome"));
+    if cfg!(target_os = "linux") {
+        // Linux : nom de l'exécutable (préfixe, sans casse) et identifiants Flatpak.
+        assert!(w[0].bundles.iter().any(|b| b == "firefox"));
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

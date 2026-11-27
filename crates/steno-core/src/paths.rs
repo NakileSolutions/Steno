@@ -2,7 +2,8 @@
 
 use std::path::PathBuf;
 
-/// Dossier des données : `~/Library/Application Support/Steno` sur macOS.
+/// Dossier des données : `~/Library/Application Support/Steno` sur macOS,
+/// `~/.local/share/Steno` sous Linux (`$XDG_DATA_HOME/Steno`).
 pub fn home() -> PathBuf {
     if let Ok(h) = std::env::var("STENO_HOME") {
         if !h.is_empty() {
@@ -18,7 +19,7 @@ pub fn db_path() -> PathBuf {
     home().join("steno.db")
 }
 
-/// Tampons audio temporaires : `~/Library/Caches/Steno`.
+/// Tampons audio temporaires : `~/Library/Caches/Steno` sur macOS, `~/.cache/Steno` sous Linux.
 pub fn cache_dir() -> PathBuf {
     if std::env::var("STENO_HOME").map(|h| !h.is_empty()).unwrap_or(false) {
         return home().join("cache");
@@ -39,6 +40,27 @@ pub fn backups_dir() -> PathBuf {
 
 pub fn logs_dir() -> PathBuf {
     home().join("logs")
+}
+
+/// Modèles audio du sidecar Linux (Parakeet, Silero…) : `STENO_MODELS_DIR`, sinon
+/// `$STENO_HOME/models` si `STENO_HOME` est fixé, sinon `~/.local/share/Steno/models`.
+/// (Sur macOS, le sidecar Swift range ses modèles lui-même, via FluidAudio.)
+pub fn models_dir() -> PathBuf {
+    models_dir_from(
+        std::env::var("STENO_MODELS_DIR").ok().as_deref(),
+        std::env::var("STENO_HOME").ok().as_deref(),
+        dirs::data_dir(),
+    )
+}
+
+fn models_dir_from(models: Option<&str>, steno_home: Option<&str>, data: Option<PathBuf>) -> PathBuf {
+    if let Some(m) = models.filter(|m| !m.is_empty()) {
+        return PathBuf::from(m);
+    }
+    if let Some(h) = steno_home.filter(|h| !h.is_empty()) {
+        return PathBuf::from(h).join("models");
+    }
+    data.unwrap_or_else(|| PathBuf::from(".")).join("Steno").join("models")
 }
 
 /// Reprend les données de l'ancien nom de l'app (« Scribe ») : dossiers des données et des
@@ -83,6 +105,14 @@ pub fn ensure_dirs() -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dossier_des_modeles() {
+        let data = Some(PathBuf::from("/home/u/.local/share"));
+        assert_eq!(models_dir_from(Some("/m"), Some("/h"), data.clone()), PathBuf::from("/m"));
+        assert_eq!(models_dir_from(Some(""), Some("/h"), data.clone()), PathBuf::from("/h/models"));
+        assert_eq!(models_dir_from(None, None, data), PathBuf::from("/home/u/.local/share/Steno/models"));
+    }
 
     #[test]
     fn reprise_de_la_base_de_l_ancien_nom() {

@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Sténo — assistant de réunion local (barre de menu)"
+description = "Sténo — assistant de réunion local (barre d'état)"
 
 [lib]
 name = "steno_app_lib"
@@ -34,6 +34,7 @@ tauri-plugin-autostart = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 dirs.workspace = true
+which.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Clic sur une notification (le plugin de notification ne le gère pas sur macOS).

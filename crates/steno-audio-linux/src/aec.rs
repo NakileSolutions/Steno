@@ -1,8 +1,12 @@
 //! Annulation d'écho sur le micro (WebRTC AEC3), l'équivalent du voice processing de macOS :
-//! le son de l'app d'appel (canal « them ») sert de référence, retirée du micro quand
-//! l'utilisateur n'a pas de casque. Trames de 10 ms à 16 kHz. Désactivable par
-//! `STENO_AEC=0` ; absente en présentiel (rien n'est joué, et le traitement atténuerait les
-//! personnes éloignées du micro).
+//! le son de l'app d'appel (canal « them ») sert de référence, retirée du micro quand le son
+//! sort par des haut-parleurs. Trames de 10 ms à 16 kHz.
+//!
+//! Active seulement quand la sortie par défaut n'est pas un casque : sans écho à retirer, AEC3
+//! atténue le micro pendant ses premières secondes de convergence chaque fois que les
+//! participants parlent (mesuré : début de phrase perdu). `STENO_AEC=1` force l'activation,
+//! `STENO_AEC=0` la désactive. Absente en présentiel (rien n'est joué, et le traitement
+//! atténuerait les personnes éloignées du micro).
 
 #[cfg(feature = "aec")]
 mod imp {
@@ -76,8 +80,18 @@ mod imp {
 
 pub use imp::EchoCanceller3;
 
-pub fn enabled_by_env() -> bool {
-    std::env::var("STENO_AEC").map(|v| v != "0").unwrap_or(true)
+/// Choix forcé par `STENO_AEC` (`Some(true)` / `Some(false)`), `None` = automatique.
+pub fn forced_by_env() -> Option<bool> {
+    match std::env::var("STENO_AEC").as_deref() {
+        Ok("0") => Some(false),
+        Ok("1") => Some(true),
+        _ => None,
+    }
+}
+
+/// Faut-il annuler l'écho pour cette sortie par défaut ? Oui sauf casque (ou sortie inconnue).
+pub fn wanted(headphones_output: Option<bool>) -> bool {
+    forced_by_env().unwrap_or(!headphones_output.unwrap_or(false))
 }
 
 #[cfg(all(test, feature = "aec"))]

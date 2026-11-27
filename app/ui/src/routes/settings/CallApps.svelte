@@ -4,6 +4,7 @@
   import { callAppId, isBuiltinCallApp, isValidBundle, parseBundles } from '../../lib/listening';
   import Icon from '../../lib/components/Icon.svelte';
   import { t } from '../../lib/i18n.svelte';
+  import { isLinux } from '../../lib/platform';
 
   let { settings = $bindable() }: { settings: Settings } = $props();
 
@@ -31,9 +32,15 @@
     const n = name.trim();
     const bundles = parseBundles(bundleText);
     if (!n) return void (error = t('Donnez un nom à l’app.'));
-    if (!bundles.length) return void (error = t('Indiquez l’identifiant de bundle de l’app (ex. com.example.app).'));
+    if (!bundles.length)
+      return void (error = isLinux
+        ? t('Indiquez le nom du programme ou l’identifiant Flatpak de l’app (ex. zoom, us.zoom.Zoom).')
+        : t('Indiquez l’identifiant de bundle de l’app (ex. com.example.app).'));
     const bad = bundles.find((b) => !isValidBundle(b));
-    if (bad) return void (error = t('« {bad} » n’est pas un identifiant de bundle (ex. com.example.app).', { bad }));
+    if (bad)
+      return void (error = isLinux
+        ? t('« {bad} » n’est pas un nom de programme ni un identifiant Flatpak (ex. zoom, us.zoom.Zoom).', { bad })
+        : t('« {bad} » n’est pas un identifiant de bundle (ex. com.example.app).', { bad }));
     settings.audio.call_apps.push({ id: newId, name: n, bundles, enabled: true, browser: false });
     cancel();
   }
@@ -75,10 +82,12 @@
       <div class="grow col">
         <div class="inputs">
           <label class="col"><span class="small muted">{t('Nom')}</span><input class="input" bind:this={nameInput} bind:value={name} placeholder="Google Chat" oninput={() => (error = '')} /></label>
-          <label class="col"><span class="small muted">{t('Identifiant de bundle')}</span><input class="input mono" bind:value={bundleText} placeholder="com.example.app" spellcheck="false" autocapitalize="off" oninput={() => (error = '')} /></label>
+          <label class="col"><span class="small muted">{isLinux ? t('Programme ou identifiant Flatpak') : t('Identifiant de bundle')}</span><input class="input mono" bind:value={bundleText} placeholder={isLinux ? 'zoom, us.zoom.Zoom' : 'com.example.app'} spellcheck="false" autocapitalize="off" oninput={() => (error = '')} /></label>
         </div>
         <p class="tiny faint">
-          {#if name.trim()}{t('Identifiant :')} <code>{newId}</code> · {/if}{t('Plusieurs préfixes possibles, séparés par des virgules. Les processus auxiliaires dont le bundle commence ainsi sont inclus.')}
+          {#if name.trim()}{t('Identifiant :')} <code>{newId}</code> · {/if}{isLinux
+            ? t('Plusieurs valeurs possibles, séparées par des virgules : début du nom du programme (sans casse) ou de l’identifiant Flatpak / Snap. Les processus lancés par l’app sont inclus.')
+            : t('Plusieurs préfixes possibles, séparés par des virgules. Les processus auxiliaires dont le bundle commence ainsi sont inclus.')}
         </p>
         {#if error}<p class="aerr small" role="alert">{error}</p>{/if}
         <div class="row">

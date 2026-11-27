@@ -4,6 +4,8 @@
   import CallApps from './CallApps.svelte';
   import InputDevice from './InputDevice.svelte';
   import { t, tk } from '../../lib/i18n.svelte';
+  import { isLinux } from '../../lib/platform';
+  import DesktopShortcuts from '../../lib/components/DesktopShortcuts.svelte';
 
   let { settings = $bindable() }: { settings: Settings } = $props();
   const SHORTCUTS = [
@@ -50,11 +52,12 @@
   <div class="field-body"><TagInput bind:values={settings.audio.vocabulary} label={t('Vocabulaire')} placeholder="ms-booking, ORION…" /></div>
 </div>
 <div class="field">
-  <div class="field-label">{t('Raccourcis globaux')}<span class="hint">{t('Ex. Ctrl+Alt+S, Cmd+Shift+Space. La fin d’un appel n’arrête pas l’écoute : bouton, raccourci, barre d’état ou voix.')}</span></div>
+  <div class="field-label">{t('Raccourcis globaux')}<span class="hint">{isLinux ? t('Ex. Ctrl+Alt+S, Super+Shift+Space. La fin d’un appel n’arrête pas l’écoute : bouton, raccourci, icône de la barre d’état ou voix.') : t('Ex. Ctrl+Alt+S, Cmd+Shift+Space. La fin d’un appel n’arrête pas l’écoute : bouton, raccourci, barre d’état ou voix.')}</span></div>
   <div class="field-body">
     {#each SHORTCUTS as sc (sc.id)}
       <label class="sc"><span>{t(sc.label)}</span><input class="input mono" bind:value={settings.audio.shortcuts[sc.id]} /></label>
     {/each}
+    <DesktopShortcuts shortcuts={settings.audio.shortcuts} />
   </div>
 </div>
 

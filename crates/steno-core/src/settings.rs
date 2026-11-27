@@ -296,23 +296,29 @@ fn yes() -> bool {
     true
 }
 
-/// Catalogue par défaut des apps de visio.
+fn call_app(id: &str, name: &str, bundles: &[&str], enabled: bool, browser: bool) -> CallApp {
+    CallApp { id: id.into(), name: name.into(), bundles: bundles.iter().map(|b| b.to_string()).collect(), enabled, browser }
+}
+
+/// Catalogue par défaut des apps de visio pour le système courant.
 pub fn default_call_apps() -> Vec<CallApp> {
-    let app = |id: &str, name: &str, bundles: &[&str], enabled: bool, browser: bool| CallApp {
-        id: id.into(),
-        name: name.into(),
-        bundles: bundles.iter().map(|b| b.to_string()).collect(),
-        enabled,
-        browser,
-    };
+    if cfg!(target_os = "linux") {
+        linux_call_apps()
+    } else {
+        macos_call_apps()
+    }
+}
+
+/// macOS : préfixes d'identifiant de bundle (auxiliaires compris).
+pub fn macos_call_apps() -> Vec<CallApp> {
     vec![
-        app("teams", "Microsoft Teams", &["com.microsoft.teams2", "com.microsoft.teams"], true, false),
-        app("slack", "Slack", &["com.tinyspeck.slackmacgap"], true, false),
-        app("zoom", "Zoom", &["us.zoom.xos", "us.zoom.CptHost"], true, false),
-        app("webex", "Webex", &["Cisco-Systems.Spark", "com.cisco.webexmeetingsapp", "com.webex.meetingmanager"], true, false),
-        app("discord", "Discord", &["com.hnc.Discord"], true, false),
-        app("facetime", "FaceTime", &["com.apple.FaceTime"], true, false),
-        app(
+        call_app("teams", "Microsoft Teams", &["com.microsoft.teams2", "com.microsoft.teams"], true, false),
+        call_app("slack", "Slack", &["com.tinyspeck.slackmacgap"], true, false),
+        call_app("zoom", "Zoom", &["us.zoom.xos", "us.zoom.CptHost"], true, false),
+        call_app("webex", "Webex", &["Cisco-Systems.Spark", "com.cisco.webexmeetingsapp", "com.webex.meetingmanager"], true, false),
+        call_app("discord", "Discord", &["com.hnc.Discord"], true, false),
+        call_app("facetime", "FaceTime", &["com.apple.FaceTime"], true, false),
+        call_app(
             "browser",
             "Navigateur (Google Meet…)",
             &[
@@ -327,6 +333,71 @@ pub fn default_call_apps() -> Vec<CallApp> {
             true,
         ),
     ]
+}
+
+/// Linux : le sidecar compare chaque entrée (préfixe, sans casse) au nom de l'exécutable du
+/// processus audio (`application.process.binary`, `/proc/<pid>/comm`), à l'identifiant d'app
+/// Flatpak ou Snap, puis en dernier recours à `application.name` ; un processus enfant
+/// appartient à l'app de son ancêtre.
+pub fn linux_call_apps() -> Vec<CallApp> {
+    vec![
+        call_app("teams", "Microsoft Teams", LINUX_BUNDLES[0].1, true, false),
+        call_app("slack", "Slack", LINUX_BUNDLES[1].1, true, false),
+        call_app("zoom", "Zoom", LINUX_BUNDLES[2].1, true, false),
+        call_app("webex", "Webex", LINUX_BUNDLES[3].1, true, false),
+        call_app("discord", "Discord", LINUX_BUNDLES[4].1, true, false),
+        call_app("browser", "Navigateur (Google Meet…)", LINUX_BUNDLES[5].1, false, true),
+    ]
+}
+
+/// Valeurs Linux des apps connues (même ordre que `linux_call_apps`).
+const LINUX_BUNDLES: [(&str, &[&str]); 6] = [
+    ("teams", &["teams-for-linux", "com.github.IsmaelMartinez.teams_for_linux", "teams"]),
+    ("slack", &["slack", "com.slack.Slack"]),
+    // « zoom » couvre aussi ZoomWebviewHost.
+    ("zoom", &["zoom", "us.zoom.Zoom"]),
+    ("webex", &["webex", "CiscoCollabHost", "com.cisco.webex"]),
+    ("discord", &["discord", "Discord", "com.discordapp.Discord", "vesktop", "dev.vencord.Vesktop"]),
+    (
+        "browser",
+        &[
+            "chrome",
+            "google-chrome",
+            "chromium",
+            "com.google.Chrome",
+            "org.chromium.Chromium",
+            "firefox",
+            "org.mozilla.firefox",
+            "msedge",
+            "microsoft-edge",
+            "com.microsoft.Edge",
+            "brave",
+            "com.brave.Browser",
+            "vivaldi",
+            "opera",
+        ],
+    ),
+];
+
+/// Identifiant de bundle macOS (`com.…`, `us.zoom.…`, `Cisco-Systems.…`…), sans valeur sous Linux.
+fn is_macos_bundle(b: &str) -> bool {
+    b.contains('.') && ["com.", "us.", "org.", "Cisco-", "company."].iter().any(|p| b.starts_with(p))
+}
+
+/// Réglages venus d'un Mac (base ou TOML importés) : une app connue qui n'a que des bundles
+/// macOS reçoit en plus les valeurs Linux, pour être reconnue par le sidecar Linux.
+pub fn complete_linux_bundles(apps: &mut [CallApp]) {
+    for app in apps.iter_mut() {
+        let Some((_, linux)) = LINUX_BUNDLES.iter().find(|(id, _)| *id == app.id) else { continue };
+        if app.bundles.is_empty() || !app.bundles.iter().all(|b| is_macos_bundle(b)) {
+            continue;
+        }
+        for b in linux.iter() {
+            if !app.bundles.iter().any(|x| x == b) {
+                app.bundles.push(b.to_string());
+            }
+        }
+    }
 }
 
 /// Nom court pour les libellés (« Teams », « Slack »…).
@@ -432,7 +503,7 @@ pub struct PrivacySettings {
     pub consent_message: String,
 }
 
-/// Message d'information par défaut : honnête sur ce qui sort du Mac (le compte rendu passe
+/// Message d'information par défaut : honnête sur ce qui sort de l'ordinateur (le compte rendu passe
 /// par un assistant IA).
 pub const DEFAULT_CONSENT_MESSAGE: &str = "Pour information : j'utilise Sténo pour transcrire cette réunion et en préparer un compte rendu. La transcription reste sur mon ordinateur ; un assistant IA s'en sert pour rédiger le compte rendu. Dites-le-moi si vous préférez que je ne transcrive pas.";
 
@@ -456,9 +527,9 @@ pub struct ProfileSettings {
     pub role: String,
     pub team: String,
     pub jira_key_pattern: String,
-    /// Apparence de l'app : `auto` (suit macOS), `light` ou `dark`.
+    /// Apparence de l'app : `auto` (suit le système), `light` ou `dark`.
     pub theme: String,
-    /// Langue de l'interface et des comptes rendus : `auto` (langue de macOS), `fr` ou `en`.
+    /// Langue de l'interface et des comptes rendus : `auto` (langue du système), `fr` ou `en`.
     pub language: String,
 }
 
@@ -485,21 +556,43 @@ pub fn lang_from_code(code: &str) -> &'static str {
     if base == "fr" || base.len() < 2 || base == "posix" { "fr" } else { "en" }
 }
 
-/// Langue de macOS (préférences de l'utilisateur), `fr` ou `en`.
+/// Langue du système, `fr` ou `en` : préférences de l'utilisateur sur macOS, variables de
+/// langue (`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`) ailleurs.
 pub fn system_lang() -> &'static str {
     static L: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
     L.get_or_init(|| {
-        let from_env = std::env::var("LANG").unwrap_or_default();
-        let mac = std::process::Command::new("/usr/bin/defaults")
-            .args(["read", "-g", "AppleLanguages"])
-            .output()
-            .ok()
-            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-            .unwrap_or_default();
-        let first = mac.split(['"', ',', '(', ')', '\n', ' ']).find(|w| w.len() >= 2).unwrap_or(&from_env).to_lowercase();
-        let pick = if first.is_empty() { from_env.to_lowercase() } else { first };
-        lang_from_code(&pick)
+        #[cfg(target_os = "macos")]
+        {
+            let from_env = std::env::var("LANG").unwrap_or_default();
+            let mac = std::process::Command::new("/usr/bin/defaults")
+                .args(["read", "-g", "AppleLanguages"])
+                .output()
+                .ok()
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                .unwrap_or_default();
+            let first =
+                mac.split(['"', ',', '(', ')', '\n', ' ']).find(|w| w.len() >= 2).unwrap_or(&from_env).to_lowercase();
+            let pick = if first.is_empty() { from_env.to_lowercase() } else { first };
+            lang_from_code(&pick)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            lang_from_env(|k| std::env::var(k).ok())
+        }
     })
+}
+
+/// Langue d'après les variables de langue POSIX, dans l'ordre de priorité de gettext :
+/// `LANGUAGE` (liste « fr:en », première entrée), `LC_ALL`, `LC_MESSAGES`, `LANG`.
+pub fn lang_from_env(get: impl Fn(&str) -> Option<String>) -> &'static str {
+    for key in ["LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"] {
+        let v = get(key).unwrap_or_default();
+        let first = v.split(':').map(str::trim).find(|x| !x.is_empty()).unwrap_or("");
+        if !first.is_empty() {
+            return lang_from_code(first);
+        }
+    }
+    lang_from_code("")
 }
 
 impl Settings {
@@ -522,7 +615,11 @@ impl Settings {
                 }
             }
         }
-        Ok(serde_json::from_value(serde_json::Value::Object(root)).unwrap_or_default())
+        let mut s: Settings = serde_json::from_value(serde_json::Value::Object(root)).unwrap_or_default();
+        if cfg!(target_os = "linux") {
+            complete_linux_bundles(&mut s.audio.call_apps);
+        }
+        Ok(s)
     }
 
     pub fn save(&self, db: &Db) -> Result<()> {
@@ -602,6 +699,9 @@ impl Settings {
             app.bundles = app.bundles.iter().map(|b| b.trim().to_string()).filter(|b| !b.is_empty()).collect();
         }
         self.audio.call_apps.retain(|a| !a.id.is_empty() && !a.bundles.is_empty() && seen.insert(a.id.clone()));
+        if cfg!(target_os = "linux") {
+            complete_linux_bundles(&mut self.audio.call_apps);
+        }
         self.voice.variants.retain(|v| !v.trim().is_empty());
         self.voice.variants.dedup();
         Ok(self)
@@ -714,7 +814,7 @@ mod tests {
         db.set_setting("audio", r#"{"auto_detect_teams":false}"#).unwrap();
         let s = Settings::load(&db).unwrap();
         assert!(!s.audio.auto_detect_calls);
-        assert_eq!(s.audio.call_apps.len(), 7);
+        assert_eq!(s.audio.call_apps.len(), if cfg!(target_os = "linux") { 6 } else { 7 });
         assert!(!s.audio.call_app("browser").unwrap().enabled);
         assert_eq!(short_app_name(s.audio.call_app("teams").unwrap()), "Teams");
         assert_eq!(short_app_name(s.audio.call_app("browser").unwrap()), "Navigateur");
@@ -761,6 +861,53 @@ mod tests {
         assert_eq!(lang_from_code("C.UTF-8"), "fr");
         assert_eq!(lang_from_code("POSIX"), "fr");
         assert_eq!(lang_from_code(""), "fr");
+        let env = |vars: &'static [(&'static str, &'static str)]| {
+            move |k: &str| vars.iter().find(|(n, _)| *n == k).map(|(_, v)| v.to_string())
+        };
+        assert_eq!(lang_from_env(env(&[("LANGUAGE", "en_GB:fr"), ("LANG", "fr_FR.UTF-8")])), "en");
+        assert_eq!(lang_from_env(env(&[("LANGUAGE", ""), ("LC_ALL", ""), ("LC_MESSAGES", "fr_BE.UTF-8"), ("LANG", "en_US.UTF-8")])), "fr");
+        assert_eq!(lang_from_env(env(&[("LANG", "de_DE.UTF-8")])), "en");
+        assert_eq!(lang_from_env(env(&[("LC_ALL", "fr_CA.UTF-8"), ("LANG", "en_US.UTF-8")])), "fr");
+        assert_eq!(lang_from_env(env(&[])), "fr");
+    }
+
+    #[test]
+    fn apps_de_visio_par_systeme() {
+        let linux = linux_call_apps();
+        assert!(linux.iter().all(|a| a.id != "facetime"), "pas de FaceTime sous Linux");
+        assert!(linux.iter().find(|a| a.id == "teams").unwrap().bundles.contains(&"teams-for-linux".to_string()));
+        assert!(!linux.iter().find(|a| a.id == "browser").unwrap().enabled);
+        assert_eq!(macos_call_apps().len(), 7);
+        let expected = if cfg!(target_os = "linux") { linux } else { macos_call_apps() };
+        assert_eq!(default_call_apps(), expected);
+    }
+
+    #[test]
+    fn reglages_importes_d_un_mac() {
+        let mut apps = macos_call_apps();
+        apps.push(CallApp { id: "perso".into(), name: "Perso".into(), bundles: vec!["com.perso.app".into()], enabled: true, browser: false });
+        // Slack déjà adapté à la main : on n'y touche pas.
+        apps[1].bundles.push("slack-beta".into());
+        complete_linux_bundles(&mut apps);
+        let get = |id: &str| apps.iter().find(|a| a.id == id).unwrap().bundles.clone();
+        let teams = get("teams");
+        assert_eq!(&teams[..2], ["com.microsoft.teams2", "com.microsoft.teams"], "les bundles macOS restent");
+        assert!(teams.contains(&"teams-for-linux".to_string()));
+        assert_eq!(get("slack"), ["com.tinyspeck.slackmacgap", "slack-beta"]);
+        assert!(get("browser").contains(&"firefox".to_string()));
+        assert_eq!(get("browser").iter().filter(|b| *b == "org.mozilla.firefox").count(), 1, "pas de doublon");
+        assert_eq!(get("facetime"), ["com.apple.FaceTime"], "app sans équivalent Linux : inchangée");
+        assert_eq!(get("perso"), ["com.perso.app"], "app ajoutée : inchangée");
+        // Deuxième passage : rien ne change (les valeurs Linux ne sont pas des bundles macOS).
+        let before = apps.clone();
+        complete_linux_bundles(&mut apps);
+        assert_eq!(apps, before);
+        // Normalisation (import TOML, enregistrement) : appliquée sous Linux seulement.
+        let mut s = Settings::default();
+        s.audio.call_apps = macos_call_apps();
+        let v = s.validated().unwrap();
+        let zoom = v.audio.call_app("zoom").unwrap();
+        assert_eq!(zoom.bundles.contains(&"zoom".to_string()), cfg!(target_os = "linux"));
     }
 
     #[test]

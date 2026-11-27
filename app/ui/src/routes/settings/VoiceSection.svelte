@@ -174,7 +174,7 @@
           {#if outputGone}<option value={settings.voice.feedback_device}>{t('Sortie choisie — débranchée, sortie par défaut utilisée')}</option>{/if}
         </select>
       </div>
-      {#if !outputs.length && outputsLoaded}<p class="tiny faint">{t('Liste disponible dans l’app sur Mac.')}</p>{/if}
+      {#if !outputs.length && outputsLoaded}<p class="tiny faint">{t('Liste disponible dans l’app de bureau.')}</p>{/if}
       {#if settings.voice.feedback === 'headset' && !settings.voice.feedback_device}<p class="tiny faint">{t('Joué seulement si la sortie par défaut est un casque.')}</p>{/if}
       {#if outputGone}<p class="tiny gonec">{t('Sortie choisie débranchée : le signal est joué sur la sortie par défaut.')}</p>{/if}
     {/if}

@@ -81,7 +81,7 @@
 </div>
 
 <div class="field">
-  <div class="field-label">{t('Mes formats')}<span class="hint">{t('Enregistrés sur ce Mac, réutilisables pour toutes les réunions.')}</span></div>
+  <div class="field-label">{t('Mes formats')}<span class="hint">{t('Enregistrés sur cet ordinateur, réutilisables pour toutes les réunions.')}</span></div>
   <div class="field-body">
     {#each settings.report.templates as tp, i (i)}
       <div class="tpl">

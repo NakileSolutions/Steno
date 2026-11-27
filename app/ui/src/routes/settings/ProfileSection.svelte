@@ -14,7 +14,7 @@
 </script>
 
 <div class="field">
-  <label class="field-label" for="p-lang">{t('Langue')}<span class="hint">{t('Interface et comptes rendus. Auto suit la langue de macOS.')}</span></label>
+  <label class="field-label" for="p-lang">{t('Langue')}<span class="hint">{t('Interface et comptes rendus. Auto suit la langue du système.')}</span></label>
   <div class="field-body">
     <select id="p-lang" class="input w" value={settings.profile.language ?? 'auto'} onchange={(e) => (settings.profile.language = e.currentTarget.value as 'auto' | 'fr' | 'en')}>
       <option value="auto">{t('Auto')}</option>
@@ -24,7 +24,7 @@
   </div>
 </div>
 <div class="field">
-  <div class="field-label">{t('Apparence')}<span class="hint">{t('Auto suit le réglage de macOS.')}</span></div>
+  <div class="field-label">{t('Apparence')}<span class="hint">{t('Auto suit le réglage du système.')}</span></div>
   <div class="field-body">
     <div class="seg-ctl" role="radiogroup" aria-label={t('Apparence')}>
       {#each [['auto', t('Auto')], ['light', t('Clair')], ['dark', t('Sombre')]] as [v, l] (v)}
