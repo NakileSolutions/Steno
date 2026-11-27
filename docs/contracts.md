@@ -200,6 +200,11 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
 {
   "agent": {
     "provider": "claude-code",
+    "tiers": {
+      "search":  { "agent": "", "model": "", "effort": "" },
+      "summary": { "agent": "", "model": "", "effort": "" },
+      "quick":   { "agent": "", "model": "", "effort": "" }
+    },
     "models": { "quick": "", "search": "", "summary": "" },
     "custom_command": "",
     "allow_api_key": false,
@@ -246,6 +251,14 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
 }
 ```
 
+- `agent.provider` : agent par défaut (`claude-code`, `codex`, `antigravity`, `grok`, `gemini`,
+  `opencode`, `custom`).
+- `agent.tiers` : choix **par usage**. `search` = recherches en direct, questions sur
+  l'historique et corrélation ; `summary` = compte rendu de fin de réunion ; `quick` = notes,
+  récapitulatifs, tests. Pour chacun : `agent` (vide = `provider`), `model` (vide = modèle par
+  défaut du CLI ; texte libre accepté) et `effort` (niveau de réflexion, vide = défaut du CLI ;
+  valeurs proposées par l'agent, voir `AgentInfo.efforts`). `agent.models` est l'ancien format
+  (modèle par niveau pour l'agent par défaut), encore lu si `tiers.*.model` est vide.
 - `voice.feedback` : `none | system | headset`.
 - `audio.auto_detect_calls` (ancien nom accepté : `auto_detect_teams`) : proposer
   (notification) de démarrer l'écoute quand un appel commence dans une app surveillée.
@@ -307,7 +320,10 @@ type LiveState = { state: "idle" | "listening" | "paused" | "processing";
 type AgentInfo = { id: string; name: string; support: "supported" | "experimental" | "generic";
   installed: boolean; version: string | null; error: string | null;
   capabilities: { resume_session: boolean; stream_json: boolean; read_only_files: boolean;
-                  tool_deny_list: boolean; extra_dirs: boolean } };
+                  tool_deny_list: boolean; extra_dirs: boolean };
+  efforts: string[];        /* niveaux de réflexion acceptés par le CLI (ex. low…max) ; vide = non réglable */
+  lists_models: boolean };  /* true : `list_models` interroge le CLI ; false : suggestions + saisie libre */
+type ModelInfo = { id: string; name: string; note: string | null };
 type Connector = { id: number; provider: string; name: string; status: string; detected_at: string;
   use_live: boolean; use_correlation: boolean; write_blockable: boolean };
 type Repo = { id: number; label: string; path: string; use_live: boolean; use_correlation: boolean;
@@ -356,7 +372,8 @@ type Settings = /* section 4 */;
 | `export_settings` | — | `string` (TOML) |
 | `import_settings` | `toml: string` | `Settings` |
 | `detect_agents` | — | `AgentInfo[]` |
-| `test_agent` | `provider: string` | `{ ok: boolean, message: string, duration_ms: number }` |
+| `list_models` | `provider: string` | `ModelInfo[]` (modèles proposés par le CLI ; la saisie libre reste possible) |
+| `test_agent` | `provider: string`, `model?: string`, `effort?: string` | `{ ok: boolean, message: string, duration_ms: number }` |
 | `list_connectors` | — | `Connector[]` |
 | `refresh_connectors` | — | `Connector[]` |
 | `update_connector` | `id: number, useLive: boolean, useCorrelation: boolean` | `Connector` |
