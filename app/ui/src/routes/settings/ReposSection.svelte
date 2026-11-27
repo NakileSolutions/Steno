@@ -59,8 +59,8 @@
         <button class="btn ghost sm icon" onclick={() => remove(r)} aria-label="Retirer {r.label}" title="Retirer"><Icon name="trash" size={13} /></button>
       </div>
       <div class="row opts">
-        <label class="check small"><input type="checkbox" bind:checked={r.use_live} onchange={() => update(r)} /> En direct</label>
-        <label class="check small"><input type="checkbox" bind:checked={r.use_correlation} onchange={() => update(r)} /> Corrélation</label>
+        <label class="check small"><input class="switch" type="checkbox" role="switch" bind:checked={r.use_live} onchange={() => update(r)} /> En direct</label>
+        <label class="check small"><input class="switch" type="checkbox" role="switch" bind:checked={r.use_correlation} onchange={() => update(r)} /> Corrélation</label>
       </div>
       <label class="globs">
         <span class="small muted">Exclusions (un motif glob par ligne)</span>
@@ -74,12 +74,13 @@
 <button class="btn" onclick={add}><Icon name="plus" size={14} />Ajouter un dossier…</button>
 
 <style>
-  .intro { margin: 14px 0; }
-  .list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
-  .repo { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
-  .label-in { width: 160px; font-weight: 600; height: 26px; }
+  .intro { margin: 20px 0 16px; line-height: 1.5; }
+  .list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+  .repo { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .repo > .row > :global(.icon:first-child) { color: var(--accent-text); }
+  .label-in { width: 180px; font-weight: 600; height: 28px; }
   .path { font-family: var(--mono); font-size: 11.5px; }
-  .opts { gap: 18px; padding-left: 24px; }
-  .globs { display: flex; flex-direction: column; gap: 4px; padding-left: 24px; }
+  .opts { gap: 22px; padding-left: 26px; color: var(--text-2); }
+  .globs { display: flex; flex-direction: column; gap: 6px; padding-left: 26px; }
   .globs textarea { font-size: 12px; }
 </style>

@@ -78,7 +78,7 @@
       {#each SETTINGS_SECTIONS as s (s.id)}<option value={s.id}>{s.label}</option>{/each}
     </select>
     {#if dirty}
-      <span class="faint small">Modifications non enregistrées</span>
+      <span class="unsaved small"><span class="udot" aria-hidden="true"></span>Modifications non enregistrées</span>
       <button class="btn" onclick={revert}>Annuler</button>
     {/if}
     {#if !immediate || dirty}
@@ -99,7 +99,9 @@
         {:else if section.id === 'profile'}<ProfileSection bind:settings={settings} />
         {:else}<ImportSection onimported={replaced} {dirty} />{/if}
       {:else}
-        <p class="faint">Chargement…</p>
+        <div class="skel" aria-hidden="true">
+          {#each [0, 1, 2] as k (k)}<div class="sk-row"><span class="skeleton" style="width: 30%"></span><span class="skeleton" style="width: {60 - k * 12}%"></span></div>{/each}
+        </div>
       {/if}
     </div>
   </div>
@@ -107,10 +109,16 @@
 
 <style>
   .settings { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-  .shead { gap: 10px; padding: 16px 32px 14px; border-bottom: 1px solid var(--line); background: var(--bg); flex: none; min-height: 62px; }
-  .sic { color: var(--text-2); display: flex; }
-  .secsel { width: auto; height: 26px; font-size: 12.5px; display: none; }
+  .shead { gap: 12px; padding: 18px 40px 16px; border-bottom: 1px solid var(--line); background: var(--bg); flex: none; min-height: 68px; }
+  .shead h1 { font-size: var(--fs-h2); }
+  .sic { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: var(--side-bg); color: #e6e9ff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.06); flex: none; }
+  .secsel { width: auto; height: 28px; font-size: 12.5px; display: none; }
   :global(.shell.collapsed) .secsel { display: block; }
+  .unsaved { display: inline-flex; align-items: center; gap: 7px; color: var(--warn); font-weight: 500; animation: appear var(--t) var(--ease); }
+  .udot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
   .sbody { flex: 1; min-height: 0; }
-  .inner { max-width: 860px; padding: 8px 32px 56px; }
+  .inner { max-width: 880px; padding: 4px 40px 64px; }
+  .skel { margin-top: 20px; padding: 20px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 22px; }
+  .sk-row { display: grid; grid-template-columns: 200px 1fr; gap: 24px; }
+  .sk-row .skeleton + .skeleton { margin-top: 0; }
 </style>

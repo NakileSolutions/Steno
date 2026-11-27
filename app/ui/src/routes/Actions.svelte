@@ -7,6 +7,7 @@
   import { toastError } from '../lib/ui.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import { isOverdue } from '../lib/group';
+  import { initial, speakerColor } from '../lib/components/speakers';
 
   let view = $state<'actions' | 'decisions'>('actions');
   let status = $state<'open' | 'done' | 'all'>('open');
@@ -84,10 +85,10 @@
           {#each allOwners as o}<option value={o}>{o}</option>{/each}
         </select>
       {/if}
-      <label class="row small faint">Du <input class="input" type="date" bind:value={from} /></label>
-      <label class="row small faint">au <input class="input" type="date" bind:value={to} /></label>
+      <label class="row small faint dl">Du <input class="input" type="date" bind:value={from} /></label>
+      <label class="row small faint dl">au <input class="input" type="date" bind:value={to} /></label>
       {#if owner || from || to}
-        <button class="btn ghost sm" onclick={() => { owner = ''; from = ''; to = ''; }}>Effacer les filtres</button>
+        <button class="btn ghost sm" onclick={() => { owner = ''; from = ''; to = ''; }}><Icon name="x" size={12} />Effacer les filtres</button>
       {/if}
     </div>
 
@@ -96,37 +97,37 @@
         <ul class="list">
           {#each actions as a (a.id)}
             <li class:done={a.status === 'done'}>
-              <input type="checkbox" checked={a.status === 'done'} onchange={(e) => toggle(a, e.currentTarget.checked)} aria-label="Fait : {a.text}" />
+              <input class="tick" type="checkbox" checked={a.status === 'done'} onchange={(e) => toggle(a, e.currentTarget.checked)} aria-label="Fait : {a.text}" />
               <div class="grow">
                 <p class="txt">{a.text}</p>
                 <p class="sub small">
-                  <a href={href(`/meetings/${a.meeting_id}`)}>{a.meeting_title ?? title(a.meeting_id)}</a>
-                  {#if a.meeting_started_at}{' · '}{dayLabel(a.meeting_started_at)}{/if}
+                  <a href={href(`/meetings/${a.meeting_id}`)}><Icon name="meetings" size={12} />{a.meeting_title ?? title(a.meeting_id)}</a>
+                  {#if a.meeting_started_at}<span class="sep">·</span>{dayLabel(a.meeting_started_at)}{/if}
                 </p>
               </div>
-              <span class="owner">{a.owner ?? '—'}</span>
-              <span class="due" class:late={overdue(a)}>{a.due ? shortDate(a.due) : ''}</span>
+              <span class="owner">{#if a.owner}<span class="avatar xs" style="--c: {speakerColor(a.owner)}" aria-hidden="true">{initial(a.owner)}</span>{/if}{a.owner ?? '—'}</span>
+              <span class="due" class:late={overdue(a)} class:none={!a.due}>{a.due ? shortDate(a.due) : ''}</span>
             </li>
           {/each}
         </ul>
       {:else}
-        <div class="empty"><Icon name="check" size={28} /><p>{status === 'open' ? 'Aucune action en attente.' : 'Aucune action.'}</p></div>
+        <div class="empty"><Icon name="check" size={24} stroke={1.5} /><p>{status === 'open' ? 'Aucune action en attente.' : 'Aucune action.'}</p></div>
       {/if}
     {:else}
       {#if decisions.length}
         <ul class="list">
           {#each decisions as d (d.id)}
             <li>
-              <span class="bullet" aria-hidden="true"></span>
+              <span class="bullet" aria-hidden="true"><Icon name="check" size={11} stroke={2.2} /></span>
               <div class="grow">
                 <p class="txt">{d.text}</p>
-                <p class="sub small"><a href={href(`/meetings/${d.meeting_id}`)}>{title(d.meeting_id)}</a> · {dayLabel(d.created_at)}</p>
+                <p class="sub small"><a href={href(`/meetings/${d.meeting_id}`)}><Icon name="meetings" size={12} />{title(d.meeting_id)}</a><span class="sep">·</span>{dayLabel(d.created_at)}</p>
               </div>
             </li>
           {/each}
         </ul>
       {:else}
-        <div class="empty"><p>Aucune décision sur la période.</p></div>
+        <div class="empty"><Icon name="actions" size={24} stroke={1.5} /><p>Aucune décision sur la période.</p></div>
       {/if}
     {/if}
   </div>
@@ -134,21 +135,36 @@
 
 <style>
   .page { height: 100%; }
-  .inner { max-width: 880px; padding: 24px 32px 48px; }
-  .head { margin-bottom: 14px; }
-  .filters { gap: 8px; margin-bottom: 14px; }
-  .filters .input { width: auto; height: 26px; font-size: 12.5px; }
-  .filters label { gap: 6px; }
-  .list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
-  .list li { display: flex; align-items: flex-start; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--line); }
-  .list li input { margin-top: 3px; }
-  .txt { font-size: 13.5px; line-height: 1.45; }
-  li.done .txt { color: var(--text-3); text-decoration: line-through; }
-  .sub { color: var(--text-3); margin-top: 1px; }
-  .sub a { color: var(--text-2); text-decoration: none; }
-  .sub a:hover { text-decoration: underline; }
-  .owner { width: 90px; text-align: right; color: var(--text-2); font-size: 12.5px; padding-top: 1px; }
-  .due { width: 60px; text-align: right; color: var(--text-3); font-size: 12px; padding-top: 2px; font-variant-numeric: tabular-nums; }
-  .due.late { color: var(--live); font-weight: 500; }
-  .bullet { width: 6px; height: 6px; border-radius: 50%; background: var(--text-2); margin: 7px 4px 0; flex: none; }
+  .inner { max-width: 900px; padding: 32px 40px 56px; }
+  .head { margin-bottom: 18px; }
+  .filters { gap: 8px; margin-bottom: 16px; }
+  .filters .input { width: auto; height: 30px; font-size: 12.5px; }
+  .filters .dl { gap: 6px; }
+  .list {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+  .list li { display: flex; align-items: flex-start; gap: 14px; padding: 12px 16px; border-top: 1px solid var(--line); transition: background var(--t-fast) var(--ease); animation: appear var(--t) var(--ease) both; }
+  .list li:first-child { border-top: 0; }
+  .list li:hover { background: var(--hover); }
+  .list li > input { margin-top: 1px; }
+  .txt { font-size: var(--fs-body); line-height: 1.45; }
+  li.done .txt { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--line-strong); }
+  .sub { color: var(--text-3); margin-top: 3px; display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+  .sub a { color: var(--text-2); text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
+  .sub a :global(.icon) { color: var(--text-3); }
+  .sub a:hover { color: var(--accent-text); }
+  .sep { margin: 0 6px; }
+  .owner { display: inline-flex; align-items: center; gap: 7px; min-width: 110px; justify-content: flex-end; color: var(--text-2); font-size: 12.5px; padding-top: 1px; }
+  .avatar.xs { width: 20px; height: 20px; font-size: 10px; }
+  .due { min-width: 64px; height: 22px; display: inline-grid; place-items: center; padding: 0 8px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-2); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+  .due.none { background: transparent; }
+  .due.late { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+  .bullet { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--ok-soft); color: var(--ok); flex: none; margin-top: 1px; }
 </style>

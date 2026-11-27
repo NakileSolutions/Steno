@@ -96,7 +96,7 @@
 <div class="field">
   <div class="field-label">Mode strict<span class="hint">Exige un préfixe avant le mot d’appel.</span></div>
   <div class="field-body">
-    <label class="check"><input type="checkbox" bind:checked={settings.voice.strict} /> Exiger un préfixe (« OK {settings.voice.wake_word} », « Dis {settings.voice.wake_word} »)</label>
+    <label class="check toggle"><span>Exiger un préfixe (« OK {settings.voice.wake_word} », « Dis {settings.voice.wake_word} »)</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.voice.strict} /></label>
     {#if settings.voice.strict}
       <TagInput bind:values={settings.voice.prefixes} label="Préfixes" placeholder="Ajouter un préfixe…" />
     {/if}
@@ -168,11 +168,12 @@
   .msg.err { color: var(--err); }
   .msg.warn { color: var(--warn); }
   .msg.ok { color: var(--ok); }
-  .rejected { padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
-  .rejected ul { list-style: none; margin: 4px 0 0; padding: 0; }
-  .rejected li { display: flex; gap: 10px; align-items: baseline; padding: 2px 0; }
-  .rejected code { min-width: 90px; }
-  .verbs { gap: 8px; }
-  .vlabel { display: flex; flex-direction: column; line-height: 1.3; }
-  .verb { display: grid; grid-template-columns: 190px 1fr; gap: 10px; align-items: center; }
+  .rejected { padding: 10px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); }
+  .rejected ul { list-style: none; margin: 6px 0 0; padding: 0; }
+  .rejected li { display: flex; gap: 12px; align-items: baseline; padding: 3px 0; }
+  .rejected code { min-width: 96px; color: var(--text); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--err) 60%, transparent); }
+  .verbs { gap: 10px; }
+  .vlabel { display: flex; flex-direction: column; line-height: 1.35; }
+  .vlabel strong { font-weight: 600; }
+  .verb { display: grid; grid-template-columns: 170px 1fr; gap: 12px; align-items: center; }
 </style>

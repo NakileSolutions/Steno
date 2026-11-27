@@ -13,7 +13,7 @@
 <div class="field">
   <div class="field-label">Teams<span class="hint">L’écoute ne démarre et ne s’arrête jamais toute seule.</span></div>
   <div class="field-body">
-    <label class="check"><input type="checkbox" bind:checked={settings.audio.auto_detect_teams} /> Proposer de démarrer l’écoute quand un appel Teams commence (notification seulement)</label>
+    <label class="check toggle"><span>Proposer de démarrer l’écoute quand un appel Teams commence (notification seulement)</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.audio.auto_detect_teams} /></label>
     <p class="small faint">La fin de l’appel Teams ne termine pas la réunion : arrêtez l’écoute avec le bouton, le raccourci, le menu de la barre d’état ou à la voix.</p>
   </div>
 </div>
@@ -22,7 +22,7 @@
   <div class="field-body">
     <div class="row">
       <input id="silence" type="range" min="400" max="2500" step="100" bind:value={settings.audio.silence_ms} />
-      <span class="small mono">{settings.audio.silence_ms} ms</span>
+      <span class="val small tnum">{settings.audio.silence_ms} ms</span>
     </div>
   </div>
 </div>
@@ -40,6 +40,7 @@
 </div>
 
 <style>
-  input[type='range'] { width: 260px; accent-color: var(--brand); }
-  .sc { display: grid; grid-template-columns: 170px 200px; align-items: center; gap: 10px; }
+  input[type='range'] { width: 280px; accent-color: var(--accent); }
+  .val { min-width: 64px; height: 24px; display: inline-grid; place-items: center; padding: 0 8px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-2); font-weight: 500; }
+  .sc { display: grid; grid-template-columns: 1fr 220px; align-items: center; gap: 12px; color: var(--text-2); }
 </style>

@@ -114,6 +114,15 @@
     document.getElementById(`tab-${TABS[j].id}`)?.focus();
   }
 
+  // Indicateur d'onglet glissant.
+  let tabEls = $state<Record<string, HTMLButtonElement>>({});
+  let ind = $state({ left: 0, width: 0, ready: false });
+  $effect(() => {
+    void counts[tab];
+    const el = tabEls[tab];
+    if (el) ind = { left: el.offsetLeft, width: el.offsetWidth, ready: true };
+  });
+
   const counts = $derived({
     report: detail?.report_versions.length ? `v${detail.report?.version}` : '',
     transcript: '',
@@ -140,19 +149,15 @@
         </div>
       </div>
       <div class="row meta wrap">
-        <span>{fullDate(m.started_at)}</span>
-        <span class="sep">·</span>
-        <span>{time(m.started_at)}{#if m.ended_at}{' – '}{time(m.ended_at)}{/if}</span>
-        <span class="sep">·</span>
-        <span>{duration(m.started_at, m.ended_at)}</span>
+        <span class="mi"><Icon name="calendar" size={13} />{fullDate(m.started_at)}</span>
+        <span class="mi tnum"><Icon name="clock" size={13} />{time(m.started_at)}{#if m.ended_at}{' – '}{time(m.ended_at)}{/if}<span class="sep">·</span>{duration(m.started_at, m.ended_at)}</span>
         {#if detail.speakers.length}
-          <span class="sep">·</span>
-          <span>{detail.speakers.length} intervenants</span>
+          <span class="mi"><Icon name="users" size={13} />{detail.speakers.length} intervenants</span>
         {/if}
-        {#if m.status === 'live'}<span class="badge live">En direct</span>
+        {#if m.status === 'live'}<span class="badge live"><span class="dot live" style="width:6px;height:6px"></span>En direct</span>
         {:else if m.status !== 'done'}<span class="badge">{MEETING_STATUS[m.status]}</span>{/if}
-        {#if m.confidential}<span class="badge"><Icon name="lock" size={11} /> Confidentielle</span>{/if}
-        {#if detail.report?.correlated}<span class="badge"><Icon name="link2" size={11} /> Corrélée</span>{/if}
+        {#if m.confidential}<span class="badge warn"><Icon name="lock" size={11} /> Confidentielle</span>{/if}
+        {#if detail.report?.correlated}<span class="badge accent"><Icon name="link2" size={11} /> Corrélée</span>{/if}
       </div>
       <div class="tabs" role="tablist" aria-label="Sections de la réunion" tabindex="-1" onkeydown={tabKey}>
         {#each TABS as t (t.id)}
@@ -162,15 +167,17 @@
             aria-selected={tab === t.id}
             aria-controls="panel"
             tabindex={tab === t.id ? 0 : -1}
+            bind:this={tabEls[t.id]}
             onclick={() => setQuery({ tab: t.id, request: null })}
           >
             {t.label}{#if counts[t.id]}<span class="cnt">{counts[t.id]}</span>{/if}
           </button>
         {/each}
+        <span class="ind" class:ready={ind.ready} style="transform: translateX({ind.left}px); width: {ind.width}px" aria-hidden="true"></span>
       </div>
     </header>
 
-    <div class="panel scroll" id="panel" role="tabpanel" aria-labelledby="tab-{tab}" bind:this={panel}>
+    {#key tab}<div class="panel scroll" id="panel" role="tabpanel" aria-labelledby="tab-{tab}" bind:this={panel}>
       {#if tab === 'report'}
         <ReportTab {detail} reload={load} />
       {:else if tab === 'transcript'}
@@ -180,46 +187,65 @@
       {:else}
         <NotesTab {detail} />
       {/if}
-    </div>
+    </div>{/key}
   </div>
 {/if}
 
 <style>
   .detail { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-  .dhead { padding: 20px 28px 0; border-bottom: 1px solid var(--line); flex: none; }
+  .dhead { padding: 24px 32px 0; border-bottom: 1px solid var(--line); flex: none; }
   .titlerow { align-items: flex-start; }
-  .titlerow h1 { padding-top: 2px; }
+  .titlerow h1 { padding-top: 1px; }
   .tools { gap: 2px; color: var(--text-2); }
-  .btn.on { color: var(--text); background: var(--selected); }
-  .meta { gap: 6px; margin-top: 4px; color: var(--text-2); font-size: 12.5px; }
-  .sep { color: var(--text-3); }
-  .meta .badge { margin-left: 4px; }
-  .tabs { display: flex; gap: 18px; margin-top: 16px; }
+  .btn.on { color: var(--warn); background: var(--warn-soft); }
+  .meta { gap: 6px 14px; margin-top: 8px; color: var(--text-2); font-size: 12.5px; }
+  .mi { display: inline-flex; align-items: center; gap: 6px; }
+  .mi :global(.icon) { color: var(--text-3); }
+  .sep { color: var(--text-3); margin: 0 6px; }
+  .tabs { position: relative; display: flex; gap: 4px; margin-top: 18px; margin-left: -10px; }
   .tabs button {
     position: relative;
     border: 0;
     background: none;
-    padding: 0 0 10px;
+    height: 36px;
+    padding: 0 10px 2px;
     font: inherit;
     font-weight: 500;
     color: var(--text-2);
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    border-radius: 7px 7px 0 0;
+    transition: color var(--t-fast) var(--ease);
   }
   .tabs button:hover { color: var(--text); }
+  .tabs button:focus-visible { outline-offset: -2px; border-radius: 7px; }
   .tabs button[aria-selected='true'] { color: var(--text); }
-  .tabs button[aria-selected='true']::after {
-    content: '';
+  .ind {
     position: absolute;
     left: 0;
-    right: 0;
     bottom: -1px;
     height: 2px;
     border-radius: 2px;
-    background: var(--text);
+    background: var(--accent);
+    opacity: 0;
+    pointer-events: none;
   }
-  .cnt { font-size: 11px; color: var(--text-3); font-weight: 500; }
-  .panel { flex: 1; min-height: 0; }
+  .ind.ready { opacity: 1; transition: transform 180ms var(--ease), width 180ms var(--ease); }
+  .cnt {
+    min-width: 18px;
+    height: 17px;
+    padding: 0 5px;
+    border-radius: var(--r-pill);
+    background: var(--surface-2);
+    font-size: var(--fs-micro);
+    color: var(--text-3);
+    font-weight: 600;
+    display: inline-grid;
+    place-items: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .tabs button[aria-selected='true'] .cnt { background: var(--accent-soft); color: var(--accent-text); }
+  .panel { flex: 1; min-height: 0; animation: appear var(--t) var(--ease); }
   .empty.full { height: 100%; }
 </style>

@@ -49,15 +49,18 @@
 <style>
   dialog {
     width: min(420px, calc(100vw - 32px));
-    padding: 20px;
+    padding: 22px 22px 18px;
     border: 1px solid var(--line);
-    border-radius: 12px;
+    border-radius: 16px;
     background: var(--surface);
     color: var(--text);
     box-shadow: var(--shadow);
   }
-  dialog::backdrop { background: rgba(15, 17, 23, 0.35); }
+  dialog[open] { animation: pop 180ms var(--ease); }
+  dialog::backdrop { background: rgba(15, 17, 23, 0.38); }
+  @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(0.98); } }
   form { display: flex; flex-direction: column; gap: 12px; }
-  .msg { line-height: 1.5; }
-  .actions { justify-content: flex-end; margin-top: 4px; }
+  h2 { font-size: var(--fs-h3); }
+  .msg { line-height: 1.55; }
+  .actions { justify-content: flex-end; margin-top: 8px; }
 </style>

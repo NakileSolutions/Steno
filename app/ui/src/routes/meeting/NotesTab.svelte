@@ -59,7 +59,7 @@
 </script>
 
 <div class="wrap">
-  <p class="faint small intro">Vos notes sont fusionnées dans le compte rendu (section « Mes notes »). Les modifications sont enregistrées en quittant le champ.</p>
+  <p class="faint small intro"><Icon name="info" size={13} />Vos notes sont fusionnées dans le compte rendu (section « Mes notes »). Les modifications sont enregistrées en quittant le champ.</p>
   <ul class="notes">
     {#each detail.notes as n (n.id)}
       <li>
@@ -86,27 +86,32 @@
 </div>
 
 <style>
-  .wrap { padding: 16px 28px 40px; max-width: 760px; }
-  .intro { margin-bottom: 12px; }
-  .notes { list-style: none; margin: 0 0 14px; padding: 0; }
-  .notes li { display: grid; grid-template-columns: 56px 1fr 28px; gap: 8px; align-items: start; padding: 4px 0; border-bottom: 1px solid var(--line); }
-  .meta { display: flex; gap: 4px; align-items: center; color: var(--text-3); font-size: 11.5px; padding-top: 7px; font-variant-numeric: tabular-nums; }
+  .wrap { padding: 18px 32px 48px; max-width: calc(72ch + 64px); }
+  .intro { margin-bottom: 14px; display: flex; gap: 6px; align-items: flex-start; line-height: 1.5; }
+  .intro :global(.icon) { margin-top: 2px; flex: none; }
+  .notes { list-style: none; margin: 0 0 16px; padding: 4px 0; }
+  .notes li { display: grid; grid-template-columns: 64px 1fr 30px; gap: 8px; align-items: start; padding: 4px 0; border-bottom: 1px solid var(--line); }
+  .notes li:last-child { border-bottom: 0; }
+  .meta { display: flex; gap: 5px; align-items: center; color: var(--text-3); font-size: var(--fs-meta); padding-top: 9px; font-variant-numeric: tabular-nums; }
+  .src { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); }
   .note {
     width: 100%;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: 8px;
     background: transparent;
     color: var(--text);
     font: inherit;
-    font-size: 13.5px;
-    line-height: 1.5;
-    padding: 4px 6px;
+    font-size: var(--fs-body);
+    line-height: 1.55;
+    padding: 6px 8px;
     resize: none;
     overflow: hidden;
+    transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
   }
   .note:hover { background: var(--hover); }
-  .note:focus { outline: none; border-color: var(--focus); background: var(--surface); }
-  .del { opacity: 0; margin-top: 3px; }
+  .note:focus { outline: none; border-color: var(--focus); background: var(--surface); box-shadow: var(--ring); }
+  .del { opacity: 0; margin-top: 4px; transition: opacity var(--t-fast) var(--ease); }
   li:hover .del, .del:focus-visible { opacity: 1; }
-  .add { display: flex; flex-direction: column; gap: 8px; }
+  .add { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); }
+  .add textarea { font-size: var(--fs-body); }
 </style>

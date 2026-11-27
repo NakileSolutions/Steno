@@ -28,7 +28,10 @@
 </div>
 
 <style>
-  .opt { align-items: flex-start; padding: 3px 0; }
-  .opt input { margin-top: 3px; }
+  .opt { align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+  .opt:hover { border-color: var(--line-strong); }
+  .opt:has(input:checked) { background: var(--accent-soft); border-color: var(--accent-line); }
+  .opt input { margin-top: 2px; }
+  [role='radiogroup'] { gap: 6px; }
   .num { width: 100px; }
 </style>

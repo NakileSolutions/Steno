@@ -43,22 +43,27 @@
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-    padding: 3px;
-    min-height: 28px;
+    padding: 4px;
+    min-height: 30px;
     border: 1px solid var(--line-strong);
     border-radius: var(--radius);
     background: var(--surface);
+    box-shadow: var(--shadow-xs);
+    transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
   }
-  .tags:focus-within { border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 22%, transparent); }
+  .tags:focus-within { border-color: var(--focus); box-shadow: var(--ring); }
   .tag {
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    height: 20px;
-    padding: 0 2px 0 7px;
-    border-radius: 5px;
+    height: 22px;
+    padding: 0 2px 0 8px;
+    border-radius: 6px;
     background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--line);
     font-size: 12px;
+    font-weight: 500;
+    animation: appear 120ms var(--ease);
   }
   .tag button {
     border: 0;
@@ -66,9 +71,9 @@
     color: var(--text-3);
     font-size: 14px;
     line-height: 1;
-    width: 16px;
-    height: 16px;
-    border-radius: 4px;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
     padding: 0;
   }
   .tag button:hover { color: var(--text); background: var(--hover); }

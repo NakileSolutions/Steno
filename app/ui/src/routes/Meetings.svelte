@@ -130,9 +130,15 @@
 
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="mlist scroll" onkeydown={listKeydown}>
-      {#if !loading && !list.length}
+      {#if loading && !list.length}
+        <div class="skel" aria-hidden="true">
+          {#each [0, 1, 2, 3] as k (k)}
+            <div class="skel-item"><span class="skeleton" style="width: {68 - k * 9}%"></span><span class="skeleton short"></span></div>
+          {/each}
+        </div>
+      {:else if !list.length}
         <div class="empty">
-          <Icon name="meetings" size={28} />
+          <Icon name="meetings" size={24} stroke={1.5} />
           <p>{query || activeFilters ? 'Aucune réunion ne correspond.' : 'Aucune réunion pour l’instant.'}</p>
         </div>
       {/if}
@@ -143,14 +149,14 @@
             <div class="row top">
               <span class="title grow ellipsis">{m.title ?? 'Réunion sans titre'}</span>
               {#if m.status === 'live'}<span class="badge live"><span class="dot live" style="width:6px;height:6px"></span>Direct</span>
-              {:else}<span class="faint tiny">{time(m.started_at)}</span>{/if}
+              {:else}<span class="when">{time(m.started_at)}</span>{/if}
             </div>
             <div class="row meta">
-              <span>{duration(m.started_at, m.ended_at)}</span>
-              {#if m.confidential}<span class="ic" title="Confidentielle"><Icon name="lock" size={12} /> Confidentielle</span>{/if}
-              {#if m.correlated}<span class="ic" title="Compte rendu corrélé"><Icon name="link2" size={12} /> Corrélée</span>{/if}
-              {#if m.open_actions}<span class="ic" title="Actions ouvertes"><Icon name="actions" size={12} /> {m.open_actions}</span>{/if}
-              {#if m.status === 'processing'}<span class="ic">Traitement…</span>{/if}
+              <span class="tnum">{duration(m.started_at, m.ended_at)}</span>
+              {#if m.confidential}<span class="pill" title="Confidentielle"><Icon name="lock" size={11} /> Confidentielle</span>{/if}
+              {#if m.correlated}<span class="pill" title="Compte rendu corrélé"><Icon name="link2" size={11} /> Corrélée</span>{/if}
+              {#if m.open_actions}<span class="pill acc" title="Actions ouvertes"><Icon name="actions" size={11} /> {m.open_actions} action{m.open_actions > 1 ? 's' : ''}</span>{/if}
+              {#if m.status === 'processing'}<span class="pill">Traitement…</span>{/if}
             </div>
             {#if m.snippet}
               <p class="snippet">{@html highlight(cleanSnippet(m.snippet, query), query)}</p>
@@ -168,7 +174,7 @@
       {/key}
     {:else}
       <div class="empty full">
-        <Icon name="meetings" size={32} stroke={1.2} />
+        <Icon name="meetings" size={26} stroke={1.5} />
         <h2>Sélectionnez une réunion</h2>
         <p class="small">Utilisez <kbd>/</kbd> pour chercher, <kbd>↑</kbd> <kbd>↓</kbd> pour parcourir la liste.</p>
       </div>
@@ -177,57 +183,95 @@
 </div>
 
 <style>
-  .split { display: grid; grid-template-columns: minmax(270px, 320px) 1fr; height: 100%; }
+  .split { display: grid; grid-template-columns: minmax(290px, 340px) 1fr; height: 100%; }
   .listpane { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--bg); }
-  .lhead { padding: 18px 16px 10px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--line); }
-  .btn.on { background: var(--selected); }
+  .lhead { padding: 20px 16px 12px; display: flex; flex-direction: column; gap: 12px; }
+  .lhead h1 { font-size: var(--fs-h2); }
+  .btn.on { background: var(--accent-soft); color: var(--accent-text); }
   .searchbox {
     display: flex;
     align-items: center;
-    gap: 7px;
-    height: 30px;
-    padding: 0 6px 0 9px;
-    border-radius: var(--radius);
+    gap: 8px;
+    height: 32px;
+    padding: 0 6px 0 10px;
+    border-radius: 9px;
     background: var(--surface);
     border: 1px solid var(--line-strong);
+    box-shadow: var(--shadow-xs);
     color: var(--text-3);
+    transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
   }
-  .searchbox:focus-within { border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 22%, transparent); }
+  .searchbox:focus-within { border-color: var(--focus); box-shadow: var(--ring); }
   .searchbox input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; }
   .searchbox input::-webkit-search-cancel-button { opacity: 0.5; }
-  .filters { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 2px; }
+  .filters { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); animation: appear var(--t) var(--ease); }
   .frow { display: flex; align-items: center; gap: 8px; }
-  .frow > span:first-child { width: 72px; flex: none; }
-  .frow .input { height: 26px; font-size: 12.5px; }
+  .frow > span:first-child { width: 76px; flex: none; }
+  .frow .input { height: 28px; font-size: 12.5px; }
 
-  .mlist { flex: 1; min-height: 0; padding: 4px 8px 16px; }
-  .day { padding: 14px 8px 5px; }
+  .mlist { flex: 1; min-height: 0; padding: 0 10px 16px; border-top: 1px solid var(--line); }
+  .day { padding: 16px 8px 6px; }
   .mitem {
     display: block;
-    padding: 9px 10px;
-    border-radius: 8px;
+    padding: 10px 12px;
+    border-radius: 10px;
     text-decoration: none;
     color: inherit;
-    margin-bottom: 1px;
+    margin-bottom: 2px;
+    position: relative;
+    transition: background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+    animation: appear var(--t) var(--ease) both;
   }
   .mitem:hover { background: var(--hover); }
-  .mitem.sel { background: var(--selected); }
+  .mitem.sel {
+    background: var(--surface);
+    box-shadow: 0 0 0 1px var(--accent-line), var(--shadow-md);
+  }
+  .mitem.sel::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 12px;
+    bottom: 12px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--accent);
+  }
   .mitem:focus-visible { outline-offset: -2px; }
-  .title { font-weight: 600; font-size: 13px; }
-  .top { gap: 6px; }
-  .meta { gap: 10px; color: var(--text-3); font-size: 11.5px; margin-top: 1px; }
-  .ic { display: inline-flex; align-items: center; gap: 3px; }
-  .snippet {
-    margin-top: 4px;
+  .title { font-weight: 600; font-size: 13.5px; letter-spacing: -0.005em; }
+  .when { font-size: var(--fs-meta); color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .top { gap: 8px; }
+  .meta { gap: 6px; color: var(--text-3); font-size: var(--fs-meta); margin-top: 4px; flex-wrap: wrap; }
+  .meta > span:first-child { margin-right: 2px; }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 19px;
+    padding: 0 7px;
+    border-radius: var(--r-pill);
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--line);
+    font-size: var(--fs-micro);
+    font-weight: 500;
     color: var(--text-2);
-    font-size: 12px;
-    line-height: 1.4;
+  }
+  .mitem.sel .pill { background: var(--bg); }
+  .pill.acc { background: var(--accent-soft); color: var(--accent-text); box-shadow: none; }
+  .snippet {
+    margin-top: 6px;
+    color: var(--text-2);
+    font-size: 12.5px;
+    line-height: 1.45;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+  .skel { padding: 18px 4px; display: flex; flex-direction: column; gap: 18px; }
+  .skel-item { padding: 0 8px; }
+  .skeleton.short { width: 34%; height: 10px; }
 
   .detailpane { min-width: 0; min-height: 0; height: 100%; background: var(--surface); }
   .empty.full { height: 100%; }

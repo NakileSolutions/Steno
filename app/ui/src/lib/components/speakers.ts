@@ -11,3 +11,9 @@ export function speakerColor(label: string): string {
 export function speakerName(label: string, speakers: Speaker[]): string {
   return speakers.find((s) => s.label === label)?.display_name || label;
 }
+
+/** Initiale affichée dans la pastille d'un intervenant. */
+export function initial(name: string): string {
+  const m = name.trim().match(/\p{L}|\p{N}/u);
+  return (m?.[0] ?? '?').toUpperCase();
+}

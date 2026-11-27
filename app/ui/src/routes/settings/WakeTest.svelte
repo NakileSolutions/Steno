@@ -183,18 +183,20 @@
     width: min(520px, calc(100vw - 32px));
     padding: 18px 20px 20px;
     border: 1px solid var(--line);
-    border-radius: 12px;
+    border-radius: 16px;
     background: var(--surface);
     color: var(--text);
     box-shadow: var(--shadow);
   }
-  dialog::backdrop { background: rgba(15, 17, 23, 0.35); }
+  dialog[open] { animation: pop 180ms var(--ease); }
+  dialog::backdrop { background: rgba(15, 17, 23, 0.38); }
+  @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(0.98); } }
   dialog > * + * { margin-top: 12px; }
   .steps { display: flex; gap: 16px; list-style: none; padding: 0; font-size: 12px; color: var(--text-3); }
   .steps .cur { color: var(--text); font-weight: 600; }
   .steps .ok { color: var(--ok); }
-  .say { font-size: 17px; font-weight: 600; padding: 10px 14px; background: var(--surface-2); border-radius: 8px; }
-  .attempts { list-style: none; padding: 0; border: 1px solid var(--line); border-radius: 8px; }
+  .say { font-size: 17px; font-weight: 600; padding: 12px 16px; background: var(--accent-soft); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); border-radius: 0 10px 10px 0; }
+  .attempts { list-style: none; padding: 0; border: 1px solid var(--line); border-radius: 10px; }
   .attempts li { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-top: 1px solid var(--line); min-height: 34px; }
   .attempts li:first-child { border-top: 0; }
   .n { width: 18px; color: var(--text-3); font-variant-numeric: tabular-nums; }
@@ -202,7 +204,7 @@
   .foot { gap: 8px; padding-top: 4px; }
   .trap { margin: 0; padding: 12px 14px; border-left: 3px solid var(--line-strong); background: var(--surface-2); border-radius: 0 8px 8px 0; font-size: 14px; line-height: 1.6; }
   .results { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .score { display: flex; flex-direction: column; align-items: center; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
+  .score { display: flex; flex-direction: column; align-items: center; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
   .score .big { font-size: 26px; font-weight: 600; color: var(--warn); font-variant-numeric: tabular-nums; }
   .score.good .big { color: var(--ok); }
   .warn { color: var(--warn); }

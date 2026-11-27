@@ -71,7 +71,7 @@
     </div>
     {#if result}
       <p class="result small" class:ok={result.ok} role="status">
-        {result.ok ? '✓' : '✕'} {result.message}{#if result.duration_ms}{' '}<span class="faint">({(result.duration_ms / 1000).toFixed(1)} s)</span>{/if}
+        <Icon name={result.ok ? 'check' : 'x'} size={13} stroke={2} />{result.message}{#if result.duration_ms}{' '}<span class="faint">({(result.duration_ms / 1000).toFixed(1)} s)</span>{/if}
       </p>
     {/if}
   </div>
@@ -110,24 +110,24 @@
 <div class="field">
   <div class="field-label">Clé API</div>
   <div class="field-body">
-    <label class="check"><input type="checkbox" bind:checked={settings.agent.allow_api_key} /> Autoriser l’utilisation d’une clé API</label>
+    <label class="check toggle"><span>Autoriser l’utilisation d’une clé API</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.agent.allow_api_key} /></label>
     <p class="faint small">Désactivé par défaut : le Scribe n’utilise que l’abonnement connecté dans le CLI. Une clé API peut entraîner une facturation.</p>
   </div>
 </div>
 
 <style>
-  .agents { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface); }
-  .agent { display: flex; align-items: flex-start; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--line); }
-  .agent:first-child { border-top: 0; }
-  .agent input { margin-top: 3px; }
-  .agent.sel { background: var(--selected); }
+  .agents { display: flex; flex-direction: column; gap: 6px; }
+  .agent { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+  .agent:hover:not(.off) { border-color: var(--line-strong); }
+  .agent input { margin-top: 2px; }
+  .agent.sel { background: var(--accent-soft); border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); }
   .agent.off { opacity: 0.55; }
   .agent .row { gap: 8px; }
   .agent .faint { display: block; margin-top: 1px; }
-  .result { color: var(--err); }
+  .result { color: var(--err); display: flex; align-items: center; gap: 6px; }
   .result.ok { color: var(--ok); }
   .tiers { gap: 6px; }
   .tier { display: grid; grid-template-columns: 1fr 220px; align-items: center; gap: 10px; }
-  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: end; }
   .grid3 label { display: flex; flex-direction: column; gap: 4px; }
 </style>

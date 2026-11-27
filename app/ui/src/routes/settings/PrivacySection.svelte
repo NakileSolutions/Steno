@@ -56,7 +56,7 @@
 <div class="field">
   <div class="field-label">Transcriptions<span class="hint">Les comptes rendus sont conservés.</span></div>
   <div class="field-body">
-    <label class="check"><input type="checkbox" bind:checked={keepForever} /> Conserver indéfiniment</label>
+    <label class="check toggle"><span>Conserver indéfiniment</span><input class="switch" type="checkbox" role="switch" bind:checked={keepForever} /></label>
     {#if !keepForever && settings.privacy.transcript_retention_days !== null}
       <label class="row small">Supprimer après <input class="input num" type="number" min="1" bind:value={settings.privacy.transcript_retention_days} /> jours</label>
     {/if}
@@ -87,6 +87,7 @@
 <style>
   .num { width: 70px; height: 24px; }
   .row.small { gap: 6px; }
-  .path { padding: 4px 8px; background: var(--surface-2); border-radius: 6px; }
-  .danger-zone { margin-top: 16px; }
+  .path { height: 28px; display: flex; align-items: center; padding: 0 10px; background: var(--surface-2); border-radius: 7px; color: var(--text-2); }
+  .danger-zone { margin-top: 28px; border-color: color-mix(in srgb, var(--err) 30%, transparent) !important; }
+  .danger-zone > .field-label { color: var(--err); }
 </style>

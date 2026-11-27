@@ -12,12 +12,12 @@
   import WakeTest from './settings/WakeTest.svelte';
 
   const STEPS = [
-    { id: 'permissions', label: 'Permissions macOS' },
-    { id: 'agent', label: 'Agent IA' },
-    { id: 'repos', label: 'Dépôts' },
-    { id: 'connectors', label: 'Connecteurs' },
-    { id: 'wake', label: 'Mot d’appel' },
-    { id: 'correlation', label: 'Corrélation' },
+    { id: 'permissions', label: 'Permissions macOS', icon: 'shield' },
+    { id: 'agent', label: 'Agent IA', icon: 'agent' },
+    { id: 'repos', label: 'Dépôts', icon: 'folder' },
+    { id: 'connectors', label: 'Connecteurs', icon: 'plug' },
+    { id: 'wake', label: 'Mot d’appel', icon: 'mic' },
+    { id: 'correlation', label: 'Corrélation', icon: 'link2' },
   ] as const;
 
   let step = $state(0);
@@ -151,7 +151,10 @@
 
 <div class="ob">
   <aside class="rail">
-    <div class="brand"><Logo size={40} tile /><div><strong>Scribe</strong><p class="tiny">Premier lancement</p></div></div>
+    <div class="brand"><span class="btile"><Logo size={40} tile /></span><div><strong>Scribe</strong><p class="tiny">Premier lancement</p></div></div>
+    <div class="prog" role="progressbar" aria-label="Progression" aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={step + 1}>
+      <span style="width: {((step + 1) / STEPS.length) * 100}%"></span>
+    </div>
     <ol class="steps">
       {#each STEPS as s, i (s.id)}
         <li class:cur={i === step} class:done={i < step}>
@@ -168,6 +171,7 @@
   <main class="pane scroll">
     {#if settings}
       <div class="inner">
+        {#key step}<span class="illus" aria-hidden="true"><Icon name={STEPS[step].icon} size={24} stroke={1.6} /></span>{/key}
         <p class="label">Étape {step + 1} sur {STEPS.length}</p>
 
         {#if STEPS[step].id === 'permissions'}
@@ -183,7 +187,7 @@
                 </div>
               </li>
             {:else}
-              <li class="faint">{doctoring ? 'Vérification…' : 'Aucun résultat.'}</li>
+              <li class="faint">{#if doctoring}<span class="skeleton" style="width: 60%"></span>{:else}Aucun résultat.{/if}</li>
             {/each}
           </ul>
           <button class="btn" onclick={runDoctor} disabled={doctoring}><Icon name="refresh" size={14} />{doctoring ? 'Vérification…' : 'Vérifier à nouveau'}</button>
@@ -202,7 +206,7 @@
           </div>
           <div class="row">
             <button class="btn" onclick={testAgent} disabled={testing}>{testing ? 'Test en cours…' : 'Tester l’agent'}</button>
-            {#if testResult}<span class="small" class:okc={testResult.ok} class:errc={!testResult.ok}>{testResult.ok ? '✓' : '✕'} {testResult.message}</span>{/if}
+            {#if testResult}<span class="small res" class:okc={testResult.ok} class:errc={!testResult.ok}><Icon name={testResult.ok ? 'check' : 'x'} size={13} stroke={2} />{testResult.message}</span>{/if}
           </div>
 
         {:else if STEPS[step].id === 'repos'}
@@ -223,7 +227,7 @@
           <ul class="repos">
             {#each blockable as c (c.id)}
               <li>
-                <label class="check grow"><input type="checkbox" checked={c.use_live || c.use_correlation} onchange={(e) => setConnector(c, e.currentTarget.checked)} /><strong>{c.name}</strong><span class="faint small">{c.status}</span></label>
+                <label class="check toggle grow"><span><Icon name="plug" size={14} /> <strong>{c.name}</strong> <span class="faint small">{c.status}</span></span><input class="switch" type="checkbox" role="switch" checked={c.use_live || c.use_correlation} onchange={(e) => setConnector(c, e.currentTarget.checked)} /></label>
               </li>
             {:else}
               <li class="faint">{refreshing ? 'Détection…' : 'Aucun connecteur activable.'}</li>
@@ -246,7 +250,7 @@
               {#if !wake.errors.length && !wake.warnings.length}<p class="okc small">✓ Aucun risque repéré.</p>{/if}
             </div>
           {/if}
-          <label class="check"><input type="checkbox" bind:checked={settings.voice.strict} /> Mode strict (exiger « OK {settings.voice.wake_word} »)</label>
+          <label class="check strict"><input class="switch" type="checkbox" role="switch" bind:checked={settings.voice.strict} /> Mode strict (exiger « OK {settings.voice.wake_word} »)</label>
 
         {:else}
           <h1>Corrélation</h1>
@@ -265,7 +269,7 @@
           {#if step > 0}<button class="btn" onclick={() => step--}>Précédent</button>{/if}
           <span class="grow"></span>
           <button class="btn ghost" onclick={() => navigate('/meetings')}>Passer</button>
-          <button class="btn primary" onclick={next} disabled={saving}>{step === STEPS.length - 1 ? 'Terminer' : 'Suivant'}</button>
+          <button class="btn primary nextbtn" onclick={next} disabled={saving}>{step === STEPS.length - 1 ? 'Terminer' : 'Suivant'}{#if step < STEPS.length - 1}<Icon name="chevron" size={14} stroke={2} />{/if}</button>
         </div>
       </div>
     {/if}
@@ -277,55 +281,77 @@
 {/if}
 
 <style>
-  .ob { display: grid; grid-template-columns: 250px 1fr; height: 100%; }
-  .rail { background: var(--side-bg); color: var(--side-text); padding: 28px 18px 20px; display: flex; flex-direction: column; gap: 26px; }
-  .brand { display: flex; align-items: center; gap: 12px; }
-  .brand strong { font-size: 16px; }
+  .ob { display: grid; grid-template-columns: 264px 1fr; height: 100%; background: var(--side-bg); }
+  .rail { color: var(--side-text); padding: 32px 18px 22px; display: flex; flex-direction: column; gap: 22px; }
+  .brand { display: flex; align-items: center; gap: 12px; padding: 0 6px; }
+  .btile { display: grid; border-radius: 10px; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 4px 14px rgba(0, 0, 0, 0.3); }
+  .brand strong { font-size: 16px; color: #f3f4f8; }
   .brand p { color: var(--side-text-2); }
+  .prog { height: 4px; margin: 0 6px; border-radius: 2px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+  .prog span { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, #7d89ff, #a9b2ff); transition: width 240ms var(--ease); }
   .steps { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2px; flex: 1; }
   .steps button {
     all: unset;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 11px;
     width: 100%;
     box-sizing: border-box;
-    padding: 7px 8px;
-    border-radius: 7px;
-    color: var(--side-text-2);
+    height: 36px;
+    padding: 0 10px;
+    border-radius: 9px;
+    color: var(--side-text-3);
     font-weight: 500;
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .steps button:not(:disabled):hover { background: var(--side-hover); }
-  .steps button:focus-visible { outline: 2px solid #9fb4ea; }
-  .steps .cur button { background: var(--side-active); color: #fff; }
+  .steps button:focus-visible { outline: 2px solid var(--side-accent); }
+  .steps .cur button { background: var(--side-active); color: #fff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04); }
   .steps .done button { color: var(--side-text); }
-  .num { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; border: 1px solid rgba(255, 255, 255, 0.25); flex: none; }
-  .cur .num { background: #f1f0ec; color: #1c202b; border-color: #f1f0ec; }
-  .done .num { background: rgba(255, 255, 255, 0.14); border-color: transparent; }
-  .note { color: var(--side-text-2); }
-  .pane { background: var(--surface); }
-  .inner { max-width: 600px; padding: 56px 48px 40px; display: flex; flex-direction: column; gap: 16px; }
-  .inner h1 { font-size: 24px; margin-top: -8px; }
-  .lead { color: var(--text-2); font-size: 14px; line-height: 1.55; }
-  .doctor, .repos { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius-lg); }
-  .doctor li, .repos li { display: flex; align-items: flex-start; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--line); }
+  .num { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 600; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.18); flex: none; font-variant-numeric: tabular-nums; transition: background var(--t) var(--ease); }
+  .cur .num { background: #7d89ff; color: #fff; box-shadow: 0 0 0 4px rgba(125, 137, 255, 0.2); }
+  .done .num { background: rgba(125, 137, 255, 0.22); color: #c9ceff; box-shadow: none; }
+  .note { color: var(--side-text-3); padding: 0 6px; line-height: 1.5; }
+  .pane { background: var(--surface); margin: 8px 8px 8px 0; border-radius: 12px; box-shadow: var(--content-ring); }
+  .inner { max-width: 640px; padding: 64px 56px 48px; display: flex; flex-direction: column; gap: 16px; }
+  .illus {
+    width: 52px;
+    height: 52px;
+    border-radius: 15px;
+    display: grid;
+    place-items: center;
+    color: var(--accent-text);
+    background: linear-gradient(180deg, var(--accent-soft-2), var(--accent-soft));
+    box-shadow: inset 0 0 0 1px var(--accent-line);
+    margin-bottom: 4px;
+    animation: appear 200ms var(--ease);
+  }
+  .inner h1 { font-size: 26px; margin-top: -8px; }
+  .lead { color: var(--text-2); font-size: 14.5px; line-height: 1.6; }
+  .doctor, .repos { list-style: none; margin: 0; padding: 4px 0; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); }
+  .doctor li, .repos li { display: flex; align-items: flex-start; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); animation: appear var(--t) var(--ease) both; }
   .repos li { align-items: center; }
   .doctor li:first-child, .repos li:first-child { border-top: 0; }
-  .st { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+  .doctor p { line-height: 1.45; }
+  .st { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; flex: none; }
   .ok .st { background: var(--ok-soft); color: var(--ok); }
   .warn .st { background: var(--warn-soft); color: var(--warn); }
   .error .st { background: var(--err-soft); color: var(--err); }
   .fix { margin-top: 3px; color: var(--text-2); }
-  .choices { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
-  .choice { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); }
-  .choice:first-child { border-top: 0; }
-  .choice.sel { background: var(--selected); }
+  .choices { display: flex; flex-direction: column; gap: 6px; }
+  .choice { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+  .choice:hover:not(.off) { border-color: var(--line-strong); }
+  .choice.sel { background: var(--accent-soft); border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); }
   .choice.off { opacity: 0.55; }
-  .block { display: block; }
-  .wake { width: 240px; font-weight: 600; }
+  .block { display: block; margin-top: 2px; }
+  .wake { width: 260px; font-weight: 600; }
   .msgs { display: flex; flex-direction: column; gap: 3px; }
+  .res { display: inline-flex; align-items: center; gap: 6px; }
   .okc { color: var(--ok); }
   .errc { color: var(--err); }
   .warnc { color: var(--warn); }
-  .nav { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); gap: 8px; }
+  .strict { gap: 10px; }
+  .inner > :global(.btn) { align-self: flex-start; }
+  .nav { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); gap: 8px; }
+  .nextbtn { min-width: 112px; gap: 4px; }
 </style>

@@ -31,7 +31,7 @@
 <div class="wrap">
   {#if !m.confidential}
     <form class="ask row" onsubmit={ask}>
-      <Icon name="ask" size={15} />
+      <Icon name="ask" size={16} />
       <input class="grow" bind:value={query} placeholder="Poser une question sur cette réunion…" aria-label="Demander au Scribe à propos de cette réunion" />
       <button class="btn sm primary" disabled={!query.trim() || sending}>Demander</button>
     </form>
@@ -39,7 +39,7 @@
 
   {#if !list.length}
     <div class="empty">
-      <Icon name="ask" size={28} stroke={1.2} />
+      <Icon name="ask" size={24} stroke={1.5} />
       <h2>Aucune demande</h2>
       <p class="small">Pendant une réunion, dites « Scribe, cherche… » ou tapez votre question.</p>
     </div>
@@ -53,17 +53,20 @@
 </div>
 
 <style>
-  .wrap { padding: 16px 28px 40px; max-width: 820px; }
+  .wrap { padding: 18px 32px 48px; max-width: calc(72ch + 64px); }
   .ask {
-    gap: 8px;
-    padding: 4px 4px 4px 11px;
+    gap: 10px;
+    padding: 4px 4px 4px 12px;
     border: 1px solid var(--line-strong);
-    border-radius: 9px;
+    border-radius: 12px;
     color: var(--text-3);
-    margin-bottom: 16px;
+    margin-bottom: 18px;
     background: var(--surface);
+    box-shadow: var(--shadow-md);
+    transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .ask:focus-within { border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 22%, transparent); }
-  .ask input { border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; height: 26px; }
+  .ask:focus-within { border-color: var(--focus); box-shadow: var(--ring); color: var(--accent-text); }
+  .ask input { border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; height: 32px; }
+  .ask input::placeholder { color: var(--text-3); }
   .list { gap: 12px; }
 </style>

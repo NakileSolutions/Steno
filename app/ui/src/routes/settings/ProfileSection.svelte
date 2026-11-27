@@ -34,7 +34,7 @@
 </div>
 
 <style>
-  .intro { margin: 14px 0 6px; }
+  .intro { margin: 20px 0 0; line-height: 1.5; }
   .w { max-width: 320px; }
   .err { color: var(--err); }
 </style>
