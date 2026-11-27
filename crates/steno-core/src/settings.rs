@@ -473,6 +473,14 @@ impl Default for ProfileSettings {
 
 const SECTIONS: [&str; 8] = ["agent", "voice", "audio", "correlation", "privacy", "profile", "report", "updates"];
 
+/// `fr` pour un code de langue français ou sans langue réelle (`C`, `POSIX`, vide), `en` pour
+/// toute autre langue.
+pub fn lang_from_code(code: &str) -> &'static str {
+    let c = code.trim().to_lowercase();
+    let base: String = c.chars().take_while(|ch| ch.is_ascii_alphabetic()).collect();
+    if base == "fr" || base.len() < 2 || base == "posix" { "fr" } else { "en" }
+}
+
 /// Langue de macOS (préférences de l'utilisateur), `fr` ou `en`.
 pub fn system_lang() -> &'static str {
     static L: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
@@ -486,7 +494,7 @@ pub fn system_lang() -> &'static str {
             .unwrap_or_default();
         let first = mac.split(['"', ',', '(', ')', '\n', ' ']).find(|w| w.len() >= 2).unwrap_or(&from_env).to_lowercase();
         let pick = if first.is_empty() { from_env.to_lowercase() } else { first };
-        if pick.starts_with("fr") || pick.is_empty() { "fr" } else { "en" }
+        lang_from_code(&pick)
     })
 }
 
@@ -739,6 +747,16 @@ mod tests {
         let ids: Vec<&str> = v.report.templates.iter().map(|t| t.id.as_str()).collect();
         assert_eq!(ids, ["perso-note-comex", "perso-note-comex-2", "perso-mon-mail"]);
         assert_eq!(v.report.default_template, "standard");
+    }
+
+    #[test]
+    fn langue_systeme() {
+        assert_eq!(lang_from_code("fr-FR"), "fr");
+        assert_eq!(lang_from_code("en-US"), "en");
+        assert_eq!(lang_from_code("de_DE.UTF-8"), "en");
+        assert_eq!(lang_from_code("C.UTF-8"), "fr");
+        assert_eq!(lang_from_code("POSIX"), "fr");
+        assert_eq!(lang_from_code(""), "fr");
     }
 
     #[test]

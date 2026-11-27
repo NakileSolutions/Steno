@@ -51,6 +51,8 @@ fn core(name: &str, sidecar: Option<SidecarSpec>) -> Core {
     // Compte rendu sans délai de contexte (testé à part dans `delai_de_contexte_avant_la_redaction`).
     let mut s = c.settings();
     s.report.context_delay_s = 0;
+    // Langue fixe : les tests ne dépendent pas de la langue de la machine.
+    s.profile.language = "fr".into();
     c.save_settings(s).unwrap();
     c.start_background();
     c
