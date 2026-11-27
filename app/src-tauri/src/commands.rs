@@ -259,6 +259,21 @@ pub fn list_report_templates(st: State<'_, AppState>) -> Vec<steno_core::report:
 }
 
 #[tauri::command]
+pub async fn steno_skill_status(st: State<'_, AppState>) -> R<steno_core::agents::skill::SkillStatus> {
+    Ok(st.core.steno_skill_status().await)
+}
+
+#[tauri::command]
+pub async fn install_steno_skill(st: State<'_, AppState>) -> R<steno_core::agents::skill::SkillStatus> {
+    st.core.install_steno_skill().await.map_err(er)
+}
+
+#[tauri::command]
+pub async fn template_from_example(st: State<'_, AppState>, example: String) -> R<steno_core::report::TemplateDraft> {
+    st.core.template_from_example(&example).await.map_err(er)
+}
+
+#[tauri::command]
 pub fn correlate(st: State<'_, AppState>, id: String) -> R<()> {
     st.core.correlate(&id).map_err(er)
 }

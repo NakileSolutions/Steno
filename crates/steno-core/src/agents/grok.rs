@@ -182,6 +182,7 @@ mod tests {
             allow_api_key: false,
             run_id: "x".into(),
             hook_exe: None,
+            skills: false,
         };
         let a = build_args(&r, "q", "règles").join(" ");
         assert!(a.contains("-m grok-4.7") && a.contains("--effort medium") && a.contains("-s 123e4567"));

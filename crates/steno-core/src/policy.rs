@@ -55,6 +55,10 @@ pub struct ReadOnlyPolicy {
     pub max_tool_calls: u32,
     /// Fichier compteur d'appels (tenu par le crochet).
     pub counter_file: Option<PathBuf>,
+    /// Skills de l'utilisateur autorisés : outil `Skill` et lecture des fichiers d'un skill
+    /// ou d'un plugin (consignes et références, jamais d'écriture).
+    #[serde(default)]
+    pub allow_skills: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -140,6 +144,26 @@ pub fn norm_server(s: &str) -> String {
         .to_string()
 }
 
+/// Le fichier est-il dans le dossier d'un skill (un parent contient `SKILL.md`) ou d'un
+/// plugin d'agent (un parent contient `.claude-plugin/plugin.json`) ? Le dossier personnel
+/// et la racine ne comptent jamais comme dossier de skill.
+pub fn in_skill_dir(path: &Path) -> bool {
+    let home = dirs::home_dir().map(|h| h.canonicalize().unwrap_or(h));
+    let mut dir = if path.is_dir() { Some(path) } else { path.parent() };
+    let mut depth = 0;
+    while let Some(d) = dir {
+        if depth > 8 || d.parent().is_none() || Some(d) == home.as_deref() {
+            return false;
+        }
+        if d.join("SKILL.md").is_file() || d.join(".claude-plugin").join("plugin.json").is_file() {
+            return true;
+        }
+        dir = d.parent();
+        depth += 1;
+    }
+    false
+}
+
 const SHELL_META: &[&str] = &[";", "&", ">", "<", "`", "$(", "${", "\n", "\r"];
 
 impl ReadOnlyPolicy {
@@ -152,6 +176,7 @@ impl ReadOnlyPolicy {
             allowed_mcp_servers: vec![],
             max_tool_calls: 0,
             counter_file: None,
+            allow_skills: false,
         }
     }
 
@@ -191,7 +216,7 @@ impl ReadOnlyPolicy {
         let abs = if expanded.is_absolute() { expanded } else { cwd.join(expanded) };
         // Résoudre ce qui existe (liens symboliques, ..).
         let resolved = abs.canonicalize().unwrap_or_else(|_| lexical_normalize(&abs));
-        if self.roots().iter().any(|r| resolved.starts_with(r)) {
+        if self.roots().iter().any(|r| resolved.starts_with(r)) || (self.allow_skills && in_skill_dir(&resolved)) {
             Ok(())
         } else {
             Err(format!("lecture hors des dépôts autorisés : {}", resolved.display()))
@@ -281,6 +306,9 @@ impl ReadOnlyPolicy {
                 }
                 Decision::Allow
             }
+            // Charger un skill ne fait que lire ses consignes ; ce qu'il fait ensuite passe
+            // par les mêmes contrôles que le reste.
+            "Skill" if self.allow_skills => Decision::Allow,
             other => Decision::Deny(format!("outil « {other} » non autorisé (lecture seule)")),
         }
     }
@@ -353,6 +381,8 @@ pub fn hook_main(policy_path: &Path, stdin: &str) -> i32 {
         .or_else(|| policy.readable_dirs.first().cloned())
         .unwrap_or_else(|| PathBuf::from("/"));
     let decision = match policy.decide(tool, &input, &cwd) {
+        // Charger un skill ne compte pas dans le budget d'appels.
+        Decision::Allow if tool == "Skill" => Decision::Allow,
         Decision::Allow => policy.count_call(),
         d => d,
     };
@@ -378,7 +408,40 @@ mod tests {
             allowed_mcp_servers: vec!["claude.ai Atlassian".into(), "datadog".into()],
             max_tool_calls: 0,
             counter_file: None,
+            allow_skills: false,
         }
+    }
+
+    #[test]
+    fn skills_utilisateur() {
+        let d = tempfile::tempdir().unwrap();
+        let repo = d.path().join("repo");
+        let skill = d.path().join("skills").join("jira");
+        let plugin = d.path().join("plugins").join("datadog");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::create_dir_all(skill.join("references")).unwrap();
+        std::fs::create_dir_all(plugin.join(".claude-plugin")).unwrap();
+        std::fs::create_dir_all(plugin.join("skills").join("logs")).unwrap();
+        std::fs::write(skill.join("SKILL.md"), "x").unwrap();
+        std::fs::write(skill.join("references").join("jql.md"), "x").unwrap();
+        std::fs::write(plugin.join(".claude-plugin").join("plugin.json"), "{}").unwrap();
+        std::fs::write(plugin.join("skills").join("logs").join("notes.md"), "x").unwrap();
+        let ailleurs = d.path().join("secret.txt");
+        std::fs::write(&ailleurs, "x").unwrap();
+        let read = |p: &ReadOnlyPolicy, f: &Path| p.decide("Read", &json!({"file_path": f}), &repo);
+
+        let mut p = pol(&repo);
+        assert!(matches!(p.decide("Skill", &json!({"skill": "jira"}), &repo), Decision::Deny(_)));
+        assert!(matches!(read(&p, &skill.join("references").join("jql.md")), Decision::Deny(_)));
+
+        p.allow_skills = true;
+        assert_eq!(p.decide("Skill", &json!({"skill": "jira"}), &repo), Decision::Allow);
+        assert_eq!(read(&p, &skill.join("references").join("jql.md")), Decision::Allow);
+        assert_eq!(read(&p, &plugin.join("skills").join("logs").join("notes.md")), Decision::Allow);
+        assert!(matches!(read(&p, &ailleurs), Decision::Deny(_)));
+        // Les skills n'ouvrent ni l'écriture ni les commandes.
+        assert!(matches!(p.decide("Write", &json!({"file_path": skill.join("x")}), &repo), Decision::Deny(_)));
+        assert!(matches!(p.decide("Bash", &json!({"command": "python3 x.py"}), &repo), Decision::Deny(_)));
     }
 
     #[test]

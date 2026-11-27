@@ -127,5 +127,6 @@ const en: Record<string, string> = {
   'Rédaction…': 'Writing…',
   'Rédiger le contexte': 'Write the context',
   'Prévue': 'Planned',
+  'Comme la dernière fois ({name})': 'Same as last time ({name})',
 };
 export default en;

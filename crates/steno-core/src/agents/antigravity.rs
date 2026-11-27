@@ -147,6 +147,7 @@ mod tests {
             allow_api_key: false,
             run_id: "x".into(),
             hook_exe: None,
+            skills: false,
         };
         let a = build_args(&r, "bonjour").join(" ");
         assert!(a.starts_with("-p bonjour --output-format json"));

@@ -89,6 +89,9 @@ pub(crate) fn build_args(req: &RunRequest, settings_path: &Path, policy: &ReadOn
             let mut builtins = policy.base.builtin_read_tools.clone();
             builtins.retain(|t| t != "LS");
             builtins.push("Bash".into());
+            if policy.allow_skills {
+                builtins.push("Skill".into());
+            }
             a.push("--tools".into());
             a.push(builtins.join(","));
             let mut allowed: Vec<String> = policy.base.builtin_read_tools.iter().filter(|t| *t != "LS").cloned().collect();
@@ -98,6 +101,9 @@ pub(crate) fn build_args(req: &RunRequest, settings_path: &Path, policy: &ReadOn
             }
             for c in connectors {
                 allowed.push(format!("mcp__{}", tool_server_name(c)));
+            }
+            if policy.allow_skills {
+                allowed.push("Skill".into());
             }
             a.push("--allowedTools".into());
             a.extend(allowed);
@@ -324,6 +330,7 @@ mod tests {
             allow_api_key: false,
             run_id: "r1".into(),
             hook_exe: Some(PathBuf::from("/usr/local/bin/steno")),
+            skills: false,
         }
     }
 
@@ -340,6 +347,12 @@ mod tests {
         assert!(s.contains("mcp__claude_ai_Atlassian"));
         assert!(s.contains("--add-dir /src/app"));
         assert!(!s.contains("--strict-mcp-config"));
+        assert!(!a.iter().any(|x| x == "Skill" || x.contains(",Skill")));
+        let mut ps = ReadOnlyPolicy::no_tools();
+        ps.allow_skills = true;
+        let a = build_args(&r, Path::new("/tmp/s.json"), &ps);
+        assert!(a.windows(2).any(|w| w[0] == "--tools" && w[1].ends_with(",Skill")));
+        assert!(a.contains(&"Skill".to_string()));
         let a = build_args(&req(ToolAccess::None), Path::new("/tmp/s.json"), &p);
         assert!(a.windows(2).any(|w| w[0] == "--tools" && w[1].is_empty()));
         assert!(a.contains(&"--strict-mcp-config".to_string()));

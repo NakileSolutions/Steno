@@ -20,7 +20,8 @@ pub const COMMANDS: &[&str] = &[
     "check_variants", "wake_detect", "wake_test_record", "doctor", "delete_all_data", "log_ui_error",
     "get_permissions", "request_permission", "open_permission_settings", "complete_onboarding",
     "delete_segment", "set_mic_muted", "save_export", "print_window", "pause_meeting", "resume_meeting",
-    "get_meeting_context", "set_meeting_context", "add_context_file", "delete_context_file", "list_report_templates",
+    "get_meeting_context", "set_meeting_context", "add_context_file", "delete_context_file", "list_report_templates", "template_from_example",
+    "steno_skill_status", "install_steno_skill",
     "report_now", "get_update_status", "check_update", "install_update", "restart_app",
     "upcoming", "plan_meeting", "start_planned", "get_participants", "set_participants", "prepare_questions", "prepare_apply",
 ];
@@ -97,6 +98,9 @@ async fn run(core: &Core, cmd: &str, args: Value) -> Result<Value, String> {
         "add_context_file" => ok(core.add_context_file(&a.s("id")?, &a.s("name")?, &a.s("data")?).map_err(e)?),
         "delete_context_file" => ok(core.delete_context_file(a.get("fileId")?).map_err(e)?),
         "list_report_templates" => ok(core.report_templates()),
+        "steno_skill_status" => ok(core.steno_skill_status().await),
+        "install_steno_skill" => ok(core.install_steno_skill().await.map_err(e)?),
+        "template_from_example" => ok(core.template_from_example(&a.s("example")?).await.map_err(e)?),
         "report_now" => ok(core.report_now(&a.s("id")?).map_err(e)?),
         "get_update_status" => ok(core.update_status()),
         "upcoming" => {
@@ -230,7 +234,9 @@ mod tests {
                 assert!(contract.contains(&format!("`{c}`")), "{c} absente de docs/contracts.md");
             }
             // Arguments vides : erreur d'argument possible, mais jamais « commande inconnue ».
-            if matches!(*c, "delete_all_data" | "start_meeting" | "stop_meeting" | "wake_test_record" | "detect_agents" | "doctor" | "refresh_connectors" | "test_agent" | "list_models") {
+            if matches!(*c, "delete_all_data" | "start_meeting" | "stop_meeting" | "wake_test_record" | "detect_agents" | "doctor" | "refresh_connectors" | "test_agent" | "list_models"
+                // Écrivent dans la configuration des agents de l'utilisateur.
+                | "install_steno_skill" | "steno_skill_status") {
                 continue;
             }
             if let Err(m) = dispatch(&core, c, json!({})).await {

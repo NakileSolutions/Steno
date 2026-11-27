@@ -3,7 +3,7 @@
   import { api } from '../../lib/api';
   import { TIER_ROWS, isFeaturedAgent, retargetTier, sortAgents } from '../../lib/agents';
   import { modelLists } from '../../lib/models.svelte';
-  import type { AgentInfo, Settings, TestAgentResult } from '../../lib/types';
+  import type { AgentInfo, Settings, SkillStatus, TestAgentResult } from '../../lib/types';
   import { toastError } from '../../lib/ui.svelte';
   import AgentLogo from '../../lib/components/AgentLogo.svelte';
   import Icon from '../../lib/components/Icon.svelte';
@@ -27,6 +27,29 @@
     }
   }
   onMount(detect);
+
+  // Skill « Sténo » dans les agents de l'utilisateur (hors de l'app).
+  let skill = $state<SkillStatus | null>(null);
+  let installing = $state(false);
+  onMount(async () => {
+    try {
+      skill = await api.stenoSkillStatus();
+    } catch {
+      skill = null;
+    }
+  });
+  const skillInstalled = $derived(!!skill && skill.targets.length > 0 && skill.targets.every((x) => x.state === 'current') && skill.mcp.every((m) => m.registered));
+  const skillOutdated = $derived(!!skill && skill.targets.some((x) => x.state === 'outdated'));
+  async function installSkill() {
+    installing = true;
+    try {
+      skill = await api.installStenoSkill();
+    } catch (e) {
+      toastError(e);
+    } finally {
+      installing = false;
+    }
+  }
 
   async function test() {
     testing = true;
@@ -135,6 +158,41 @@
   </div>
 </div>
 
+<h2 class="group-title">{t('Skills')}</h2>
+<div class="field">
+  <div class="field-label">{t('Pendant les recherches')}<span class="hint">{t('Claude Code : l’agent peut charger vos skills (Jira, Datadog, code…) pour aller droit aux bonnes requêtes. Toujours en lecture seule : un skill qui publie reste bloqué.')}</span></div>
+  <div class="field-body">
+    <label class="check toggle"><span>{t('Utiliser mes skills')}</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.agent.use_skills} /></label>
+  </div>
+</div>
+
+<div class="field">
+  <div class="field-label">{t('Sténo dans votre agent')}<span class="hint">{t('Donne à votre agent (Claude Code, Codex…) un skill et un accès en lecture seule à vos réunions : « refais le compte rendu d’hier au format client », « quelles sont mes actions ouvertes ? ».')}</span></div>
+  <div class="field-body">
+    {#if skill}
+      {#if skill.targets.length === 0 && skill.mcp.length === 0}
+        <p class="faint small">{t('Aucun agent compatible trouvé (Claude Code, Codex…).')}</p>
+      {:else}
+        <ul class="skill-list small">
+          {#each skill.targets as x (x.path)}
+            <li><span class="muted">{x.agents}</span> · <code>{x.path}</code> · {x.state === 'current' ? t('à jour') : x.state === 'outdated' ? t('ancienne version') : t('non installé')}</li>
+          {/each}
+          {#each skill.mcp as m (m.agent)}
+            <li><span class="muted">{t('Serveur MCP « steno » dans {agent}', { agent: m.agent })}</span> · {m.registered ? t('déclaré') : t('non déclaré')}</li>
+          {/each}
+        </ul>
+        <div class="row acts">
+          <button class="btn sm" onclick={installSkill} disabled={installing || skillInstalled}>
+            {installing ? t('Installation…') : skillInstalled ? t('Installé') : skillOutdated ? t('Mettre à jour') : t('Installer')}
+          </button>
+        </div>
+      {/if}
+    {:else}
+      <p class="faint small">{t('Vérification…')}</p>
+    {/if}
+  </div>
+</div>
+
 <div class="field">
   <div class="field-label">{t('Clé API')}</div>
   <div class="field-body">
@@ -172,4 +230,6 @@
   .help :global(.icon) { margin-top: 3px; color: var(--accent-text); flex: none; }
   .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: end; }
   .grid3 label { display: flex; flex-direction: column; gap: 4px; }
+  .skill-list { margin: 0 0 6px; padding-left: 18px; line-height: 1.6; }
+  .skill-list code { font-size: 0.92em; }
 </style>

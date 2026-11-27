@@ -40,6 +40,13 @@ static TABLE: &[(&str, &str)] = &[
     ("phrase introuvable", "sentence not found"),
     ("la réunion est encore en cours", "the meeting is still in progress"),
     ("modèle de compte rendu inconnu : {}", "unknown summary template: {}"),
+    ("exemple trop court : collez un compte rendu complet", "example too short: paste a complete summary"),
+    ("l'agent n'a pas proposé de format", "the agent did not suggest a format"),
+    (
+        "CLI « steno » introuvable : installez Sténo avec « make install »",
+        "“steno” CLI not found: install Sténo with “make install”",
+    ),
+    ("aucun agent compatible trouvé (Claude Code, Codex…)", "no compatible agent found (Claude Code, Codex…)"),
     ("nom de fichier manquant", "missing file name"),
     ("contenu du fichier illisible (base64 attendu)", "unreadable file content (base64 expected)"),
     ("document introuvable", "document not found"),

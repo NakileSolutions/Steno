@@ -103,6 +103,9 @@ pub struct AgentSettings {
     pub timeouts_s: TierTimeouts,
     pub live_tool_budget: u32,
     pub live_context_seconds: u32,
+    /// Laisser l'agent utiliser les skills de l'utilisateur pendant les recherches (Claude
+    /// Code : outil `Skill`, toujours sous la politique lecture seule).
+    pub use_skills: bool,
 }
 
 impl Default for AgentSettings {
@@ -117,6 +120,7 @@ impl Default for AgentSettings {
             timeouts_s: TierTimeouts::default(),
             live_tool_budget: 15,
             live_context_seconds: 120,
+            use_skills: true,
         }
     }
 }

@@ -37,8 +37,10 @@
   }
   onMount(load);
 
+  // Sans choix ici : format de la dernière réunion du même titre, sinon défaut des réglages.
+  const inherited = $derived(templates.find((x) => x.id === ctx?.inherited_template));
   const defaultName = $derived(templates.find((x) => x.id === defaultTemplate)?.name ?? t('Standard'));
-  const current = $derived(templates.find((x) => x.id === (ctx?.template ?? defaultTemplate)));
+  const current = $derived(templates.find((x) => x.id === (ctx?.template ?? inherited?.id ?? defaultTemplate)));
 
   async function save(template = ctx?.template ?? null) {
     if (!ctx) return;
@@ -152,7 +154,7 @@
 
   <label class="lbl" for="ctx-tpl-{meetingId}">{t('Format du compte rendu')}</label>
   <select id="ctx-tpl-{meetingId}" class="input tpl" value={ctx?.template ?? ''} onchange={(e) => pickTemplate(e.currentTarget.value)} disabled={!ctx}>
-    <option value="">{t('Par défaut ({name})', { name: defaultName })}</option>
+    <option value="">{inherited ? t('Comme la dernière fois ({name})', { name: inherited.name }) : t('Par défaut ({name})', { name: defaultName })}</option>
     <optgroup label={t('Formats prédéfinis')}>
       {#each templates.filter((x) => x.builtin) as tpl (tpl.id)}<option value={tpl.id}>{tpl.name}</option>{/each}
     </optgroup>

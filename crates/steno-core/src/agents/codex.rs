@@ -293,6 +293,7 @@ mod tests {
             allow_api_key: false,
             run_id: "x".into(),
             hook_exe: None,
+            skills: false,
         };
         let a = build_args(&r, Path::new("/tmp/l"));
         assert_eq!(&a[..3], &["exec", "resume", "th-1"]);

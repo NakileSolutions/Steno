@@ -69,7 +69,7 @@ fn serveur_mcp_lecture_seule() {
     assert_eq!(init["result"]["serverInfo"]["name"], "steno");
     let tools = call(serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}));
     let names: Vec<&str> = tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["search_meetings", "get_meeting", "get_transcript", "get_report", "list_decisions", "list_actions"]);
+    assert_eq!(names, ["search_meetings", "get_meeting", "get_transcript", "get_report", "list_decisions", "list_actions", "list_report_templates"]);
     let r = call(serde_json::json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search_meetings","arguments":{"query":"Brindille"}}}));
     assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("Daily ORION"));
     let r = call(serde_json::json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_transcript","arguments":{"id": id}}}));

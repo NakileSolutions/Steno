@@ -1,4 +1,4 @@
-//! CLI `steno` : ask · doctor · init · export · mcp, plus outils de développement
+//! CLI `steno` : ask · doctor · init · export · mcp · skill, plus outils de développement
 //! (replay, simulate, daemon) et le crochet `policy-hook` appelé par les agents.
 
 mod init;
@@ -66,6 +66,12 @@ enum Cmd {
     },
     /// Serveur MCP local en lecture seule (stdio).
     Mcp,
+    /// Skill « Sténo » pour votre agent (Claude Code, Codex…) : réunions, comptes rendus,
+    /// décisions et actions via `steno mcp`.
+    Skill {
+        #[command(subcommand)]
+        action: SkillCmd,
+    },
     /// Liste les réunions.
     Meetings {
         #[arg(long)]
@@ -117,6 +123,14 @@ enum Cmd {
     /// Crochet « avant outil » des agents (lit l'appel sur stdin ; code 2 = refusé).
     #[command(hide = true)]
     PolicyHook { policy: PathBuf },
+}
+
+#[derive(Subcommand)]
+enum SkillCmd {
+    /// Copie le skill dans les dossiers de skills et déclare le serveur MCP `steno`.
+    Install,
+    /// Affiche où le skill et le serveur MCP sont installés.
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -293,6 +307,26 @@ async fn main() -> Result<()> {
         Cmd::Mcp => {
             steno_core::paths::ensure_dirs()?;
             mcp::serve(Db::open_default()?)?;
+        }
+        Cmd::Skill { action } => {
+            let st = match action {
+                SkillCmd::Install => steno_core::agents::skill::install().await?,
+                SkillCmd::Status => steno_core::agents::skill::status().await,
+            };
+            for t in &st.targets {
+                let state = match t.state.as_str() {
+                    "current" => "à jour",
+                    "outdated" => "ancienne version",
+                    _ => "absent",
+                };
+                println!("skill   {:<12} {} ({})", state, t.path, t.agents);
+            }
+            for m in &st.mcp {
+                println!("mcp     {:<12} {}", if m.registered { "déclaré" } else { "absent" }, m.agent);
+            }
+            if st.targets.is_empty() && st.mcp.is_empty() {
+                println!("aucun agent compatible trouvé (Claude Code, Codex…)");
+            }
         }
         Cmd::Meetings { query, limit } => {
             let core = open_core(None)?;

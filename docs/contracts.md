@@ -426,6 +426,9 @@ type Settings = /* section 4 */;
 | `set_participants` | `id, participants` | `Participant[]` ; transmis au compte rendu (« Participants invités ») pour nommer les intervenants |
 | `prepare_questions` | `id` | `string[]` : 3 à 5 questions de l'agent pour préparer la réunion |
 | `prepare_apply` | `id, answers: [{question, answer}]` | `MeetingContext` : l'agent rédige le contexte à partir des réponses (ajouté au contexte existant) |
+| `steno_skill_status` | — | `SkillStatus` `{targets: [{agents, path, state: missing\|current\|outdated}], mcp: [{agent, registered}], cli}` : skill « Sténo » et serveur MCP `steno` dans les agents de l'utilisateur |
+| `install_steno_skill` | — | `SkillStatus` : copie `SKILL.md` dans `~/.claude/skills/steno` et `~/.agents/skills/steno` (agents présents) et déclare `steno mcp` dans Claude Code et Codex s'il manque |
+| `template_from_example` | `example` | `TemplateDraft` `{name, instructions}` : format déduit par l'agent (niveau `quick`, sans outil) d'un compte rendu collé ; rien n'est enregistré |
 | `list_report_templates` | — | `Template[]` `{id, name, description, instructions, builtin}` : formats intégrés (`standard`, `daily`, `client`, `atelier`, `arbitrage`, `mail`, `slack`) puis formats perso (`report.templates`) |
 | `correlate` | `id` | `null` |
 | `export_meeting` | `id, format?: "markdown" \| "txt" \| "srt" \| "vtt"` | `string` (markdown complet par défaut ; `txt`/`srt`/`vtt` : transcription seule) |
