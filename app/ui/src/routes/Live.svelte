@@ -86,12 +86,16 @@
     return () => uns.forEach((u) => u());
   });
 
+  // Défilement automatique en cours : ses événements `scroll` ne détachent pas du direct.
+  let autoUntil = 0;
   function scrollBottom(smooth: boolean) {
+    autoUntil = performance.now() + (smooth ? 600 : 50);
     scroller?.scrollTo({ top: scroller.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
     unseen = 0;
   }
   function onscroll() {
     if (!scroller) return;
+    if (stick && performance.now() < autoUntil) return;
     stick = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 48;
     if (stick) unseen = 0;
   }

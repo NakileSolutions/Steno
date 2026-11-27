@@ -3,7 +3,7 @@
   // (micro et visio, dBFS). Au repos, une onde calme. Sans animation si l'utilisateur la refuse.
   import { onMount } from 'svelte';
 
-  let { me, them, active = true, bars = 72 }: { me: number; them: number; active?: boolean; bars?: number } = $props();
+  let { me, them, active = true, bars = 120 }: { me: number; them: number; active?: boolean; bars?: number } = $props();
 
   const N = $derived(Math.max(12, bars));
   let els: HTMLSpanElement[] = $state([]);
@@ -19,7 +19,7 @@
     const a = active ? Math.max(lvl(me), lvl(them)) : 0;
     return Array.from({ length: N }, (_, i) => {
       const x = i / (N - 1);
-      return clamp(env(x) * (0.16 + 0.05 * Math.sin(x * 11) + a * 0.7 * (0.6 + 0.4 * Math.sin(i * 1.7))));
+      return clamp(env(x) * (0.26 + 0.15 * Math.sin(x * 7.5) + a * 0.7 * (0.6 + 0.4 * Math.sin(i * 1.7))));
     });
   });
 
@@ -52,7 +52,7 @@
         if (!el) continue;
         const x = i / (n - 1);
         // Onde calme : deux sinusoïdes lentes qui glissent.
-        const calm = 0.17 + 0.08 * Math.sin(t * 1.4 + x * 8.5) + 0.05 * Math.sin(t * 0.9 - x * 13);
+        const calm = 0.26 + 0.15 * Math.sin(t * 1.3 + x * 7.5) + 0.07 * Math.sin(t * 0.8 - x * 15);
         // Parole : agitation rapide, différente pour chaque barre ; « eux » à droite, « moi » à gauche.
         const jitter = 0.5 + 0.5 * Math.sin(t * 9.1 + i * 1.93) * Math.sin(t * 4.3 + i * 0.71);
         const side = ampMe * (1 - x) + ampThem * x;
@@ -87,7 +87,7 @@
     mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
   }
   span {
-    flex: 0 1 3px;
+    flex: 0 1 2.5px;
     min-width: 1.5px;
     height: 100%;
     border-radius: 3px;

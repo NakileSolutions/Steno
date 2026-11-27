@@ -141,7 +141,6 @@
       ...MAIN_SECTIONS.map((s, i) => ({
         id: `go:${s.id}`,
         title: `Aller à ${s.label}`,
-        subtitle: 'Navigation',
         keywords: s.id === 'actions' ? 'décisions tâches' : '',
         icon: s.icon,
         shortcut: `${mod}${i + 1}`,

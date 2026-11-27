@@ -8,7 +8,7 @@
   import { markOpened } from '../lib/opened.svelte';
   import { api, isTauri } from '../lib/api';
   import { MAIN_SECTIONS, SETTINGS_SECTIONS } from '../lib/sections';
-  import { clockDuration, duration, relDay } from '../lib/format';
+  import { clockDuration, relDay } from '../lib/format';
   import { toastError } from '../lib/ui.svelte';
   import { SidebarController, readCollapsed, writeCollapsed, type SidebarState } from '../lib/sidebar';
   import Logo from '../lib/Logo.svelte';
@@ -211,7 +211,7 @@
       <a class="live-card" class:rec={s.state === 'listening'} href={href('/live')} title="Réunion en cours">
         <span class="dot {s.state === 'listening' ? 'live' : s.state}"></span>
         <span class="grow">
-          <span class="lc-state">{STATE_LABEL[s.state]}{#if s.state !== 'processing'}<span class="tnum">{' · '}{duration(s.meeting.started_at, null, clock.now)}</span>{/if}</span>
+          <span class="lc-state">{STATE_LABEL[s.state]}{#if s.state !== 'processing'}<span class="tnum">{' · '}{elapsed}</span>{/if}</span>
           <span class="lc-title ellipsis">{s.meeting.title ?? 'Réunion sans titre'}</span>
         </span>
       </a>
