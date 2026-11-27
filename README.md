@@ -16,6 +16,10 @@ du Mac, et **le Scribe ne publie jamais rien** : il lit, vous publiez.
 
 ## Ce que fait Scribe
 
+- **Écoute 100 % manuelle** : rien n'est jamais enregistré sans votre action. Quand un appel
+  Teams commence, Scribe le **propose** (notification) ; vous démarrez l'écoute depuis l'icône
+  de la barre d'état (en haut à droite, à côté de l'heure), ⌃⌥S ou l'app. Elle ne s'arrête
+  pas toute seule non plus : menu, ⌃⌥S, ou à la voix « *Scribe, arrête l'écoute* ».
 - **Transcription en direct** de vos réunions Teams, en séparant votre voix (« Moi », micro)
   et celle des autres (« Eux », son de Teams), sans enregistrer d'audio durablement.
 - **Commandes vocales** : « *Scribe, cherche les erreurs Datadog sur ms-booking depuis hier.* »
@@ -52,9 +56,9 @@ Mise à jour : `git pull && make install` (sauvegarde de la base puis migrations
 
 | Où | Quoi |
 |---|---|
-| Barre de menu | état (● écoute), niveaux micro/Teams, démarrer/arrêter, réunion confidentielle, demande rapide, 5 dernières réponses |
+| Barre d'état (icône à côté de l'heure) | menu : état (« ● Écoute en cours », « Appel Teams détecté »), **Démarrer / Arrêter l'écoute**, réunion confidentielle, demande rapide, transcription en direct, ouvrir Scribe, réglages |
 | Fenêtre | Réunions (compte rendu, transcription, demandes, notes), En direct, Recherche, Décisions & actions, Réglages |
-| Voix | « *Scribe, cherche / vérifie / note / résume / annule …* » (mot d'appel et verbes réglables) |
+| Voix | « *Scribe, cherche / vérifie / note / résume / annule …* », « *Scribe, arrête l'écoute* » (mot d'appel et verbes réglables) |
 | Raccourcis | ⌃⌥S démarrer/arrêter · ⌃⌥Espace aparté (maintenir) · ⌃⌥N note rapide |
 | CLI | `scribe ask "qu'a-t-on décidé sur l'export Brindille ?"` · `scribe export <id>` · `scribe doctor` · `scribe mcp` |
 
@@ -99,11 +103,17 @@ connecteurs grisés.
 ## Développement
 
 ```bash
-make test        # tests Rust (dont acceptation) + vérification de l'UI
+make test        # tous les tests : Rust (unitaires, fonctionnels, acceptation, perf), UI (Vitest), e2e (Playwright)
+make serve       # UI + vrai cœur dans le navigateur : http://127.0.0.1:4180/?backend=http
 make simulate    # rejoue la daily d'exemple dans tout le pipeline (faux agent, sans Mac)
 make dev         # app avec rechargement à chaud, sidecar simulé, faux agent
 cd app/ui && npm run dev   # l'interface seule dans un navigateur, avec données d'exemple
 ```
+
+Les tests e2e « réels » pilotent l'interface dans Chromium contre `scribe serve` (même API
+que l'app Tauri, en HTTP), le simulateur de sidecar et un faux CLI `claude` : démarrage
+manuel, transcription, demandes vocales et tapées, refus de publier, arrêt, compte rendu,
+corrélation, recherche, export. Reprise du projet : [`docs/HANDOFF.md`](docs/HANDOFF.md).
 
 Variables utiles : `SCRIBE_HOME` (dossier des données), `SCRIBE_SIDECAR` (commande du sidecar,
 ex. `scribe replay fixtures/daily-45min.jsonl --speed 20`), `RUST_LOG`.

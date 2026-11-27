@@ -206,3 +206,23 @@ pub fn run() {
             }
         });
 }
+
+#[cfg(test)]
+mod tests {
+    /// L'app expose exactement les commandes du contrat (même liste que `scribe serve`).
+    #[test]
+    fn commandes_tauri_conformes_au_contrat() {
+        let src = include_str!("lib.rs");
+        let start = src.find("generate_handler![").unwrap();
+        let end = start + src[start..].find(']').unwrap();
+        let mut registered: Vec<&str> = src[start..end]
+            .split("commands::")
+            .skip(1)
+            .map(|s| s.trim().trim_end_matches(',').trim())
+            .collect();
+        registered.sort();
+        let mut contract: Vec<&str> = scribe_core::api::COMMANDS.to_vec();
+        contract.sort();
+        assert_eq!(registered, contract);
+    }
+}

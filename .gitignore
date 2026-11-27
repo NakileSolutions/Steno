@@ -10,3 +10,5 @@ node_modules/
 /audio/ScribeAudio/.build/
 /app/ui/screenshots/
 /.dev-home/
+/app/ui/test-results/
+/app/ui/playwright-report/

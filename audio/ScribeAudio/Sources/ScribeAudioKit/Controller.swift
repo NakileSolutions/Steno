@@ -39,7 +39,11 @@ actor Controller {
         }
         monitor.start()
 
-        await models.preload()
+        // Modèles chargés au premier `start` (RAM au repos minimale, objectif < 120 Mo) ;
+        // SCRIBE_PRELOAD_MODELS=1 les charge dès le lancement (première phrase plus rapide).
+        if ProcessInfo.processInfo.environment["SCRIBE_PRELOAD_MODELS"] == "1" {
+            await models.preload()
+        }
         Log.info("prêt (scribe-audio \(SidecarInfo.version), ASR \(models.asrName))")
     }
 
@@ -90,6 +94,7 @@ actor Controller {
             return
         }
         await models.retryIfFailed()
+        await models.preload()
         let config = CaptureSession.Config(
             vocabulary: options.vocabulary,
             silenceMs: options.silenceMs,
@@ -116,6 +121,8 @@ actor Controller {
         if !complete { Log.warn("vidage des segments plus long que prévu : arrêt annoncé avant la fin") }
         Log.info("capture arrêtée")
         output.send(.state(.stopped))
+        // Retour au niveau de repos : les modèles seront rechargés au prochain `start`.
+        await models.unload()
     }
 
     private func wakeTest(seconds: Double) async {
@@ -164,6 +171,7 @@ actor Controller {
         do {
             let turns = try await runDiarization(fileURL: url, diarizer: diarizer)
             output.send(.diarization(meetingId: meetingId, turns: turns))
+            await models.releaseDiarizer()
         } catch {
             Log.error("diarisation : \(error)")
             output.send(.error(code: .asrFailed, message: "Diarisation impossible : \(error)", recoverable: true))

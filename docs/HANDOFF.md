@@ -1,0 +1,172 @@
+# Passation — état du projet Scribe et reste à faire
+
+> Document pour la personne (ou l'agent) qui reprend le projet. À lire avec `PLAN.md`
+> (le besoin), `docs/contracts.md` (les interfaces), `docs/adapters.md` (les CLI d'agent),
+> `docs/spikes.md` (ce qui doit être validé sur Mac).
+
+## 1. Résumé
+
+Tout le logiciel décrit dans `PLAN.md` est **codé**. Tout ce qui ne dépend pas de macOS a été
+**exécuté et testé sous Linux** : cœur Rust, CLI, interface, et app Tauri lancée dans un écran
+virtuel, avec un sidecar audio simulé et un faux CLI d'agent.
+
+Trois choses n'ont **jamais tourné** :
+- le sidecar audio Swift (`audio/ScribeAudio`), faute de Mac ;
+- les vrais CLI d'agent avec un vrai abonnement ;
+- la capture Teams.
+
+C'est l'objet de la phase 0 (`docs/spikes.md`), à faire en premier sur un Mac.
+
+Règles produit ajoutées après le plan initial (appliquées partout) :
+1. **L'écoute ne démarre jamais automatiquement.**
+   - Un appel Teams détecté donne au plus une notification « Appel Teams détecté — démarrer l'écoute ? ».
+   - On démarre l'écoute depuis l'icône de la barre d'état macOS (menu natif), le raccourci ⌃⌥S, ou l'app.
+2. **L'écoute ne s'arrête jamais automatiquement.**
+   - La fin de l'appel Teams ne l'arrête pas.
+   - On l'arrête par le menu, le raccourci, l'app, ou **à la voix** : « Scribe, arrête l'écoute » (intention `stop`).
+3. Design : épuré, barre latérale bleu nuit, logo de l'utilisateur (`assets/logo.jpg`, recréé en SVG dans l'UI, icônes générées dans `app/src-tauri/icons/`).
+
+## 2. Organisation du dépôt
+
+| Dossier | Contenu | Taille |
+|---|---|---|
+| `crates/scribe-core` | lib Rust : base SQLite, réglages, file de tâches, session en direct, mot d'appel, anti-écho, adaptateurs d'agent, politique lecture seule, compte rendu, corrélation, diagnostic, répartiteur d'API | ~8 700 lignes |
+| `crates/scribe-cli` | bin `scribe` : ask, doctor, init, export, mcp, meetings, settings, jobs, replay, simulate, serve, daemon, policy-hook | ~1 000 lignes + 580 de tests |
+| `app/src-tauri` | app Tauri 2 : barre d'état, fenêtres, raccourcis globaux, notifications, les 49 commandes | ~800 lignes |
+| `app/ui` | Svelte 5 + Vite + TS, faux backend, backend HTTP, tests Vitest et Playwright | ~7 500 lignes |
+| `audio/ScribeAudio` | sidecar Swift : process tap Teams, micro avec annulation d'écho, FluidAudio, diarisation, spikes | ~3 700 lignes + 500 de tests |
+| `agent/` | `INSTRUCTIONS.md`, procédures (`playbooks/`), `policy.toml` | |
+| `fixtures/` | daily synthétique de 45 min, attendus, faux `claude` | |
+| `docs/` | contrats, adaptateurs, spikes, captures, ce document | |
+
+## 3. Architecture en bref
+
+```
+Scribe.app (Tauri) ──┬─ UI Svelte (WKWebView) ── invoke / événements ──┐
+                     └─ scribe-core (Rust, même processus) ◄────────────┘
+                          │  JSON lines (stdin/stdout)          │ lance claude/codex… (-p, lecture seule)
+                          ▼                                     ▼
+                     scribe-audio (Swift)                  CLI d'agent + crochet « policy-hook »
+                     tap Teams + micro → VAD → ASR          (le binaire Scribe lui-même)
+CLI `scribe` : même cœur ; `scribe serve` = même API en HTTP + SSE (tests e2e, dev navigateur)
+```
+
+Points clés :
+- **Une seule source de vérité pour l'API** : `docs/contracts.md` §5. L'app Tauri
+  (`app/src-tauri/src/commands.rs`) et `scribe serve` (`scribe_core::api::dispatch`) exposent
+  exactement les mêmes 49 commandes. Deux tests le vérifient :
+  - `api::tests::toutes_les_commandes_du_contrat_sont_connues` ;
+  - `tests::commandes_tauri_conformes_au_contrat`.
+- **Sécurité de l'agent** (`crates/scribe-core/src/policy.rs`, `agents/claude_code.rs`). Avec Claude Code :
+  - mode `dontAsk` et liste blanche d'outils ;
+  - refus explicites des outils d'écriture ;
+  - crochet `PreToolUse` → `<exécutable Scribe> policy-hook <politique.json>`, qui refuse les outils MCP d'écriture (motifs et mots), les commandes shell hors liste, les lectures hors des dépôts cochés, et impose le budget d'appels.
+
+  Les agents sans liste de refus MCP (Codex, Gemini, OpenCode, custom) ont leurs connecteurs grisés et neutralisés.
+- **Le cœur est l'unique écrivain** de la base. La CLI écrit seulement dans `jobs`, puis exécute elle-même la tâche si l'app ne tourne pas (battement de cœur `runtime.app_heartbeat`).
+- **Cycle d'une réunion** :
+  1. `start_meeting` (manuel) → `Start` au sidecar → segments → anti-écho → mot d'appel (canal `me` seulement) → demandes ;
+  2. `stop_meeting` (manuel ou « arrête l'écoute ») → tâche `diarize` (si audio) puis `report` ;
+  3. puis `correlate` si le mode est `auto` et que la réunion n'est pas exclue ;
+  4. l'audio est supprimé selon la rétention.
+
+## 4. Ce qui est fait et vérifié
+
+| Domaine | État | Preuve |
+|---|---|---|
+| Schéma SQLite, FTS5, migrations, sauvegarde, rétention | ✅ | tests `db::*`, `maintenance` |
+| Réglages typés, import/export TOML d'équipe | ✅ | tests `settings::*`, `cli::reglages_d_equipe_sans_donnees_perso` |
+| Mot d'appel : détection, mode strict, variantes, mots interdits, contrôles (syllabes, historique, prénoms), aparté, arrêt à la voix | ✅ | tests `wake::*`, acceptation §6.5 (≥ 18/20, 0 faux déclenchement) |
+| Anti-écho | ✅ | tests `echo::*`, rejeu de la daily |
+| Adaptateur `claude-code` | ✅ sur faux CLI | acceptation §5.6 (sources, reprise de session, refus) |
+| Adaptateurs `codex`, `gemini`, `opencode`, `custom` | 🟡 codés, analyse de sortie testée, jamais lancés pour de vrai | tests unitaires des analyseurs |
+| Politique lecture seule + crochet | ✅ | tests `policy::*`, `cli::crochet_de_politique`, `doctor --live` sur faux CLI |
+| Compte rendu, décisions, actions, intervenants proposés, brouillons | ✅ sur faux CLI | acceptation §7.3 |
+| Corrélation (off / à la demande / auto, exclusions, versions) | ✅ sur faux CLI | acceptation §7.3 + `exclusions_et_confidentialite` |
+| Écoute manuelle seulement ; fin d'appel Teams sans effet ; arrêt à la voix | ✅ | `appel_teams_propose_sans_demarrer_et_arret_a_la_voix`, `daily_complete…` |
+| CLI (ask, export, mcp, settings, policy-hook, serve, simulate) | ✅ | `crates/scribe-cli/tests/cli.rs` (binaire en sous-processus) |
+| Serveur MCP en lecture seule | ✅ | `cli::serveur_mcp_lecture_seule` |
+| Performance de la recherche (500 réunions, 150 000 phrases) | ✅ 16 à 75 ms | `cargo test -p scribe-core --release --test perf -- --ignored` |
+| App Tauri (commandes, événements, barre d'état, raccourcis) | 🟡 compilée et lancée sous Linux ; menu natif macOS jamais vu | test de conformité des commandes ; essai manuel sous Xvfb |
+| Interface (tous les écrans du plan) | ✅ | Vitest + Playwright (maquette et réel), captures `docs/screenshots/` |
+| Sidecar Swift | 🔴 jamais compilé | — |
+
+## 5. Tests
+
+| Commande | Contenu |
+|---|---|
+| `cargo test --workspace` | Rust : unitaires (cœur, app), fonctionnels (CLI en sous-processus), acceptation (pipeline complet avec le faux agent), conformité des commandes |
+| `cargo test -p scribe-core --release --test perf -- --ignored` | performance de la recherche |
+| `cd app/ui && npm run test:unit` | Vitest : formatage, assainissement du markdown, routeur, logique pure |
+| `cd app/ui && npm run test:e2e` | Playwright : projet `maquette` (UI + faux backend) et projet `reel` (UI → `scribe serve` → cœur → faux `claude` → SQLite) |
+| `make test` | tout ce qui précède |
+| `swift test` (dans `audio/ScribeAudio`) | protocole, correction par vocabulaire, segmenteur, utilitaires (**jamais exécuté**) |
+
+Outils de test :
+- `fixtures/daily-45min.jsonl` (régénérable par `fixtures/generate.py`) avec `fixtures/expected.json` ;
+- `fixtures/fake-bin/claude`, qui imite `claude -p --output-format stream-json`, `--version` et `mcp list`, et appelle **réellement** le crochet déclaré dans `--settings` ;
+- `scribe replay <fichier> --speed N`, le simulateur du sidecar : il annonce l'appel Teams puis attend `start`.
+
+Sur Mac, pour les e2e : `cd app/ui && npx playwright install chromium` une fois.
+
+## 6. Reste à faire (par priorité)
+
+### P0 — Phase 0 sur Mac (bloquant, détail dans `docs/spikes.md`)
+1. **Compiler le sidecar** (`cd audio/ScribeAudio && swift build -c release && swift test`) et corriger les erreurs. Les points incertains sont marqués `À VÉRIFIER` dans le code et listés dans `audio/ScribeAudio/README.md` :
+   - API FluidAudio 0.18.x : `AsrManager.transcribe(_:decoderState:language:)`, `VadManager`, `OfflineDiarizerManager` ;
+   - initialiseurs de `CATapDescription` ;
+   - code d'erreur quand l'audio système est refusé.
+2. **S4** (Mac pro, MDM) : si l'audio système est bloqué, arrêter et prévenir.
+3. **S1** : capture Teams **lancée depuis Scribe.app**, pour vérifier que la permission couvre le sidecar. Plan B : capture en Rust dans le processus principal (`objc2-core-audio`), avec le même protocole.
+4. **S2** : qualité de la transcription en français et latence (< 1 s par phrase).
+5. **S3** : `scribe doctor --live` avec le vrai Claude Code puis Codex :
+   - les connecteurs du compte sont-ils disponibles en `-p` ?
+   - les options de Codex (`-c mcp_servers={}`, `exec resume`) sont-elles valides ?
+6. **S5** : RAM au repos < 120 Mo. Les modèles sont chargés au `start` et libérés au `stop` ; `SCRIBE_PRELOAD_MODELS=1` les précharge.
+
+### P1 — Vérifications de l'app sur macOS
+- `make install`, puis l'assistant de premier lancement de bout en bout.
+- **Barre d'état** : le clic ouvre le menu natif, les libellés suivent l'état (« ● Écoute en cours — … », « Appel Teams détecté : … »), le « ● » apparaît à côté de l'icône, la case « Réunion confidentielle » fonctionne.
+- Raccourcis globaux : ⌃⌥S, ⌃⌥Espace maintenu (aparté, avec événements appui et relâchement), ⌃⌥N.
+- Notifications macOS. Le clic sur une notification n'ouvre pas encore la réponse : `tauri-plugin-notification` ne gère pas l'action de clic sur desktop, et le champ `route` est prêt dans `CoreEvent::Notify`.
+- Dock : l'icône apparaît quand la fenêtre est ouverte et disparaît à la fermeture (`ActivationPolicy`).
+- Signature ad hoc : vérifier que les permissions TCC tiennent d'une compilation à l'autre (sinon, il faut les réaccorder après chaque `make install`).
+- Retour sonore à la détection d'une commande (`afplay`) : ne doit jamais être injecté dans l'audio Teams.
+
+### P2 — Fonctionnel à affiner
+- Mot d'appel : régler les verbes et les variantes sur de vraies transcriptions Parakeet, et dérouler le test vocal de l'écran Voix sur Mac.
+- Diarisation : correspondance des tours de parole avec les segments `them`, renommage proposé (« Marie ? ») à valider dans l'UI.
+- Prompts (`crates/scribe-core/src/prompts.rs`, `agent/playbooks/`) : à ajuster sur de vraies réponses (format `TL;DR`, bloc JSON final du compte rendu et de la corrélation).
+- `codex`, `gemini`, `opencode` : vérifier les options sur les versions installées, puis mettre à jour `docs/adapters.md`. Si un CLI sait bloquer des outils MCP par motif, passer `tool_deny_list: true` et traduire la politique.
+- Pause / reprise de l'écoute : l'état `paused` existe dans le protocole mais n'est pas exposé.
+- Clic sur une notification → ouvrir la réponse ; « 5 dernières réponses » directement dans le menu natif.
+
+### P3 — Équipe et finitions
+- Configuration d'équipe : rédiger un TOML de départ (vocabulaire des services, verbes, exclusions).
+- Rendre un vrai Mac disponible en CI (job `macos` en `workflow_dispatch` seulement, car les minutes macOS coûtent plus cher).
+- Consentement RGPD : texte d'information des participants (hors code).
+
+## 7. Commandes utiles
+
+```bash
+make test                     # tous les tests
+make serve                    # UI + vrai cœur dans le navigateur : http://127.0.0.1:4180/?backend=http
+make simulate                 # daily d'exemple dans tout le pipeline, sortie texte
+make dev                      # app Tauri en développement (sidecar simulé, faux agent)
+make install                  # sur Mac : compile, signe, installe Scribe.app + CLI + modèles
+scribe doctor [--live]        # diagnostic
+SCRIBE_HOME=/tmp/x scribe …   # dossier de données isolé
+RUST_LOG=debug                # journaux détaillés (app : ~/Library/Application Support/Scribe/logs/)
+```
+
+## 8. Pièges connus
+
+- `tauri-build` exige `app/src-tauri/binaries/scribe-audio-<triplet>`. Sous Linux,
+  `make sidecar-placeholder` crée un remplaçant ; sur Mac, `make sidecar` copie le binaire Swift.
+- En debug, l'app charge l'UI depuis Vite (`http://localhost:5173`) : lancer `npm run dev` dans
+  `app/ui`, ou utiliser `make dev`.
+- Les dates de l'UI tolèrent les valeurs non ISO : les échéances viennent de l'IA (« vendredi »).
+- Le crochet de politique est l'exécutable courant (`current_exe()`) : si l'app est déplacée
+  pendant une exécution d'agent, la demande échoue proprement (outil refusé).
+- Un processus enfant lancé par un test doit avoir stdout/stderr à `null`, sinon le pipe de
+  `cargo test` reste ouvert après un échec.

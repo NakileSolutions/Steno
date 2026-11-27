@@ -68,6 +68,19 @@ actor SpeechModels {
         _ = startVADLoad()
     }
 
+    /// Libère les modèles d'ASR et de VAD (fin d'écoute) : la mémoire revient au niveau de repos.
+    func unload() {
+        recognizerTask = nil
+        vadTask = nil
+        recognizerFailed = false
+        failureReported = false
+    }
+
+    /// Libère les modèles de diarisation (après usage).
+    func releaseDiarizer() {
+        diarizerInstance = nil
+    }
+
     /// Après un échec (ex. pas de réseau au premier téléchargement), permet de réessayer.
     func retryIfFailed() {
         guard recognizerFailed else { return }

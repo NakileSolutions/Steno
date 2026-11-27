@@ -417,12 +417,13 @@ impl Session {
             SidecarEvent::Error { code, message, recoverable } => {
                 tracing::warn!("sidecar : {code} {message}");
                 let msg = format!("{code} : {message}");
-                if code == "diarize_failed" || code == "diarization_failed" {
+                let lower = message.to_lowercase();
+                if code == "diarize_failed" || code == "diarization_failed" || lower.contains("diarisation") {
                     for (_, w) in self.diarize_waiters.drain() {
                         let _ = w.send(Err(anyhow!(msg.clone())));
                     }
                 }
-                if code == "wake_test_failed" {
+                if code == "wake_test_failed" || (!self.wake_waiters.is_empty() && lower.contains("test")) {
                     for w in self.wake_waiters.drain(..) {
                         let _ = w.send(Err(anyhow!(msg.clone())));
                     }

@@ -1,6 +1,8 @@
 # Scribe — compilation locale (PLAN §14). Cibles principales :
 #   make install    compile tout, signe (ad hoc), installe Scribe.app et la CLI, télécharge les modèles
-#   make test       tests Rust (cœur, CLI, acceptation) + vérification de l'UI
+#   make test       tous les tests : Rust (unitaires, fonctionnels, acceptation, perf), UI, e2e
+#   make test-e2e   e2e Playwright (maquette + réels : UI → scribe serve → cœur → faux agent)
+#   make serve      interface + vrai cœur dans un navigateur : http://127.0.0.1:4180/?backend=http
 #   make dev        app en mode développement (rechargement à chaud de l'UI)
 #   make simulate   rejoue la daily d'exemple dans tout le pipeline (faux agent, sans Mac ni abonnement)
 
@@ -13,7 +15,7 @@ BIN_DIR ?= $(HOME)/.local/bin
 SIDECAR := app/src-tauri/binaries/scribe-audio-$(TRIPLE)
 TAURI := app/ui/node_modules/.bin/tauri
 
-.PHONY: all install check-prereqs ui sidecar sidecar-placeholder cli app models test test-ui dev simulate fixtures clean mcp-config
+.PHONY: all install check-prereqs ui sidecar sidecar-placeholder cli app models test test-rust test-ui test-e2e serve dev simulate fixtures clean mcp-config
 
 all: app cli
 
@@ -77,20 +79,37 @@ endif
 	@echo "✅ Installé. CLI : $(BIN_DIR)/scribe (ajoutez ce dossier à votre PATH si besoin)."
 	@echo "   Lancez Scribe depuis ~/Applications, puis vérifiez avec : scribe doctor"
 
-test: sidecar-placeholder
-	cargo test --workspace --exclude scribe-app
+test: test-rust test-ui test-e2e
+
+# Rust : unitaires, fonctionnels (CLI en sous-processus), acceptation (faux agent), perf.
+test-rust: sidecar-placeholder ui
+	cargo test --workspace
 	cargo test -p scribe-core --release --test perf -- --ignored
-	$(MAKE) test-ui
 
 test-ui: app/ui/node_modules
-	cd app/ui && npm run check && npm run build
+	cd app/ui && npm run check && npm run test:unit && npm run build
+
+# e2e Playwright : maquette + réels (UI → scribe serve → cœur → faux agent → SQLite).
+# Sur un Mac neuf : `cd app/ui && npx playwright install chromium` une fois.
+test-e2e: app/ui/node_modules
+	cargo build -p scribe-cli
+	cd app/ui && npm run build && npm run test:e2e
+
+# Interface + vrai cœur dans un navigateur (sidecar simulé, faux agent) :
+# ouvrir http://127.0.0.1:4180/?backend=http
+serve: ui
+	cargo build -p scribe-cli
+	PATH="$(CURDIR)/fixtures/fake-bin:$(CURDIR)/target/debug:$$PATH" \
+	  SCRIBE_HOME="$${SCRIBE_HOME:-$(CURDIR)/.dev-home}" \
+	  SCRIBE_SIDECAR="$(CURDIR)/target/debug/scribe replay $(CURDIR)/fixtures/daily-45min.jsonl --speed 20" \
+	  target/debug/scribe serve --port 4180 --ui app/ui/dist
 
 # Développement : UI servie par Vite, sidecar simulé par la daily d'exemple, faux agent.
 dev: app/ui/node_modules sidecar-placeholder
 	cargo build -p scribe-cli
 	cd app && PATH="$(CURDIR)/fixtures/fake-bin:$(CURDIR)/target/debug:$$PATH" \
 	  SCRIBE_HOME="$${SCRIBE_HOME:-$(CURDIR)/.dev-home}" \
-	  SCRIBE_SIDECAR="scribe replay $(CURDIR)/fixtures/daily-45min.jsonl --speed 20" \
+	  SCRIBE_SIDECAR="$(CURDIR)/target/debug/scribe replay $(CURDIR)/fixtures/daily-45min.jsonl --speed 20" \
 	  ui/node_modules/.bin/tauri dev
 
 simulate:
