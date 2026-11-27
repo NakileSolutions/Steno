@@ -10,7 +10,7 @@ import Foundation
 // MARK: - Constantes
 
 enum SidecarInfo {
-    static let version = "0.2.2"
+    static let version = "0.3.0"
 }
 
 // MARK: - Types partagés
