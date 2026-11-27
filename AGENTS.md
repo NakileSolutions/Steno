@@ -10,8 +10,8 @@ people working on Sténo's code. `CLAUDE.md` imports it: edit this file, not tha
 
 ## The project in brief
 
-Local-first meeting assistant for macOS and Linux (Debian / Ubuntu). Read `README.md` first (French, with an English
-summary), then depending on the task:
+Local-first meeting assistant for macOS and Linux (Debian / Ubuntu). Read `README.md` first (French version:
+`README.fr.md`, keep both in sync), then depending on the task:
 - `docs/contracts.md`: **source of truth** for the interfaces (SQLite schema, sidecar
   protocol, `AgentAdapter` trait, settings, API commands, HTTP backend);
 - `docs/adapters.md`: the agent CLIs; `docs/HANDOFF.md`: status and detailed architecture;
@@ -105,7 +105,7 @@ On a fresh Mac: `cd app/ui && npx playwright install chromium` once.
 - Conflict-prone files: `docs/contracts.md`, `crates/steno-core/src/api.rs`,
   `app/src-tauri/src/lib.rs`, `app/ui/src/lib/api.ts`, `mock.ts`, the `i18n/en/*` files.
   Rebase often when touching them.
-- Update docs in the same PR as the code (`contracts.md`, `README.md`, `HANDOFF.md` when a
+- Update docs in the same PR as the code (`contracts.md`, `README.md` and `README.fr.md`, `HANDOFF.md` when a
   feature's status changes).
 - If you hit a non-obvious pitfall, add it below.
 
