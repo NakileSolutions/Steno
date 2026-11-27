@@ -193,11 +193,16 @@ fn reglages_d_equipe_sans_donnees_perso() {
 
 /// Requête HTTP minimale (pas de dépendance) sur 127.0.0.1.
 fn http(port: u16, method: &str, path: &str, body: &str) -> (u16, String) {
+    http_with(port, method, path, "Host: localhost\r\nContent-Type: application/json\r\n", body)
+}
+
+/// Requête HTTP avec des en-têtes choisis (chacun terminé par `\r\n`).
+fn http_with(port: u16, method: &str, path: &str, headers: &str, body: &str) -> (u16, String) {
     let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
     s.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
     write!(
         s,
-        "{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "{method} {path} HTTP/1.1\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     )
     .unwrap();
@@ -252,6 +257,12 @@ fn serveur_http_de_l_api() {
             .unwrap(),
     );
     let port = served_port(child.0.stderr.take().unwrap());
+    // Langue fixe : les messages vérifiés ci-dessous ne dépendent pas de la langue de la machine.
+    let (_, b) = http(port, "POST", "/api/invoke/get_settings", "");
+    let mut s: serde_json::Value = serde_json::from_str(&b).unwrap();
+    s["profile"]["language"] = "fr".into();
+    let (c, b) = http(port, "POST", "/api/invoke/save_settings", &serde_json::json!({ "settings": s }).to_string());
+    assert_eq!(c, 200, "{b}");
     let (c, b) = http(port, "POST", "/api/invoke/live_state", "");
     assert_eq!(c, 200, "{b}");
     assert!(b.contains("\"call\""));
@@ -339,4 +350,47 @@ fn replay_without_calendar_reports_no_calendar_source() {
     );
     assert_eq!(first_of(&lines, "permissions")["calendar"], "unknown");
     assert_eq!(first_of(&lines, "calendar")["events"], serde_json::json!([]));
+}
+
+#[test]
+fn serveur_http_refuse_les_requetes_etrangeres() {
+    let h = home().join("serve-securite");
+    std::fs::create_dir_all(&h).unwrap();
+    struct Kill(std::process::Child);
+    impl Drop for Kill {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let mut child = Kill(
+        steno(&h)
+            .args(["serve", "--port", "0"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let port = served_port(child.0.stderr.take().unwrap());
+    let local = format!("Host: 127.0.0.1:{port}\r\n");
+    let json = "Content-Type: application/json\r\n";
+    // Requête légitime de la page servie.
+    let (c, b) = http_with(port, "POST", "/api/invoke/live_state", &format!("{local}{json}Origin: http://127.0.0.1:{port}\r\nSec-Fetch-Site: same-origin\r\n"), "{}");
+    assert_eq!(c, 200, "{b}");
+    // Rebinding DNS : nom d'hôte étranger résolu vers 127.0.0.1.
+    let (c, _) = http_with(port, "POST", "/api/invoke/live_state", &format!("Host: rebind.example:{port}\r\n{json}"), "{}");
+    assert_eq!(c, 403);
+    let (c, _) = http_with(port, "GET", "/api/events", &format!("Host: rebind.example:{port}\r\n"), "");
+    assert_eq!(c, 403, "flux d'événements protégé aussi");
+    // Corps non JSON (requête envoyée sans pré-vérification CORS).
+    let (c, _) = http_with(port, "POST", "/api/invoke/start_meeting", &format!("{local}Content-Type: text/plain\r\n"), r#"{"title":"x"}"#);
+    assert_eq!(c, 415);
+    // Page d'une autre origine.
+    let (c, _) = http_with(port, "POST", "/api/invoke/delete_all_data", &format!("{local}{json}Origin: https://evil.example\r\n"), "{}");
+    assert_eq!(c, 403);
+    let (c, _) = http_with(port, "POST", "/api/invoke/delete_all_data", &format!("{local}{json}Sec-Fetch-Site: cross-site\r\n"), "{}");
+    assert_eq!(c, 403);
+    let (c, b) = http(port, "POST", "/api/invoke/live_state", "");
+    assert_eq!(c, 200, "aucune réunion n'a été lancée par les requêtes refusées : {b}");
+    assert!(b.contains("\"meeting\":null"), "{b}");
 }

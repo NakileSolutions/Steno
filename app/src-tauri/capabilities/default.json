@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Fenêtre principale et panneau de la barre de menu : commandes Sténo, fenêtres, événements, liens.",
-  "windows": ["main", "tray"],
+  "description": "Fenêtre principale : commandes Sténo, fenêtres, événements, liens.",
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-show",

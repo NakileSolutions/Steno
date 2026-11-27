@@ -191,6 +191,7 @@ static TABLE: &[(&str, &str)] = &[
     ("le micro n'a rien renvoyé à temps", "the microphone returned nothing in time"),
     ("commande inconnue : {}", "unknown command: {}"),
     ("une réunion est en cours : redémarrez après la réunion", "a meeting is in progress: restart after the meeting"),
+    ("commande réservée à la fenêtre principale de Sténo", "command reserved for Sténo's main window"),
     // ------------------------------------------------------------ doctor.rs : noms
     ("Apps de visio", "Video call apps"),
     ("Système", "System"),

@@ -380,6 +380,14 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
 Le front appelle `invoke(nom, args)` ; les noms d'arguments sont en `camelCase` côté JS
 (conversion automatique de Tauri). Erreur : chaîne en français.
 
+In the app, commands that edit settings, meetings (title, notes, speakers, segments, context,
+participants, confidentiality, report), actions, repositories or connectors, delete data,
+install an update, write a file or request a permission only answer the main window
+(`main_window_only` in `app/src-tauri/src/commands.rs`). Besides read-only commands, the menu
+bar panel calls `live_state`, `get_settings`, `start_meeting`, `stop_meeting`,
+`pause_meeting`, `resume_meeting`, `set_mic_muted`, `set_live_confidential`, `ask` (live
+meeting only), `cancel_request`, `recent_requests` and `open_main`.
+
 ### Types (TypeScript)
 
 ```ts
@@ -563,9 +571,14 @@ type Settings = /* section 4 */;
 `steno serve --port 4180 --ui app/ui/dist` expose l'API du §5 sur `127.0.0.1` et sert
 l'interface sur la même origine. Ouvrir `http://127.0.0.1:4180/?backend=http`.
 
-- `POST /api/invoke/<commande>` : corps = arguments JSON en camelCase (vide = aucun) ;
+- `POST /api/invoke/<commande>` : corps = arguments JSON en camelCase (vide = aucun),
+  `Content-Type: application/json` obligatoire (415 sinon) ;
   200 → JSON du résultat (`null` si rien) ; 400 → `{"error": "…"}` ; 404 si commande inconnue.
 - `GET /api/events` : flux SSE ; `event:` = nom de l'événement du §5, `data:` = charge JSON.
+- Toutes les routes `/api/*` refusent (403) un en-tête `Host` autre que `127.0.0.1`,
+  `localhost` ou `[::1]` (avec ou sans le port du serveur), un en-tête `Origin` autre que
+  `http://127.0.0.1:<port>` ou `http://localhost:<port>`, et `Sec-Fetch-Site` autre que
+  `same-origin` ou `none` : une page web tierce ne peut ni appeler l'API ni lire le flux.
 - Variables : `STENO_HOME`, `STENO_SIDECAR` (ex. `steno replay fichier.jsonl --speed 20`).
 - `pick_folder` renvoie `null` (pas de sélecteur natif).
 
