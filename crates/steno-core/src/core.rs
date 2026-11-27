@@ -351,8 +351,12 @@ impl Core {
         if self.inner.db.live_meeting()?.is_some() {
             bail!("une réunion est en cours : installez la mise à jour après la réunion");
         }
+        // Appelée hors du moteur asynchrone (commande synchrone), `tokio::spawn` paniquerait et
+        // arrêterait l'app : on refuse proprement.
+        let rt = tokio::runtime::Handle::try_current()
+            .map_err(|_| anyhow::anyhow!("installation impossible hors du moteur asynchrone de l'app"))?;
         let inner = self.inner.clone();
-        tokio::spawn(async move {
+        rt.spawn(async move {
             if let Err(e) = crate::updates::install(inner).await {
                 tracing::warn!("mise à jour : {e:#}");
             }

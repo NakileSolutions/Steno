@@ -219,8 +219,10 @@ pub async fn check_update(st: State<'_, AppState>) -> R<steno_core::updates::Upd
     st.core.check_update().await.map_err(er)
 }
 
+/// Asynchrone : l'installation est lancée sur le moteur de Tauri (une commande synchrone
+/// tourne sur le fil principal, sans moteur asynchrone).
 #[tauri::command]
-pub fn install_update(st: State<'_, AppState>) -> R<()> {
+pub async fn install_update(st: State<'_, AppState>) -> R<()> {
     st.core.install_update().map_err(er)
 }
 
