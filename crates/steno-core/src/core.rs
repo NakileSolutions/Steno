@@ -293,18 +293,47 @@ impl Inner {
 }
 
 /// Mots qui, en tête de demande, signifient « publier à l'extérieur ».
+///
+/// French and English requests are both checked, whatever the interface language: people
+/// often speak the other language to the wake word.
 fn is_publish_request(query: &str) -> bool {
     let n = crate::text::normalize(query);
-    if n.contains("brouillon") {
+    let words: Vec<&str> = n.split(' ').collect();
+    if n.contains("brouillon") || words.iter().any(|w| *w == "draft" || *w == "drafts") {
         return false;
     }
-    let first_words: Vec<&str> = n.split(' ').take(2).collect();
     const VERBS: &[&str] = &[
         "poste", "postes", "publie", "envoie", "envoies", "partage", "cree", "crees", "ouvre", "commente", "ferme",
         "transitionne", "merge", "fusionne", "deploie", "assigne", "supprime", "reponds", "transfere", "notifie",
     ];
-    first_words.iter().any(|w| VERBS.contains(w))
+    // English imperatives. Words that are also common French words ("comment", "transition",
+    // "message") or common read queries ("open issues") are left out on purpose.
+    const VERBS_EN: &[&str] = &[
+        "post", "publish", "send", "share", "create", "close", "deploy", "assign", "delete", "reply", "respond",
+        "forward", "notify",
+    ];
+    // Polite English openings before the verb: "can you please post this on Slack".
+    const LEAD_EN: &[&[&str]] =
+        &[&["please"], &["pls"], &["kindly"], &["can", "you"], &["could", "you"], &["would", "you"], &["will", "you"]];
+    let mut start = 0;
+    while let Some(lead) = LEAD_EN.iter().find(|l| words[start..].starts_with(l)) {
+        start += lead.len();
+    }
+    let is_verb = |i: usize| {
+        let (w, next) = (words.get(i).copied().unwrap_or(""), words.get(i + 1).copied().unwrap_or(""));
+        // Nouns, not verbs: "merge requests from yesterday", "post mortem of the incident".
+        if (w == "merge" && next.starts_with("request")) || (w == "post" && next == "mortem") {
+            return false;
+        }
+        VERBS.contains(&w) || VERBS_EN.contains(&w)
+    };
+    is_verb(0)
+        || is_verb(1)
+        || (start > 0 && is_verb(start))
         || ["sur slack", "dans slack", "sur teams", "par mail", "par e-mail", "par email"].iter().any(|p| n.contains(p))
+        || ["by email", "by e-mail", "by mail", "via email", "via e-mail", "via slack", "via teams"]
+            .iter()
+            .any(|p| n.contains(p))
 }
 
 /// Cœur de Sténo (clonable).
@@ -1187,5 +1216,24 @@ mod tests {
         assert!(!is_publish_request("rédige un brouillon de message Slack"));
         assert!(!is_publish_request("qui a créé le ticket APP-1234 ?"));
         assert!(!is_publish_request("les erreurs de ms-booking depuis hier"));
+    }
+
+    #[test]
+    fn refuses_english_publish_requests() {
+        assert!(is_publish_request("Post this on Slack"));
+        assert!(is_publish_request("Send an email to the team"));
+        assert!(is_publish_request("please create a ticket for this bug"));
+        assert!(is_publish_request("Can you please share the recap with the team?"));
+        assert!(is_publish_request("could you close APP-1234"));
+        assert!(is_publish_request("the recap, by email to Paul"));
+        assert!(is_publish_request("merge the fix branch"));
+        assert!(!is_publish_request("draft a Slack message for the team"));
+        assert!(!is_publish_request("who created ticket APP-1234?"));
+        assert!(!is_publish_request("open issues on the booking service"));
+        assert!(!is_publish_request("merge requests opened since yesterday"));
+        assert!(!is_publish_request("post mortem of last week's outage"));
+        assert!(!is_publish_request("what did Paul post on Slack yesterday?"));
+        // French words that look like English verbs stay allowed.
+        assert!(!is_publish_request("comment marche le déploiement ?"));
     }
 }
