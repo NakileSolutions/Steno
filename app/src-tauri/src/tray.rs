@@ -10,6 +10,7 @@
 use steno_core::events::LiveState;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Wry};
 
 /// Éléments du menu dont le libellé ou l'état change.
@@ -30,6 +31,64 @@ pub struct TrayItems {
     /// jusqu'à 4 fois par seconde avec les niveaux ; sous Linux, chaque modification du menu
     /// repasse par D-Bus).
     shown: std::sync::Mutex<String>,
+    quick: MenuItem<Wry>,
+    live: MenuItem<Wry>,
+    open: MenuItem<Wry>,
+    settings: MenuItem<Wry>,
+    quit: MenuItem<Wry>,
+    /// A meeting was live at the last refresh: when it ends, the "Confidential meeting"
+    /// checkbox is cleared (the choice only applies to one meeting).
+    was_live: AtomicBool,
+}
+
+/// Fixed menu labels, in the settings language.
+struct StaticLabels {
+    aside: String,
+    confidential: String,
+    room: String,
+    mute: String,
+    answers: String,
+    quick: String,
+    live: String,
+    open: String,
+    settings: String,
+    quit: String,
+}
+
+fn static_labels(lang: &str) -> StaticLabels {
+    StaticLabels {
+        aside: l(lang, "Aparté (hors compte rendu)", "Aside (left out of the summary)"),
+        confidential: l(lang, "Réunion confidentielle (aucune IA)", "Confidential meeting (no AI)"),
+        room: l(lang, "Démarrer une réunion en présentiel", "Start an in-person meeting"),
+        mute: l(lang, "Couper mon micro dans Sténo", "Mute my mic in Sténo"),
+        answers: l(lang, "Dernières réponses", "Latest answers"),
+        quick: l(lang, "Demande rapide…", "Quick request…"),
+        live: l(lang, "Voir la transcription en direct", "Show live transcript"),
+        open: l(lang, "Ouvrir Sténo", "Open Sténo"),
+        settings: l(lang, "Réglages…", "Settings…"),
+        quit: l(lang, "Quitter Sténo", "Quit Sténo"),
+    }
+}
+
+/// Settings saved (language, shortcut): rewrites every menu label.
+pub fn relabel(app: &AppHandle) {
+    let Some(items) = app.try_state::<TrayItems>() else { return };
+    let t = static_labels(core_lang(app));
+    let _ = items.aside.set_text(t.aside);
+    let _ = items.confidential.set_text(t.confidential);
+    let _ = items.room.set_text(t.room);
+    let _ = items.mute.set_text(t.mute);
+    let _ = items.answers.set_text(t.answers);
+    let _ = items.quick.set_text(t.quick);
+    let _ = items.live.set_text(t.live);
+    let _ = items.open.set_text(t.open);
+    let _ = items.settings.set_text(t.settings);
+    let _ = items.quit.set_text(t.quit);
+    // State-dependent labels (status, pause): force the menu to be rewritten.
+    items.shown.lock().unwrap().clear();
+    let core = app.state::<crate::AppState>().core.clone();
+    refresh(app, &core.live_state());
+    refresh_answers(app);
 }
 
 /// Nombre de réponses listées dans le menu.
@@ -151,20 +210,21 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let lang = core.settings().lang();
     let st = core.live_state();
     let (status_txt, toggle_txt) = labels_in(&st, &shortcut, lang);
+    let t = static_labels(lang);
     let status = MenuItem::with_id(app, "status", status_txt, false, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle", toggle_txt, true, None::<&str>)?;
     let listening = st.meeting.is_some();
     let pause = MenuItem::with_id(app, "pause", pause_label(&st, lang), listening, None::<&str>)?;
-    let aside = CheckMenuItem::with_id(app, "aside", l(lang, "Aparté (hors compte rendu)", "Aside (left out of the summary)"), listening, st.aside, None::<&str>)?;
-    let confidential = CheckMenuItem::with_id(app, "confidential", l(lang, "Réunion confidentielle (aucune IA)", "Confidential meeting (no AI)"), true, false, None::<&str>)?;
-    let room = MenuItem::with_id(app, "room", l(lang, "Démarrer une réunion en présentiel", "Start an in-person meeting"), true, None::<&str>)?;
-    let mute = CheckMenuItem::with_id(app, "mute", l(lang, "Couper mon micro dans Sténo", "Mute my mic in Sténo"), false, false, None::<&str>)?;
-    let answers = Submenu::with_id(app, "answers", l(lang, "Dernières réponses", "Latest answers"), true)?;
-    let quick = MenuItem::with_id(app, "quick", l(lang, "Demande rapide…", "Quick request…"), true, None::<&str>)?;
-    let live = MenuItem::with_id(app, "live", l(lang, "Voir la transcription en direct", "Show live transcript"), true, None::<&str>)?;
-    let open = MenuItem::with_id(app, "open", l(lang, "Ouvrir Sténo", "Open Sténo"), true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", l(lang, "Réglages…", "Settings…"), true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", l(lang, "Quitter Sténo", "Quit Sténo"), true, None::<&str>)?;
+    let aside = CheckMenuItem::with_id(app, "aside", t.aside, listening, st.aside, None::<&str>)?;
+    let confidential = CheckMenuItem::with_id(app, "confidential", t.confidential, true, false, None::<&str>)?;
+    let room = MenuItem::with_id(app, "room", t.room, true, None::<&str>)?;
+    let mute = CheckMenuItem::with_id(app, "mute", t.mute, false, false, None::<&str>)?;
+    let answers = Submenu::with_id(app, "answers", t.answers, true)?;
+    let quick = MenuItem::with_id(app, "quick", t.quick, true, None::<&str>)?;
+    let live = MenuItem::with_id(app, "live", t.live, true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", t.open, true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", t.settings, true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", t.quit, true, None::<&str>)?;
     let sep = || PredefinedMenuItem::separator(app);
     let menu = Menu::with_items(
         app,
@@ -192,11 +252,17 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         toggle,
         room,
         pause,
-        aside: aside.clone(),
-        confidential: confidential.clone(),
-        mute: mute.clone(),
+        aside,
+        confidential,
+        mute,
         answers,
+        quick,
+        live,
+        open,
+        settings,
+        quit,
         shown: std::sync::Mutex::new(String::new()),
+        was_live: AtomicBool::new(false),
     });
     refresh_answers(app);
 
@@ -265,14 +331,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                 "live" => show_main(app, Some("/live")),
                 "open" => show_main(app, None),
                 "settings" => show_main(app, Some("/settings")),
-                "quit" => {
-                    core.shutdown();
-                    let a = app.clone();
-                    tauri::async_runtime::spawn(async move {
-                        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-                        a.exit(0);
-                    });
-                }
+                "quit" => crate::quit(app),
                 _ => {}
             }
         })
@@ -300,8 +359,17 @@ pub fn refresh(app: &AppHandle, st: &LiveState) {
         let _ = items.pause.set_enabled(st.meeting.is_some());
         let _ = items.aside.set_enabled(st.meeting.is_some());
         let _ = items.aside.set_checked(st.aside);
-        if let Some(m) = &st.meeting {
-            let _ = items.confidential.set_checked(m.confidential);
+        let was_live = items.was_live.swap(st.meeting.is_some(), Ordering::SeqCst);
+        match &st.meeting {
+            Some(m) => {
+                let _ = items.confidential.set_checked(m.confidential);
+            }
+            // Meeting ended: the "confidential" choice was used up by that meeting. Outside
+            // a meeting, the checkbox stays free to set up the next one.
+            None if was_live => {
+                let _ = items.confidential.set_checked(false);
+            }
+            None => {}
         }
         let _ = items.room.set_enabled(st.meeting.is_none());
         // Couper le micro n'a de sens que pendant l'écoute.
@@ -320,10 +388,25 @@ pub fn show_panel(app: &AppHandle) {
     let Some(w) = app.get_webview_window("tray") else { return };
     let scale = w.scale_factor().unwrap_or(1.0);
     let size = w.outer_size().unwrap_or(tauri::PhysicalSize::new((360.0 * scale) as u32, (540.0 * scale) as u32));
-    let monitor_w = w.current_monitor().ok().flatten().map(|m| m.size().width as f64).unwrap_or(1440.0 * scale);
-    let _ = w.set_position(PhysicalPosition::new(monitor_w - size.width as f64 - 12.0 * scale, 30.0 * scale));
+    // Monitor under the pointer (the menu bar that was clicked), else the window's monitor.
+    let monitor = w
+        .cursor_position()
+        .ok()
+        .and_then(|p| w.monitor_from_point(p.x, p.y).ok().flatten())
+        .or_else(|| w.current_monitor().ok().flatten());
+    let (origin_x, origin_y, monitor_w) = monitor
+        .map(|m| (m.position().x as f64, m.position().y as f64, m.size().width as f64))
+        .unwrap_or((0.0, 0.0, 1440.0 * scale));
+    let (x, y) = panel_position(origin_x, origin_y, monitor_w, size.width as f64, scale);
+    let _ = w.set_position(PhysicalPosition::new(x, y));
     let _ = w.show();
     let _ = w.set_focus();
+}
+
+/// Top-right corner of the monitor (origin `origin_x`, `origin_y`, physical pixels), below the
+/// menu bar. On a secondary monitor the origin is not (0, 0).
+fn panel_position(origin_x: f64, origin_y: f64, monitor_w: f64, panel_w: f64, scale: f64) -> (f64, f64) {
+    (origin_x + monitor_w - panel_w - 12.0 * scale, origin_y + 30.0 * scale)
 }
 
 /// Affiche la fenêtre principale (et l'icône dans le Dock tant qu'elle est ouverte).
@@ -382,6 +465,21 @@ mod tests {
         assert_eq!(pause_label(&st, "fr"), "Mettre l'écoute en pause");
         st.state = "paused".into();
         assert_eq!(pause_label(&st, "en"), "Resume listening");
+    }
+
+    #[test]
+    fn fixed_labels_follow_settings_language() {
+        assert_eq!(static_labels("fr").quit, "Quitter Sténo");
+        assert_eq!(static_labels("en").quit, "Quit Sténo");
+        assert_eq!(static_labels("en").settings, "Settings…");
+    }
+
+    #[test]
+    fn panel_on_secondary_monitor() {
+        // Main monitor 2880 px wide (Retina, ×2), 720 px panel.
+        assert_eq!(panel_position(0.0, 0.0, 2880.0, 720.0, 2.0), (2136.0, 60.0));
+        // Secondary monitor on the right (origin x = 2880), shifted upwards.
+        assert_eq!(panel_position(2880.0, -200.0, 1920.0, 360.0, 1.0), (4428.0, -170.0));
     }
 }
 

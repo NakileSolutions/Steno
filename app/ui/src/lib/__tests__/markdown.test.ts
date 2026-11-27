@@ -16,6 +16,13 @@ describe('renderMarkdown', () => {
     expect(el.querySelectorAll('td')).toHaveLength(2);
   });
 
+  it('removes interactive elements and id / name attributes', () => {
+    const el = dom('<dialog open>bloque les raccourcis</dialog><details><summary>s</summary>d</details>\n\n<button>b</button><select><option>o</option></select><textarea>t</textarea>\n\n<p id="app" name="n">texte</p>');
+    for (const tag of ['dialog', 'details', 'summary', 'button', 'select', 'textarea']) expect(el.querySelector(tag)).toBeNull();
+    expect(el.querySelector('[id], [name]')).toBeNull();
+    expect(el.textContent).toContain('texte');
+  });
+
   it('retire les balises <script>', () => {
     const html = renderMarkdown('Avant\n\n<script>alert(1)</script>\n\nAprès');
     expect(html).not.toMatch(/<script/i);

@@ -99,17 +99,24 @@ fn init_logs() {
     }
 }
 
-/// Signal de détection d'une commande quand le sidecar ne l'a pas joué (sidecar arrêté) :
-/// son du système sur la sortie par défaut. Il n'est jamais injecté dans l'audio de l'appel.
+/// Feedback sound played by the app when the sidecar did not play it. Nothing when set to "none".
 fn play_feedback(core: &Core) {
-    if core.settings().voice.feedback == "none" {
+    if !feedback_enabled(&core.settings().voice.feedback) {
         return;
     }
     #[cfg(target_os = "macos")]
     {
         // « headset » : le son système sort par la sortie par défaut, c'est-à-dire le casque
         // pendant un appel ; il n'est jamais injecté dans l'audio de Teams.
-        let _ = std::process::Command::new("afplay").args(["-v", "0.4", "/System/Library/Sounds/Tink.aiff"]).spawn();
+        match std::process::Command::new("afplay").args(["-v", "0.4", "/System/Library/Sounds/Tink.aiff"]).spawn() {
+            // Reap `afplay` off the event loop so no zombie process is left behind.
+            Ok(mut child) => {
+                std::thread::spawn(move || {
+                    let _ = child.wait();
+                });
+            }
+            Err(e) => tracing::warn!("feedback sound: {e}"),
+        }
     }
     #[cfg(target_os = "linux")]
     {
@@ -139,6 +146,41 @@ fn play_feedback(core: &Core) {
     }
 }
 
+/// Whether the feedback sound is enabled for this `voice.feedback` setting.
+fn feedback_enabled(mode: &str) -> bool {
+    mode != "none"
+}
+
+/// The core is shut down exactly once, whatever the exit path (menu "Quit", ⌘Q, Dock → Quit,
+/// logout, restart after an update).
+static CORE_STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Time given to the core to end the current meeting and stop the sidecar before exiting.
+const QUIT_GRACE: std::time::Duration = std::time::Duration::from_millis(600);
+
+/// Shuts the core down unless it already is. Returns `true` on the first call.
+pub fn shutdown_core(app: &tauri::AppHandle) -> bool {
+    if CORE_STOPPED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return false;
+    }
+    if let Some(st) = app.try_state::<AppState>() {
+        st.core.shutdown();
+    }
+    true
+}
+
+/// "Quit Sténo": shuts the core down, then exits after a short delay.
+pub fn quit(app: &tauri::AppHandle) {
+    if !shutdown_core(app) {
+        return;
+    }
+    let a = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(QUIT_GRACE).await;
+        a.exit(0);
+    });
+}
+
 /// Relaie les événements du cœur vers la WebView, les notifications et l'icône.
 fn forward_events(app: tauri::AppHandle, core: Core) {
     let mut rx = core.subscribe();
@@ -157,6 +199,8 @@ fn forward_events(app: tauri::AppHandle, core: Core) {
                 }
                 // Le sidecar joue le signal sur la sortie choisie ; sinon, repli sur le son système.
                 CoreEvent::CommandDetected { played: false } => play_feedback(&core),
+                // Language or shortcut changed: native menu labels.
+                CoreEvent::SettingsChanged(_) => tray::relabel(&app),
                 _ => {}
             }
             if let Some((name, mut payload)) = ev.to_wire() {
@@ -352,6 +396,7 @@ pub fn run() {
             commands::set_mic_muted,
             commands::save_export,
             commands::print_window,
+            commands::open_main,
             commands::pause_meeting,
             commands::resume_meeting,
         ])
@@ -359,11 +404,21 @@ pub fn run() {
         .expect("erreur au démarrage de Sténo")
         .run(|app, ev| match ev {
             tauri::RunEvent::ExitRequested { api, code, .. } => {
-                // Pas de fenêtre ouverte ≠ quitter : seul « Quitter » ferme l'app.
+                // `code == None`: the last window was destroyed. No open window does not mean
+                // quit: the app lives in the menu bar. `Some(_)`: `exit` or `restart`.
                 if code.is_none() {
                     api.prevent_exit();
                 } else {
-                    app.state::<AppState>().core.shutdown();
+                    shutdown_core(app);
+                }
+            }
+            // ⌘Q, Dock → Quit, logout or Mac restart: AppKit terminates the app without going
+            // through `ExitRequested` (tao does not implement `applicationShouldTerminate:`).
+            // Still end the current meeting and stop the sidecar, with the same grace period
+            // as "Quit Sténo".
+            tauri::RunEvent::Exit => {
+                if shutdown_core(app) {
+                    std::thread::sleep(QUIT_GRACE);
                 }
             }
             // Clic sur l'icône dans le Finder, le Launchpad ou Spotlight alors que l'app tourne
@@ -391,6 +446,14 @@ mod tests {
         let mut contract: Vec<&str> = steno_core::api::COMMANDS.to_vec();
         contract.sort();
         assert_eq!(registered, contract);
+    }
+
+    /// Set to "none", the feedback sound is never played by the app.
+    #[test]
+    fn feedback_sound_disabled() {
+        assert!(!super::feedback_enabled("none"));
+        assert!(super::feedback_enabled("headset"));
+        assert!(super::feedback_enabled("system"));
     }
 }
 

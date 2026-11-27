@@ -87,7 +87,7 @@
   }
 
   function openReq(r: Request) {
-    openMain(r.meeting_id ? `/meetings/${r.meeting_id}?tab=requests&request=${r.id}` : `/search?q=${encodeURIComponent(r.query)}`);
+    openMain(r.meeting_id ? `/meetings/${r.meeting_id}?tab=requests&request=${r.id}` : `/search?request=${r.id}`);
   }
 </script>
 

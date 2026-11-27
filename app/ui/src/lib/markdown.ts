@@ -18,8 +18,13 @@ export function renderMarkdown(md: string): string {
   const html = marked.parse(md ?? '', { async: false }) as string;
   return DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true },
-    FORBID_TAGS: ['style', 'img', 'iframe', 'form', 'input', 'video', 'audio', 'svg', 'math'],
-    FORBID_ATTR: ['style', 'srcset'],
+    // No interactive elements: a `<dialog open>` in a summary would disable the app's keyboard
+    // shortcuts (see App.svelte), and an `id` or `name` could shadow an element.
+    FORBID_TAGS: [
+      'style', 'img', 'iframe', 'form', 'input', 'video', 'audio', 'svg', 'math',
+      'dialog', 'button', 'select', 'textarea', 'details', 'summary',
+    ],
+    FORBID_ATTR: ['style', 'srcset', 'id', 'name'],
   });
 }
 

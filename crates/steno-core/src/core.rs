@@ -385,6 +385,7 @@ impl Core {
         s.save(&self.inner.db)?;
         *self.inner.settings.write().unwrap() = s.clone();
         self.inner.send_live(LiveCmd::SettingsChanged);
+        self.inner.emit(CoreEvent::SettingsChanged(Box::new(s.clone())));
         Ok(s)
     }
 

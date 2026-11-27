@@ -19,13 +19,16 @@ Reference example to follow: `start_meeting` (`grep -rn start_meeting crates app
    New event → §5 "Événements".
 2. **Core** — the logic in `crates/steno-core/src/` (an `async` method on `Core`).
 3. **Dispatcher** — `crates/steno-core/src/api.rs`: add the name to `COMMANDS` and an arm in
-   `dispatch` (`snake_case` arguments, `a.opt(…)` for optional ones). If the command has side
+   `dispatch` (**camelCase** argument names, as Tauri sends them: `a.opt("meetingId")`; `a.opt(…)`
+   for optional ones). If the command has side
    effects or required arguments, add it to the test's exclusion list.
 4. **Tauri** — `app/src-tauri/src/commands.rs`: a `#[tauri::command] pub async fn` with the
-   same name and arguments; register it in `generate_handler![…]` in
+   same name and arguments (`snake_case` Rust parameters: Tauri maps `meeting_id` to the
+   `meetingId` key); register it in `generate_handler![…]` in
    `app/src-tauri/src/lib.rs`. Never a synchronous command that blocks the main thread.
 5. **Client** — `app/ui/src/lib/api.ts`: a typed method calling `call('my_command', {…})`
-   (`snake_case` keys); types in `app/ui/src/lib/types.ts`.
+   (**camelCase** keys, e.g. `{ meetingId }`: a `snake_case` key is silently ignored by Tauri, and
+   the e2e tests only catch it if `api.rs` reads the same name); types in `app/ui/src/lib/types.ts`.
 6. **Fake backend** — `app/ui/src/lib/mock.ts`: a plausible handler (made-up data), otherwise
    the mock UI and the `maquette` Playwright tests break.
 7. **Strings** — core error messages via `tr(fr, en)`; UI strings via `t('…')` plus the

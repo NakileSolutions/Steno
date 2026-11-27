@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { api, onEvent } from '../lib/api';
   import { router, href, setQuery } from '../lib/router.svelte';
   import type { Request, SearchHit } from '../lib/types';
@@ -35,6 +35,21 @@
   }
   const runSoon = debounce(run, 200);
 
+  // `/search?request=<id>` (menu bar menu, quick panel): answer to a request made outside a
+  // meeting. Followed even when the page is already open.
+  async function showRequest(id: string) {
+    try {
+      const r = (await api.recentRequests(200)).find((x) => x.id === id);
+      if (r && router.route.query.request === id) aiReq = r;
+    } catch (e) {
+      toastError(e);
+    }
+  }
+  $effect(() => {
+    const id = router.route.query.request;
+    if (id) untrack(() => showRequest(id));
+  });
+
   onMount(() => {
     if (query) run();
     input?.focus();
@@ -42,6 +57,11 @@
       if (aiReq && r.id === aiReq.id) aiReq = r;
     });
   });
+
+  function closeAi() {
+    aiReq = null;
+    if (router.route.query.request) setQuery({ request: null });
+  }
 
   async function askAi() {
     const q = query.trim();
@@ -83,7 +103,7 @@
 
     {#if aiReq}
       <section class="ai">
-        <div class="row"><h2 class="label grow">{t('Réponse de l’IA')}</h2><button class="btn ghost sm icon" onclick={() => (aiReq = null)} aria-label={t('Fermer la réponse')}><Icon name="x" size={13} /></button></div>
+        <div class="row"><h2 class="label grow">{t('Réponse de l’IA')}</h2><button class="btn ghost sm icon" onclick={closeAi} aria-label={t('Fermer la réponse')}><Icon name="x" size={13} /></button></div>
         <RequestCard req={aiReq} />
       </section>
     {/if}

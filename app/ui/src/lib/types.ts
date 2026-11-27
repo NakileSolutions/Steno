@@ -432,5 +432,6 @@ export type EventMap = {
   'steno://meetings': null;
   'steno://update': UpdateStatus;
   'steno://navigate': { route: string };
+  'steno://settings': Settings;
 };
 export type EventName = keyof EventMap;

@@ -427,7 +427,7 @@ type Settings = /* section 4 */;
 | Commande | Arguments | Retour |
 |---|---|---|
 | `live_state` | — | `LiveState` |
-| `start_meeting` | `title?: string, in_person?: boolean` (sans titre : titre de l'appel en cours s'il y en a un ; le son capté est celui de cette app. `in_person` : réunion en présentiel, micro du Mac seul, `call_app = "room"`, phrases « Salle » puis intervenants identifiés en fin de réunion sur `me.wav`) | `Meeting` |
+| `start_meeting` | `title?: string, inPerson?: boolean` (sans titre : titre de l'appel en cours s'il y en a un ; le son capté est celui de cette app. `inPerson` : réunion en présentiel, micro du Mac seul, `call_app = "room"`, phrases « Salle » puis intervenants identifiés en fin de réunion sur `me.wav`) | `Meeting` |
 | `stop_meeting` | — | `null` |
 | `set_aside` | `on: boolean` | `null` |
 | `set_live_confidential` | `on: boolean` | `null` |
@@ -471,6 +471,7 @@ type Settings = /* section 4 */;
 | `export_meeting` | `id, format?: "markdown" \| "txt" \| "srt" \| "vtt"` | `string` (markdown complet par défaut ; `txt`/`srt`/`vtt` : transcription seule) |
 | `save_export` | `id, format` | `string \| null` (app : fenêtre « Enregistrer sous… » puis écriture ; null si annulé ou hors app) |
 | `print_window` | — | `null` (app : impression de la fenêtre, donc PDF ; hors app : `window.print()` côté interface) |
+| `open_main` | `route?: string` | `null` (app: shows the main window with the Dock icon and opens `route` in it; called by the menu bar panel; outside the app the UI navigates by itself) |
 | `search` | `query` | `SearchHit[]` |
 | `list_actions` | `filter: { status?, owner?, from?, to? }` | `Action[]` |
 | `set_action_status` | `id: number, status` | `null` |
@@ -520,6 +521,7 @@ type Settings = /* section 4 */;
 | `steno://meetings` | `null` (la liste a changé) |
 | `steno://update` | `UpdateStatus` (nouvelle version, installation en cours, terminée ou en échec) |
 | `steno://navigate` | `{ route: string }` (ex. `"/meetings/<id>?tab=requests&request=<rid>"`) |
+| `steno://settings` | `Settings` (settings saved: every window and the native menu follow the language, wake word and shortcuts) |
 
 ---
 

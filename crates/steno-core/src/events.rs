@@ -65,6 +65,9 @@ pub enum CoreEvent {
     CommandDetected { played: bool },
     /// État des mises à jour (nouvelle version, installation en cours ou terminée).
     Update(crate::updates::UpdateStatus),
+    /// Settings saved: the other windows (menu bar panel) and the native menu follow the
+    /// language, wake word and shortcuts.
+    SettingsChanged(Box<crate::settings::Settings>),
 }
 
 impl CoreEvent {
@@ -83,6 +86,7 @@ impl CoreEvent {
             }
             CoreEvent::MeetingsChanged => ("steno://meetings", serde_json::Value::Null),
             CoreEvent::Update(u) => ("steno://update", serde_json::to_value(u).ok()?),
+            CoreEvent::SettingsChanged(s) => ("steno://settings", serde_json::to_value(s).ok()?),
             CoreEvent::Notify { .. } | CoreEvent::CommandDetected { .. } => return None,
         })
     }

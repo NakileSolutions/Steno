@@ -135,13 +135,9 @@ async function tauriBackend(): Promise<Backend> {
     invoke: (cmd, args) => core.invoke(cmd, args),
     listen: (name, cb) => ev.listen(name, (e) => cb(e.payload as never)),
     async openMain(route) {
-      const main = await win.Window.getByLabel('main');
-      if (main) {
-        await main.show();
-        await main.unminimize();
-        await main.setFocus();
-        if (route) await ev.emitTo('main', 'steno://navigate', { route });
-      }
+      // Rust side: the main window is shown with the Dock icon and the ⌘Tab entry
+      // ("Regular" activation policy), which the WebView window API cannot do.
+      await core.invoke('open_main', route ? { route } : {});
       const current = win.getCurrentWindow();
       if (current.label !== 'main') await current.hide();
     },
@@ -204,6 +200,11 @@ export async function openExternal(url: string): Promise<void> {
   return (await backendPromise).openExternal(url);
 }
 
+/** `start_meeting` arguments, in camelCase like every Tauri command (`inPerson`). */
+export function startMeetingArgs(title?: string, inPerson = false): Record<string, unknown> {
+  return { ...(title ? { title } : {}), ...(inPerson ? { inPerson: true } : {}) };
+}
+
 /** Contenu d'un fichier en base64 (sans l'en-tête `data:`). */
 export async function fileBase64(file: Blob): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -216,7 +217,7 @@ export const api = {
   // Direct
   liveState: () => call<LiveState>('live_state').then(normalizeLiveState),
   startMeeting: (title?: string, inPerson = false) =>
-    call<Meeting>('start_meeting', { ...(title ? { title } : {}), ...(inPerson ? { in_person: true } : {}) }),
+    call<Meeting>('start_meeting', startMeetingArgs(title, inPerson)),
   stopMeeting: () => call<null>('stop_meeting'),
   setAside: (on: boolean) => call<null>('set_aside', { on }),
   setMicMuted: (on: boolean) => call<null>('set_mic_muted', { on }),

@@ -1,8 +1,8 @@
 // Réglages utiles à l'affichage hors de l'écran Réglages (mot d'appel, raccourci, verbe d'arrêt,
 // noms des apps de visio).
 
-import { api } from './api';
-import { DEFAULT_CALL_APPS, DEFAULT_CONSENT_MESSAGE, DEFAULT_STOP_VERB, formatShortcut, stopPhrase } from './listening';
+import { api, onEvent } from './api';
+import { DEFAULT_CALL_APPS, DEFAULT_CONSENT_MESSAGE, DEFAULT_STOP_VERB, formatShortcut, normalizeSettings, stopPhrase } from './listening';
 import type { CallApp, Settings } from './types';
 import { setLang, t } from './i18n.svelte';
 
@@ -36,6 +36,9 @@ export function loadPrefs(): void {
   if (started) return;
   started = true;
   api.getSettings().then(setPrefs).catch(() => {});
+  // Settings saved in another window (main window ↔ menu bar panel, which stays loaded in
+  // the background): language, wake word and shortcuts follow.
+  onEvent('steno://settings', (s) => setPrefs(normalizeSettings(s)));
 }
 
 /** « Pour arrêter : bouton, ⌃⌥S, ou dites « Sténo, arrête l’écoute » ». */
