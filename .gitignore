@@ -12,3 +12,4 @@ node_modules/
 /.dev-home/
 /app/ui/test-results/
 /app/ui/playwright-report/
+CLAUDE.local.md
