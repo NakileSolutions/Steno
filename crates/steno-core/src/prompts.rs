@@ -180,6 +180,8 @@ pub struct ReportContext {
     pub docs: Vec<(String, String, bool)>,
     /// Modèle choisi : (nom, consignes) ; consignes vides pour le modèle standard.
     pub template: Option<(String, String)>,
+    /// Langue de rédaction (`fr` ou `en` ; vide = français).
+    pub lang: String,
 }
 
 impl ReportContext {
@@ -244,6 +246,7 @@ pub fn report(
             ));
         }
     }
+    guidance.push_str(crate::i18n::report_language(&ctx.lang));
     if ctx.has_material() {
         guidance.push_str(
             "\n\n**Contexte fourni** : lis-le avant la transcription. Il dit ce qui compte : appuie-toi \
@@ -384,12 +387,14 @@ mod tests {
             text: "Projet Nova".into(),
             docs: vec![("a.md".into(), "x".repeat(10), false), ("b.pdf".into(), "y".repeat(10), true)],
             template: Some(("Mail".into(), "Rédige un mail.".into())),
+            lang: "en".into(),
         };
         let p = report(&m, "27/11", "[00:01] Eux : bonjour", &[], &[], &ctx);
         assert!(p.contains("Projet Nova"));
         assert!(p.contains("Document « a.md »") && p.contains("Document « b.pdf » (extrait"));
         assert!(p.contains("Format demandé « Mail »"));
         assert!(p.contains("⚠️ Changements importants"));
+        assert!(p.contains("## Summary") && p.contains("rédige tout le compte rendu en anglais"));
         // Format standard (consignes vides) : rien d'ajouté.
         let std = ReportContext { template: Some(("Standard".into(), String::new())), ..Default::default() };
         assert!(!report(&m, "d", "t", &[], &[], &std).contains("Format demandé"));

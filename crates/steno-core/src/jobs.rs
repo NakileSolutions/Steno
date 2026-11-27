@@ -94,7 +94,7 @@ async fn execute(inner: &Inner, job: Job) {
             let _ = inner.db.finish_job(id, status, Some(&msg));
             if kind == "correlate" || kind == "report" {
                 inner.emit(CoreEvent::Notify {
-                    title: if kind == "report" { "⚠️ Compte rendu en échec".into() } else { "⚠️ Corrélation en échec".into() },
+                    title: if kind == "report" { inner.tr("⚠️ Compte rendu en échec", "⚠️ Summary failed") } else { inner.tr("⚠️ Corrélation en échec", "⚠️ Correlation failed") },
                     body: crate::text::truncate(&msg, 200),
                     route: job.meeting_id.as_ref().map(|m| format!("/meetings/{m}")),
                 });
@@ -150,7 +150,8 @@ async fn run_request(inner: &Inner, job: &Job) -> Result<()> {
             let m = meeting.as_ref().context("aucune réunion à récapituler")?;
             let segs = inner.db.segments(&m.id, false, false)?;
             let names = crate::prompts::speaker_names(&inner.db.speakers(&m.id)?);
-            let prompt = crate::prompts::recap(m, &crate::prompts::format_transcript(&segs, &names), &inner.db.notes(&m.id)?);
+            let prompt = crate::prompts::recap(m, &crate::prompts::format_transcript(&segs, &names), &inner.db.notes(&m.id)?)
+                + crate::i18n::answer_language(inner.lang());
             inner
                 .run_agent_with(Some(m), Tier::Quick, ToolAccess::None, SessionMode::New(String::new()), prompt, 0, None, cancel.clone())
                 .await
@@ -172,7 +173,7 @@ async fn run_request(inner: &Inner, job: &Job) -> Result<()> {
                     ));
                 }
             }
-            let prompt = crate::prompts::history(&req.query, &hits, &reports);
+            let prompt = crate::prompts::history(&req.query, &hits, &reports) + crate::i18n::answer_language(inner.lang());
             inner
                 .run_agent_with(None, Tier::Search, ToolAccess::None, SessionMode::None, prompt, 0, None, cancel.clone())
                 .await
@@ -188,6 +189,7 @@ async fn run_request(inner: &Inner, job: &Job) -> Result<()> {
                 None => vec![],
             };
             let mut prompt = crate::prompts::live_request(meeting.as_ref(), intent, &req.query, &context, &notes, &sources, &now);
+            prompt.push_str(crate::i18n::answer_language(inner.lang()));
             // L'agent ne sait pas reprendre une session : on rejoue les échanges précédents.
             if !adapter_caps.resume_session {
                 if let Some(m) = &meeting {
@@ -251,7 +253,7 @@ async fn run_request(inner: &Inner, job: &Job) -> Result<()> {
             emit_request(inner, &rid);
             if status == "error" {
                 inner.emit(CoreEvent::Notify {
-                    title: "⚠️ Demande en échec".into(),
+                    title: inner.tr("⚠️ Demande en échec", "⚠️ Request failed"),
                     body: crate::text::truncate(&msg, 200),
                     route: None,
                 });

@@ -923,7 +923,7 @@ pub(crate) fn create_request(
         inner.db.enqueue_job("request", r.meeting_id.as_deref(), &serde_json::json!({ "request_id": r.id }))?;
         inner.jobs_notify.notify_one();
         inner.emit(CoreEvent::Notify {
-            title: "🔎 Je cherche…".into(),
+            title: inner.tr("🔎 Je cherche…", "🔎 Searching…"),
             body: crate::text::truncate(query, 120),
             route: None,
         });

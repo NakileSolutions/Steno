@@ -385,13 +385,15 @@ impl Session {
             self.inner.db.enqueue_job_at(kind, Some(&m.id), &serde_json::json!({}), start.as_deref())?;
             self.inner.jobs_notify.notify_one();
             let delay = self.inner.settings().report.context_delay_s;
-            let body = if delay > 0 {
-                format!("Compte rendu dans {} : cliquez pour ajouter du contexte ou des documents.", crate::text::human_delay(delay))
-            } else {
-                "Compte rendu en préparation…".into()
+            let en = self.inner.lang() == "en";
+            let body = match (delay > 0, en) {
+                (true, false) => format!("Compte rendu dans {} : cliquez pour ajouter du contexte ou des documents.", crate::text::human_delay(delay)),
+                (true, true) => format!("Summary in {}: click to add context or documents.", crate::text::human_delay(delay)),
+                (false, false) => "Compte rendu en préparation…".into(),
+                (false, true) => "Preparing the summary…".into(),
             };
             self.inner.emit(CoreEvent::Notify {
-                title: "Réunion terminée".into(),
+                title: self.inner.tr("Réunion terminée", "Meeting ended"),
                 body,
                 route: Some(format!("/meetings/{}", m.id)),
             });
@@ -621,14 +623,14 @@ impl Session {
                 });
                 if code == "device_missing" {
                     self.inner.emit(CoreEvent::Notify {
-                        title: "🎙 Micro introuvable".into(),
+                        title: self.inner.tr("🎙 Micro introuvable", "🎙 Microphone not found"),
                         body: message.clone(),
                         route: Some("/settings/audio".into()),
                     });
                 }
                 if !recoverable && matches!(code.as_str(), "mic_denied" | "system_audio_denied") {
                     self.inner.emit(CoreEvent::Notify {
-                        title: "⚠️ Permission manquante".into(),
+                        title: self.inner.tr("⚠️ Permission manquante", "⚠️ Missing permission"),
                         body: message,
                         route: Some("/settings/audio".into()),
                     });

@@ -200,8 +200,8 @@ pub async fn check(inner: &Inner) -> Result<UpdateStatus> {
                 if seen.as_deref() != Some(v) && !was_installed {
                     let _ = inner.db.set_runtime("update_notified", v);
                     inner.emit(CoreEvent::Notify {
-                        title: format!("Sténo {v} est disponible"),
-                        body: "Cliquez pour voir les nouveautés et installer la mise à jour.".into(),
+                        title: if inner.lang() == "en" { format!("Sténo {v} is available") } else { format!("Sténo {v} est disponible") },
+                        body: inner.tr("Cliquez pour voir les nouveautés et installer la mise à jour.", "Click to see what’s new and install the update."),
                         route: Some("/settings?section=updates".into()),
                     });
                 }
@@ -252,8 +252,8 @@ pub async fn install(inner: Arc<Inner>) -> Result<()> {
                 u.message = Some(format!("Sténo {version} est installé : redémarrez pour l'utiliser."));
             });
             i.emit(CoreEvent::Notify {
-                title: format!("Sténo {version} est installé"),
-                body: "Redémarrez Sténo pour utiliser la nouvelle version.".into(),
+                title: if i.lang() == "en" { format!("Sténo {version} is installed") } else { format!("Sténo {version} est installé") },
+                body: i.tr("Redémarrez Sténo pour utiliser la nouvelle version.", "Restart Sténo to use the new version."),
                 route: Some("/settings?section=updates".into()),
             });
             Ok(())

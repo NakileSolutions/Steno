@@ -14,6 +14,7 @@ pub mod echo;
 pub mod events;
 pub mod export;
 pub mod instructions;
+pub mod i18n;
 pub mod jobs;
 pub mod live;
 pub mod maintenance;

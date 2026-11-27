@@ -206,14 +206,23 @@ pub struct VoiceSettings {
 pub fn default_verbs() -> BTreeMap<String, Vec<String>> {
     let mut m = BTreeMap::new();
     let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    m.insert("search".into(), v(&["cherche", "recherche", "regarde", "trouve"]));
-    m.insert("check".into(), v(&["vérifie", "confirme"]));
-    m.insert("note".into(), v(&["note", "ajoute une action", "retiens"]));
-    m.insert("recap".into(), v(&["résume", "récap", "récapitule"]));
-    m.insert("cancel".into(), v(&["annule"]));
+    // Français puis anglais : les deux langues sont reconnues par défaut.
+    m.insert("search".into(), v(&["cherche", "recherche", "regarde", "trouve", "search", "find", "look up", "look for"]));
+    m.insert("check".into(), v(&["vérifie", "confirme", "check", "verify", "confirm"]));
+    m.insert("note".into(), v(&["note", "ajoute une action", "retiens", "take a note", "add an action", "remember"]));
+    m.insert("recap".into(), v(&["résume", "récap", "récapitule", "summarize", "summarise", "recap"]));
+    m.insert("cancel".into(), v(&["annule", "cancel"]));
     m.insert(
         "stop".into(),
-        v(&["arrête l'écoute", "arrête d'écouter", "arrête la transcription", "termine la réunion", "fin de la réunion"]),
+        v(&[
+            "arrête l'écoute",
+            "arrête d'écouter",
+            "arrête la transcription",
+            "termine la réunion",
+            "fin de la réunion",
+            "stop listening",
+            "end the meeting",
+        ]),
     );
     m
 }
