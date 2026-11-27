@@ -62,6 +62,10 @@ pub(crate) fn build_args(req: &RunRequest, settings_path: &Path, policy: &ReadOn
         a.push("--model".into());
         a.push(m.clone());
     }
+    if let Some(e) = &req.effort {
+        a.push("--effort".into());
+        a.push(e.clone());
+    }
     match &req.session {
         SessionMode::None => a.push("--no-session-persistence".into()),
         SessionMode::New(id) => {
@@ -225,6 +229,24 @@ impl AgentAdapter for ClaudeCode {
     fn capabilities(&self) -> Capabilities {
         Capabilities { resume_session: true, stream_json: true, read_only_files: true, tool_deny_list: true, extra_dirs: true }
     }
+    fn efforts(&self) -> Vec<&'static str> {
+        // `claude --help` (v2.1.x) : --effort <level> (low, medium, high, xhigh, max).
+        vec!["low", "medium", "high", "xhigh", "max"]
+    }
+    async fn list_models(&self) -> Result<Vec<ModelInfo>> {
+        // Pas de commande de liste : alias (toujours la dernière version) et identifiants connus.
+        let alias = Some("alias : dernière version");
+        Ok(vec![
+            ModelInfo::new("fable", "Fable", alias),
+            ModelInfo::new("opus", "Opus", alias),
+            ModelInfo::new("sonnet", "Sonnet", alias),
+            ModelInfo::new("haiku", "Haiku", alias),
+            ModelInfo::new("claude-fable-5-2", "Claude Fable 5.2", None),
+            ModelInfo::new("claude-opus-5-5", "Claude Opus 5.5", None),
+            ModelInfo::new("claude-sonnet-5-5", "Claude Sonnet 5.5", None),
+            ModelInfo::new("claude-haiku-5-5", "Claude Haiku 5.5", None),
+        ])
+    }
     async fn list_mcp(&self) -> Result<Vec<McpServer>> {
         run_mcp_list(BIN, &["mcp", "list"]).await
     }
@@ -293,6 +315,7 @@ mod tests {
             prompt: "x".into(),
             tier: Tier::Search,
             model: Some("modele-x".into()),
+            effort: Some("high".into()),
             session: SessionMode::Resume("abc".into()),
             repos: vec![PathBuf::from("/src/app")],
             tools,
@@ -313,6 +336,7 @@ mod tests {
         assert!(s.contains("--permission-mode dontAsk"));
         assert!(s.contains("--resume abc"));
         assert!(s.contains("--model modele-x"));
+        assert!(s.contains("--effort high"));
         assert!(s.contains("mcp__claude_ai_Atlassian"));
         assert!(s.contains("--add-dir /src/app"));
         assert!(!s.contains("--strict-mcp-config"));

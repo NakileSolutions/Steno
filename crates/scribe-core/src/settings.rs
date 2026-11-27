@@ -44,7 +44,11 @@ impl Default for TierTimeouts {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct AgentSettings {
+    /// Agent par défaut.
     pub provider: String,
+    /// Choix par usage (agent, modèle, niveau de réflexion).
+    pub tiers: TierChoices,
+    /// Ancien format : modèle par niveau pour l'agent par défaut (lu si `tiers.*.model` est vide).
     pub models: TierModels,
     pub custom_command: String,
     pub allow_api_key: bool,
@@ -58,6 +62,7 @@ impl Default for AgentSettings {
     fn default() -> Self {
         AgentSettings {
             provider: "claude-code".into(),
+            tiers: TierChoices::default(),
             models: TierModels::default(),
             custom_command: String::new(),
             allow_api_key: false,
@@ -69,15 +74,64 @@ impl Default for AgentSettings {
     }
 }
 
+/// Agent, modèle et niveau de réflexion d'un usage (vide = valeur par défaut).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct TierChoice {
+    pub agent: String,
+    pub model: String,
+    pub effort: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct TierChoices {
+    /// Recherches en direct, questions sur l'historique, corrélation.
+    pub search: TierChoice,
+    /// Compte rendu de fin de réunion.
+    pub summary: TierChoice,
+    /// Notes, récapitulatifs, tests.
+    pub quick: TierChoice,
+}
+
+fn non_empty(s: &str) -> Option<String> {
+    let s = s.trim();
+    (!s.is_empty()).then(|| s.to_string())
+}
+
 impl AgentSettings {
+    pub fn choice(&self, tier: Tier) -> &TierChoice {
+        match tier {
+            Tier::Quick => &self.tiers.quick,
+            Tier::Search => &self.tiers.search,
+            Tier::Summary => &self.tiers.summary,
+        }
+    }
+
+    /// Agent utilisé pour cet usage.
+    pub fn agent_for(&self, tier: Tier) -> String {
+        non_empty(&self.choice(tier).agent).unwrap_or_else(|| self.provider.clone())
+    }
+
+    /// Modèle de cet usage (`None` = défaut du CLI). L'ancien réglage `models` ne vaut que
+    /// pour l'agent par défaut.
     pub fn model_for(&self, tier: Tier) -> Option<String> {
-        let m = match tier {
+        if let Some(m) = non_empty(&self.choice(tier).model) {
+            return Some(m);
+        }
+        if self.agent_for(tier) != self.provider {
+            return None;
+        }
+        non_empty(match tier {
             Tier::Quick => &self.models.quick,
             Tier::Search => &self.models.search,
             Tier::Summary => &self.models.summary,
-        };
-        let m = m.trim();
-        (!m.is_empty()).then(|| m.to_string())
+        })
+    }
+
+    /// Niveau de réflexion de cet usage (`None` = défaut du CLI).
+    pub fn effort_for(&self, tier: Tier) -> Option<String> {
+        non_empty(&self.choice(tier).effort)
     }
     pub fn timeout_for(&self, tier: Tier) -> std::time::Duration {
         let s = match tier {
@@ -455,6 +509,22 @@ mod tests {
         let merged = other.merge_team_toml(&t).unwrap();
         assert_eq!(merged.audio.vocabulary, vec!["ms-booking".to_string()]);
         assert_eq!(merged.profile.name, "Sam");
+    }
+
+    #[test]
+    fn choix_par_usage() {
+        let mut a = AgentSettings::default();
+        a.models.summary = "ancien".into();
+        assert_eq!(a.agent_for(Tier::Summary), "claude-code");
+        assert_eq!(a.model_for(Tier::Summary).as_deref(), Some("ancien"), "ancien format encore lu");
+        a.tiers.summary = TierChoice { agent: "".into(), model: "opus".into(), effort: "high".into() };
+        assert_eq!(a.model_for(Tier::Summary).as_deref(), Some("opus"));
+        assert_eq!(a.effort_for(Tier::Summary).as_deref(), Some("high"));
+        a.tiers.search = TierChoice { agent: "grok".into(), model: "".into(), effort: " ".into() };
+        assert_eq!(a.agent_for(Tier::Search), "grok");
+        assert_eq!(a.effort_for(Tier::Search), None);
+        a.models.search = "pour-claude".into();
+        assert_eq!(a.model_for(Tier::Search), None, "l'ancien modèle ne s'applique pas à un autre agent");
     }
 
     #[test]

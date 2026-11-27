@@ -42,9 +42,42 @@ pub(crate) fn build_args(req: &RunRequest, last_message: &Path) -> Vec<String> {
         a.push("-m".into());
         a.push(m.clone());
     }
+    if let Some(e) = &req.effort {
+        a.push("-c".into());
+        a.push(format!("model_reasoning_effort=\"{e}\""));
+    }
     // L'invite est lue sur l'entrée standard.
     a.push("-".into());
     a
+}
+
+fn codex_home() -> PathBuf {
+    std::env::var("CODEX_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".codex"))
+}
+
+/// Modèles cités dans `config.toml` (clé `model` à la racine et dans les profils).
+pub(crate) fn models_from_config(path: &Path) -> Vec<ModelInfo> {
+    let Ok(text) = std::fs::read_to_string(path) else { return vec![] };
+    let Ok(v) = toml::from_str::<toml::Value>(&text) else { return vec![] };
+    let mut out: Vec<ModelInfo> = vec![];
+    let mut add = |m: &str, note: String| {
+        if !out.iter().any(|x| x.id == m) {
+            out.push(ModelInfo { id: m.into(), name: m.into(), note: Some(note) });
+        }
+    };
+    if let Some(m) = v.get("model").and_then(|m| m.as_str()) {
+        add(m, "modèle de votre config Codex".into());
+    }
+    if let Some(p) = v.get("profiles").and_then(|p| p.as_table()) {
+        for (name, prof) in p {
+            if let Some(m) = prof.get("model").and_then(|m| m.as_str()) {
+                add(m, format!("profil Codex « {name} »"));
+            }
+        }
+    }
+    out
 }
 
 #[derive(Default)]
@@ -147,6 +180,14 @@ impl AgentAdapter for Codex {
     fn capabilities(&self) -> Capabilities {
         Capabilities { resume_session: true, stream_json: true, read_only_files: true, tool_deny_list: false, extra_dirs: true }
     }
+    fn efforts(&self) -> Vec<&'static str> {
+        // Clé `model_reasoning_effort` ; les niveaux réellement acceptés dépendent du modèle.
+        vec!["low", "medium", "high", "xhigh", "max"]
+    }
+    async fn list_models(&self) -> Result<Vec<ModelInfo>> {
+        // Pas de commande de liste documentée : modèles cités dans la config de l'utilisateur.
+        Ok(models_from_config(&codex_home().join("config.toml")))
+    }
     async fn list_mcp(&self) -> Result<Vec<McpServer>> {
         run_mcp_list(BIN, &["mcp", "list"]).await
     }
@@ -212,6 +253,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn modeles_de_la_config() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("config.toml");
+        std::fs::write(&p, "model = \"gpt-x\"\n[profiles.rapide]\nmodel = \"gpt-y\"\n").unwrap();
+        let m = models_from_config(&p);
+        assert_eq!(m.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), ["gpt-x", "gpt-y"]);
+    }
+
+    #[test]
     fn analyse_jsonl() {
         let mut p = JsonlParser::default();
         for l in [
@@ -234,6 +284,7 @@ mod tests {
             prompt: String::new(),
             tier: Tier::Quick,
             model: None,
+            effort: Some("high".into()),
             session: SessionMode::Resume("th-1".into()),
             repos: vec![],
             tools: ToolAccess::None,
@@ -246,6 +297,7 @@ mod tests {
         let a = build_args(&r, Path::new("/tmp/l"));
         assert_eq!(&a[..3], &["exec", "resume", "th-1"]);
         assert!(a.contains(&"read-only".to_string()));
+        assert!(a.contains(&"model_reasoning_effort=\"high\"".to_string()));
         assert_eq!(a.last().unwrap(), "-");
     }
 }

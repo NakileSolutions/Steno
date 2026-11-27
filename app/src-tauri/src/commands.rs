@@ -203,8 +203,18 @@ pub struct TestAgentResult {
 }
 
 #[tauri::command]
-pub async fn test_agent(st: State<'_, AppState>, provider: String) -> R<TestAgentResult> {
-    let (ok, message, duration_ms) = st.core.test_agent(&provider).await.map_err(er)?;
+pub async fn list_models(st: State<'_, AppState>, provider: String) -> R<Vec<scribe_core::agents::ModelInfo>> {
+    st.core.list_models(&provider).await.map_err(er)
+}
+
+#[tauri::command]
+pub async fn test_agent(
+    st: State<'_, AppState>,
+    provider: String,
+    model: Option<String>,
+    effort: Option<String>,
+) -> R<TestAgentResult> {
+    let (ok, message, duration_ms) = st.core.test_agent_with(&provider, model, effort).await.map_err(er)?;
     Ok(TestAgentResult { ok, message, duration_ms })
 }
 

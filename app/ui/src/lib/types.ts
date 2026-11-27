@@ -157,7 +157,14 @@ export type AgentInfo = {
     tool_deny_list: boolean;
     extra_dirs: boolean;
   };
+  /** Niveaux de réflexion acceptés par le CLI (ex. low…max) ; vide = non réglable. */
+  efforts: string[];
+  /** `true` : `list_models` interroge le CLI ; `false` : suggestions et saisie libre. */
+  lists_models: boolean;
 };
+
+/** Modèle proposé par `list_models` (la saisie libre reste possible). */
+export type ModelInfo = { id: string; name: string; note: string | null };
 
 export type Connector = {
   id: number;
@@ -222,9 +229,23 @@ export type CallApp = {
   browser: boolean;
 };
 
+/** Choix pour un usage (contracts.md §4 `agent.tiers`) ; chaînes vides = défaut. */
+export type AgentTier = {
+  /** Vide = agent par défaut (`agent.provider`). */
+  agent: string;
+  /** Vide = modèle par défaut du CLI ; texte libre accepté. */
+  model: string;
+  /** Niveau de réflexion ; vide = défaut du CLI. */
+  effort: string;
+};
+export type AgentTiers = { search: AgentTier; summary: AgentTier; quick: AgentTier };
+
 export type Settings = {
   agent: {
     provider: string;
+    /** Choix par usage : recherches, compte rendu, notes et récapitulatifs. */
+    tiers: AgentTiers;
+    /** Ancien format (modèle par niveau pour l'agent par défaut) : n'est plus affiché, conservé tel quel. */
     models: { quick: string; search: string; summary: string };
     custom_command: string;
     allow_api_key: boolean;

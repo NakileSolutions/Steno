@@ -22,7 +22,12 @@ fn sh_quote(s: &str) -> String {
 }
 
 pub(crate) fn render(template: &str, prompt_file: &Path, run_dir: &Path, model: Option<&str>) -> String {
+    render_full(template, prompt_file, run_dir, model, None)
+}
+
+pub(crate) fn render_full(template: &str, prompt_file: &Path, run_dir: &Path, model: Option<&str>, effort: Option<&str>) -> String {
     template
+        .replace("{effort}", &sh_quote(effort.unwrap_or("")))
         .replace("{prompt_file}", &sh_quote(&prompt_file.display().to_string()))
         .replace("{run_dir}", &sh_quote(&run_dir.display().to_string()))
         .replace("{model}", &sh_quote(model.unwrap_or("")))
@@ -75,7 +80,7 @@ impl AgentAdapter for Custom {
         let full = format!("{instructions}\n\n---\n\n{}", req.prompt);
         let pf = req.run_dir.join(".scribe").join(format!("prompt-{}.md", req.run_id));
         std::fs::write(&pf, &full)?;
-        let line = render(&self.template, &pf, &req.run_dir, req.model.as_deref());
+        let line = render_full(&self.template, &pf, &req.run_dir, req.model.as_deref(), req.effort.as_deref());
         let stdin = (!self.template.contains("{prompt_file}")).then(|| full.clone());
         let mut cmd = tokio::process::Command::new("sh");
         cmd.arg("-c").arg(line).current_dir(&req.run_dir);
@@ -115,6 +120,7 @@ mod tests {
                     prompt: "DEMANDE: bonjour".into(),
                     tier: Tier::Quick,
                     model: None,
+                    effort: None,
                     session: SessionMode::None,
                     repos: vec![],
                     tools: ToolAccess::None,

@@ -9,9 +9,29 @@ import type {
 } from './types';
 import {
   LIVE_SCRIPT, TEAMS_TITLE, defaultSettings, iso, nextIds, seedAgents, seedConnectors,
-  seedHistoryRequests, seedMeetings, seedRepos, type MeetingStore,
+  seedHistoryRequests, seedMeetings, seedModels, seedRepos, type MeetingStore,
 } from './mock-data';
 import { detectWake, fold } from './wake';
+import { effortLabel, normalizeAgentSettings } from './agents';
+
+// Réglages simulés conservés dans l'onglet (rechargement de la page) ; jamais requis.
+const SETTINGS_KEY = 'scribe-mock-settings';
+function loadSettings(): Settings {
+  try {
+    const raw = sessionStorage.getItem(SETTINGS_KEY);
+    if (raw) return normalizeAgentSettings({ ...defaultSettings(), ...(JSON.parse(raw) as Settings) });
+  } catch {
+    // Stockage indisponible ou illisible : réglages par défaut.
+  }
+  return defaultSettings();
+}
+function storeSettings(s: Settings) {
+  try {
+    sessionStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch {
+    // Stockage indisponible : les réglages restent en mémoire.
+  }
+}
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const clone = <T>(v: T): T => structuredClone(v);
@@ -41,7 +61,7 @@ export function createMockBackend(): Backend {
 
   let meetings: MeetingStore[] = seedMeetings();
   let historyRequests: Request[] = seedHistoryRequests();
-  let settings: Settings = defaultSettings();
+  let settings: Settings = loadSettings();
   let connectors = seedConnectors();
   let repos = seedRepos();
   const agents = seedAgents();
@@ -592,21 +612,30 @@ export function createMockBackend(): Backend {
     get_settings: () => clone(settings),
     save_settings: (a) => {
       settings = clone(a.settings as Settings);
+      storeSettings(settings);
       forgetDisabledCall();
       return clone(settings);
     },
     export_settings: () => toToml(settings),
     import_settings: (a) => {
       settings = fromToml(String(a.toml));
+      storeSettings(settings);
       forgetDisabledCall();
       return clone(settings);
     },
     detect_agents: () => clone(agents),
+    list_models: async (a) => {
+      await sleep(250);
+      return seedModels(String(a.provider));
+    },
     test_agent: async (a) => {
       await sleep(1200);
       const ag = agents.find((x) => x.id === a.provider);
       if (!ag?.installed) return { ok: false, message: `${ag?.name ?? a.provider} n'est pas installé.`, duration_ms: 40 };
-      return { ok: true, message: `${ag.name} ${ag.version ?? ''} a répondu « OK » en mode non interactif. Écriture bloquée : vérifié.`.replace('  ', ' '), duration_ms: 1184 };
+      const effort = typeof a.effort === 'string' ? a.effort : '';
+      if (effort && !ag.efforts.includes(effort)) return { ok: false, message: `${ag.name} n'accepte pas le niveau de réflexion « ${effort} ».`, duration_ms: 60 };
+      const extra = [typeof a.model === 'string' && a.model ? `modèle ${a.model}` : '', effort ? `réflexion ${effortLabel(effort).toLowerCase()}` : ''].filter(Boolean).join(', ');
+      return { ok: true, message: `${ag.name} ${ag.version ?? ''} a répondu « OK » en mode non interactif${extra ? ` (${extra})` : ''}. Écriture bloquée : vérifié.`.replace('  ', ' '), duration_ms: 1184 };
     },
     list_connectors: () => clone(connectors),
     refresh_connectors: async () => {

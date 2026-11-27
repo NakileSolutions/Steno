@@ -8,6 +8,8 @@ Les options des CLI changent vite : à chaque mise à jour d'un agent, relancer
 |---|---|---|---|---|
 | `claude-code` | supporté (référence) | 2.1.332 (`--help` vérifié) | **oui** (crochet `PreToolUse`) | oui (`--session-id` / `--resume`) |
 | `codex` | supporté | non installé ici — À VÉRIFIER | non → connecteurs grisés | oui (`codex exec resume`) |
+| `antigravity` | expérimental | non installé ici — options d'après la doc officielle, À VÉRIFIER | non → connecteurs grisés | oui (`--conversation`) |
+| `grok` | expérimental | non installé ici — options d'après la doc officielle, À VÉRIFIER | non → connecteurs grisés | oui (`-s <uuid>`) |
 | `gemini` | expérimental | non installé ici — À VÉRIFIER | non → connecteurs grisés | non (résumé rejoué) |
 | `opencode` | expérimental | non installé ici — À VÉRIFIER | non → connecteurs grisés | oui (`--session`) |
 | `custom` | générique | — | non → connecteurs grisés | non (résumé rejoué) |
@@ -61,6 +63,44 @@ Connecteurs : `claude mcp list` (« nom: cible - ✓ Connected »). Les connecte
 Claude (« claude.ai Atlassian ») apparaissent dans les outils sous `mcp__claude_ai_Atlassian__…`.
 **Spike S3** : vérifier qu'ils sont bien disponibles en mode `-p` sur la version installée ;
 sinon plan B : `claude mcp add --transport http <nom> <url>`.
+
+## Modèle et niveau de réflexion par usage
+
+Réglages → Agent IA → « Modèles et réflexion » : pour **Recherches et corrélation**
+(`tiers.search`), **Compte rendu** (`tiers.summary`) et **Notes et récapitulatifs**
+(`tiers.quick`), on choisit l'agent, le modèle (liste lue depuis le CLI quand il sait la
+fournir, saisie libre sinon) et le niveau de réflexion.
+
+| Agent | Modèle | Liste des modèles | Réflexion |
+|---|---|---|---|
+| `claude-code` | `--model` | suggestions (alias `fable`, `opus`, `sonnet`, `haiku` + identifiants connus) | `--effort low\|medium\|high\|xhigh\|max` |
+| `codex` | `-m` | modèles cités dans `~/.codex/config.toml` (pas de commande de liste documentée) | `-c model_reasoning_effort="…"` (low…max, selon le modèle) |
+| `antigravity` | `--model` | `agy models` | `--effort low…max` (selon le modèle) |
+| `grok` | `-m` | `grok models` | `--effort` (low, medium, high, xhigh selon le modèle ; le CLI refuse un niveau non pris en charge) |
+| `custom` | `{model}` | — | `{effort}` |
+
+## `antigravity` (expérimental)
+
+```
+agy -p "<consignes + invite>" --output-format json [--model <slug>] [--effort <niveau>] [--conversation <id>]
+```
+
+Sortie : `{conversation_id, status, response, error, …}`. En mode non interactif, tout outil
+qui demande une approbation est refusé d'office ; on ne passe jamais
+`--dangerously-skip-permissions`. Fichier de consignes lu par le CLI non confirmé : les
+consignes sont incluses dans l'invite. Doc : https://antigravity.google/docs/cli/reference/
+
+## `grok` (expérimental)
+
+```
+grok -p "<invite>" --output-format json --no-auto-update --disable-web-search --no-subagents
+     --disallowed-tools Bash,Edit,MCPTool,WebFetch,WebSearch   # (+ Read,Grep sans outils)
+     --rules "<consignes>" [-m <modèle>] [--effort <niveau>] [-s <uuid de session>]
+```
+
+Forme de la sortie JSON non documentée (lecture souple : `result`/`response`/`text`,
+`session_id`). Syntaxe de `--disallowed-tools` à vérifier (S3). Doc :
+https://docs.x.ai/build/cli/reference
 
 ## `codex`
 

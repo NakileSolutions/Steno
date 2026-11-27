@@ -66,10 +66,21 @@ impl Inner {
             .with_context(|| format!("agent inconnu : {}", s.agent.provider))
     }
 
-    /// Sources cochées pour le direct (`live = true`) ou la corrélation.
+    /// Agent choisi pour un usage (Réglages → Agent IA → Modèles et réflexion).
+    pub fn adapter_for_tier(&self, tier: Tier) -> Result<Arc<dyn AgentAdapter>> {
+        if let Some(a) = &self.agent_override {
+            return Ok(a.clone());
+        }
+        let s = self.settings();
+        let id = s.agent.agent_for(tier);
+        agents::adapter_for(&id, &s.agent.custom_command).with_context(|| format!("agent inconnu : {id}"))
+    }
+
+    /// Sources cochées pour le direct (`live = true`) ou la corrélation (connecteurs de l'agent
+    /// des recherches).
     pub fn sources(&self, live: bool) -> Result<Sources> {
         let s = self.settings();
-        let provider = self.adapter()?.id().to_string();
+        let provider = self.adapter_for_tier(Tier::Search)?.id().to_string();
         let repos = self
             .db
             .list_repos()?
@@ -135,7 +146,7 @@ impl Inner {
             bail!("réunion confidentielle : aucun appel IA");
         }
         let s = self.settings();
-        let adapter = self.adapter()?;
+        let adapter = self.adapter_for_tier(tier)?;
         let caps = adapter.capabilities();
         if let ToolAccess::ReadOnly { connectors } = &mut tools {
             if !caps.tool_deny_list && !connectors.is_empty() {
@@ -176,6 +187,7 @@ impl Inner {
             prompt,
             tier,
             model: s.agent.model_for(tier),
+            effort: s.agent.effort_for(tier),
             session: session.clone(),
             repos,
             tools,
@@ -492,8 +504,19 @@ impl Core {
         agents::detect_all(&self.settings().agent.custom_command).await
     }
 
-    /// Envoie une invite de test à un agent.
+    /// Modèles proposés par un agent (liste indicative ; la saisie libre reste possible).
+    pub async fn list_models(&self, provider: &str) -> Result<Vec<agents::ModelInfo>> {
+        let s = self.settings();
+        let adapter = agents::adapter_for(provider, &s.agent.custom_command).context("agent inconnu")?;
+        adapter.list_models().await
+    }
+
+    /// Envoie une invite de test à un agent (modèle et niveau de réflexion facultatifs).
     pub async fn test_agent(&self, provider: &str) -> Result<(bool, String, u128)> {
+        self.test_agent_with(provider, None, None).await
+    }
+
+    pub async fn test_agent_with(&self, provider: &str, model: Option<String>, effort: Option<String>) -> Result<(bool, String, u128)> {
         let s = self.settings();
         let adapter = agents::adapter_for(provider, &s.agent.custom_command).context("agent inconnu")?;
         let run_dir = crate::paths::runs_dir().join("_test");
@@ -507,7 +530,8 @@ impl Core {
                     run_dir,
                     prompt: crate::prompts::agent_test(),
                     tier: Tier::Quick,
-                    model: s.agent.model_for(Tier::Quick),
+                    model: model.filter(|m| !m.trim().is_empty()),
+                    effort: effort.filter(|e| !e.trim().is_empty()),
                     session: SessionMode::None,
                     repos: vec![],
                     tools: ToolAccess::None,

@@ -15,7 +15,7 @@ pub const COMMANDS: &[&str] = &[
     "rename_meeting", "set_confidential", "delete_meeting", "rename_speaker", "add_note", "update_note",
     "delete_note", "regenerate_report", "correlate", "export_meeting", "search", "list_actions",
     "set_action_status", "list_decisions", "get_settings", "save_settings", "export_settings", "import_settings",
-    "detect_agents", "test_agent", "list_connectors", "refresh_connectors", "update_connector", "list_repos",
+    "detect_agents", "list_models", "test_agent", "list_connectors", "refresh_connectors", "update_connector", "list_repos",
     "add_repo", "update_repo", "remove_repo", "pick_folder", "check_wake_word", "generate_variants",
     "check_variants", "wake_detect", "wake_test_record", "doctor", "delete_all_data", "log_ui_error",
 ];
@@ -94,8 +94,10 @@ pub async fn dispatch(core: &Core, cmd: &str, args: Value) -> Result<Value, Stri
         "export_settings" => ok(core.export_settings().map_err(e)?),
         "import_settings" => ok(core.import_settings(&a.s("toml")?).map_err(e)?),
         "detect_agents" => ok(core.detect_agents().await),
+        "list_models" => ok(core.list_models(&a.s("provider")?).await.map_err(e)?),
         "test_agent" => {
-            let (okk, message, ms) = core.test_agent(&a.s("provider")?).await.map_err(e)?;
+            let (okk, message, ms) =
+                core.test_agent_with(&a.s("provider")?, a.opt("model")?, a.opt("effort")?).await.map_err(e)?;
             ok(json!({ "ok": okk, "message": message, "duration_ms": ms }))
         }
         "list_connectors" => ok(core.list_connectors().map_err(e)?),
@@ -162,7 +164,7 @@ mod tests {
                 assert!(contract.contains(&format!("`{c}`")), "{c} absente de docs/contracts.md");
             }
             // Arguments vides : erreur d'argument possible, mais jamais « commande inconnue ».
-            if matches!(*c, "delete_all_data" | "start_meeting" | "stop_meeting" | "wake_test_record" | "detect_agents" | "doctor" | "refresh_connectors" | "test_agent") {
+            if matches!(*c, "delete_all_data" | "start_meeting" | "stop_meeting" | "wake_test_record" | "detect_agents" | "doctor" | "refresh_connectors" | "test_agent" | "list_models") {
                 continue;
             }
             if let Err(m) = dispatch(&core, c, json!({})).await {

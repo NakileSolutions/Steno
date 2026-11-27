@@ -2,6 +2,7 @@
 // seulement des propositions (appel détecté dans une app de visio) et des rappels (comment arrêter).
 
 import type { CallApp, LiveCall, LiveState, Settings, VoiceVerbs } from './types';
+import { normalizeAgentSettings } from './agents';
 
 export const DEFAULT_STOP_VERB = 'arrête l’écoute';
 
@@ -142,7 +143,8 @@ export function normalizeLiveState(s: LiveState): LiveState {
 }
 
 /** Réglages d'un cœur plus ancien (`auto_detect_teams`, sans `call_apps`) ramenés au contrat actuel. */
-export function normalizeSettings(s: Settings): Settings {
+export function normalizeSettings(input: Settings): Settings {
+  const s = normalizeAgentSettings(input);
   const audio = s.audio as Settings['audio'] & { auto_detect_teams?: boolean };
   if (audio.auto_detect_calls !== undefined && Array.isArray(audio.call_apps) && audio.auto_detect_teams === undefined) return s;
   const { auto_detect_teams, ...rest } = audio;

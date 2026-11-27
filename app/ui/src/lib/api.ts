@@ -7,7 +7,7 @@
 
 import type {
   Action, ActionFilter, AgentInfo, Connector, Decision, DoctorItem, EventMap, EventName,
-  LiveState, Meeting, MeetingDetail, MeetingFilter, MeetingSummary, Note, Repo, Report,
+  LiveState, Meeting, MeetingDetail, MeetingFilter, MeetingSummary, ModelInfo, Note, Repo, Report,
   Request, SearchHit, Segment, Settings, TestAgentResult, VariantCheck, WakeCheck, WakeDetect,
 } from './types';
 import { normalizeLiveState, normalizeSettings } from './listening';
@@ -249,7 +249,14 @@ export const api = {
 
   // Agents, connecteurs, dépôts
   detectAgents: () => call<AgentInfo[]>('detect_agents'),
-  testAgent: (provider: string) => call<TestAgentResult>('test_agent', { provider }),
+  listModels: (provider: string) => call<ModelInfo[]>('list_models', { provider }),
+  /** Teste l'agent ; `model` et `effort` vides = défauts du CLI (non transmis). */
+  testAgent: (provider: string, model?: string, effort?: string) =>
+    call<TestAgentResult>('test_agent', {
+      provider,
+      ...(model?.trim() ? { model: model.trim() } : {}),
+      ...(effort?.trim() ? { effort: effort.trim() } : {}),
+    }),
   listConnectors: () => call<Connector[]>('list_connectors'),
   refreshConnectors: () => call<Connector[]>('refresh_connectors'),
   updateConnector: (id: number, useLive: boolean, useCorrelation: boolean) =>

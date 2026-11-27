@@ -208,7 +208,7 @@ pub async fn generate(inner: &Inner, meeting_id: &str) -> Result<()> {
         parsed.actions = fb.actions;
     }
     let md = ensure_title(&md, &meeting, &date);
-    let provider = inner.settings().agent.provider.clone();
+    let provider = inner.settings().agent.agent_for(Tier::Summary);
     let version = inner.db.save_report(meeting_id, &md, Some(&provider), res.model.as_deref(), false)?;
     inner.db.replace_decisions_actions(
         meeting_id,

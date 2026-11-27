@@ -122,3 +122,7 @@ Variables utiles : `SCRIBE_HOME` (dossier des données), `SCRIBE_SIDECAR` (comma
 ex. `scribe replay fixtures/daily-45min.jsonl --speed 20`), `RUST_LOG`.
 Le plan de réalisation complet est dans [`PLAN.md`](PLAN.md) ; les interfaces entre composants
 dans [`docs/contracts.md`](docs/contracts.md).
+
+---
+
+<sub>Développé par Nakile Solutions.</sub>

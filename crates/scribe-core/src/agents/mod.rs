@@ -1,10 +1,12 @@
 //! Adaptateurs d'agent IA. **Seul endroit** du code qui connaît les noms des CLI, leurs
 //! options et leurs formats de sortie (PLAN §5.3, docs/contracts.md §3).
 
+mod antigravity;
 mod claude_code;
 mod codex;
 mod custom;
 mod gemini;
+mod grok;
 mod opencode;
 pub mod process;
 
@@ -19,7 +21,9 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+pub use antigravity::Antigravity;
 pub use claude_code::ClaudeCode;
+pub use grok::Grok;
 pub use codex::Codex;
 pub use custom::Custom;
 pub use gemini::Gemini;
@@ -56,6 +60,20 @@ pub struct McpServer {
     pub status: String,
 }
 
+/// Modèle proposé par un CLI (liste indicative : la saisie libre reste possible).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ModelInfo {
+    pub id: String,
+    pub name: String,
+    pub note: Option<String>,
+}
+
+impl ModelInfo {
+    pub fn new(id: &str, name: &str, note: Option<&str>) -> ModelInfo {
+        ModelInfo { id: id.into(), name: name.into(), note: note.map(String::from) }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentInfo {
     pub id: String,
@@ -65,6 +83,10 @@ pub struct AgentInfo {
     pub version: Option<String>,
     pub error: Option<String>,
     pub capabilities: Capabilities,
+    /// Niveaux de réflexion acceptés (vide = non réglable).
+    pub efforts: Vec<String>,
+    /// `list_models` interroge réellement le CLI.
+    pub lists_models: bool,
 }
 
 /// Consignes à installer dans le dossier d'exécution.
@@ -92,6 +114,8 @@ pub struct RunRequest {
     pub prompt: String,
     pub tier: Tier,
     pub model: Option<String>,
+    /// Niveau de réflexion (« low », « high »…), `None` = défaut du CLI.
+    pub effort: Option<String>,
     pub session: SessionMode,
     pub repos: Vec<PathBuf>,
     pub tools: ToolAccess,
@@ -129,6 +153,18 @@ pub trait AgentAdapter: Send + Sync {
     fn support(&self) -> Support;
     async fn detect(&self) -> Detection;
     fn capabilities(&self) -> Capabilities;
+    /// Niveaux de réflexion acceptés par le CLI (vide = non réglable).
+    fn efforts(&self) -> Vec<&'static str> {
+        vec![]
+    }
+    /// `true` si `list_models` interroge le CLI (sinon : suggestions statiques).
+    fn lists_models(&self) -> bool {
+        false
+    }
+    /// Modèles proposés (indicatif).
+    async fn list_models(&self) -> Result<Vec<ModelInfo>> {
+        Ok(vec![])
+    }
     async fn list_mcp(&self) -> Result<Vec<McpServer>>;
     async fn sync_instructions(&self, run_dir: &Path, instructions: &Instructions) -> Result<()>;
     async fn apply_policy(&self, policy: &ReadOnlyPolicy, run_dir: &Path) -> Result<()>;
@@ -140,6 +176,8 @@ pub fn adapter_for(id: &str, custom_command: &str) -> Option<Arc<dyn AgentAdapte
     Some(match id {
         "claude-code" => Arc::new(ClaudeCode),
         "codex" => Arc::new(Codex),
+        "antigravity" => Arc::new(Antigravity),
+        "grok" => Arc::new(Grok),
         "gemini" => Arc::new(Gemini),
         "opencode" => Arc::new(OpenCode),
         "custom" => Arc::new(Custom::new(custom_command)),
@@ -147,7 +185,7 @@ pub fn adapter_for(id: &str, custom_command: &str) -> Option<Arc<dyn AgentAdapte
     })
 }
 
-pub const ALL_IDS: [&str; 5] = ["claude-code", "codex", "gemini", "opencode", "custom"];
+pub const ALL_IDS: [&str; 7] = ["claude-code", "codex", "antigravity", "grok", "gemini", "opencode", "custom"];
 
 /// Détecte tous les agents connus.
 pub async fn detect_all(custom_command: &str) -> Vec<AgentInfo> {
@@ -163,6 +201,8 @@ pub async fn detect_all(custom_command: &str) -> Vec<AgentInfo> {
             version: d.version,
             error: d.error,
             capabilities: a.capabilities(),
+            efforts: a.efforts().into_iter().map(String::from).collect(),
+            lists_models: a.lists_models(),
         });
     }
     out
@@ -303,6 +343,47 @@ pub(crate) async fn detect_binary(bin: &str) -> Detection {
     }
 }
 
+/// Analyse générique d'une liste de modèles affichée par un CLI : une ligne par modèle,
+/// identifiant en premier mot, nom lisible ensuite (en-têtes et lignes décoratives ignorés).
+pub fn parse_model_list(out: &str) -> Vec<ModelInfo> {
+    let mut v: Vec<ModelInfo> = vec![];
+    for line in out.lines() {
+        let l = line.trim().trim_start_matches(['*', '•', '-', '>', ' ']).trim();
+        if l.is_empty() {
+            continue;
+        }
+        let mut parts = l.splitn(2, char::is_whitespace);
+        let id = parts.next().unwrap_or("").trim_matches(|c| c == '`' || c == ',' || c == ':');
+        let rest = parts.next().unwrap_or("").trim().trim_start_matches(['-', '–', ':', '|']).trim();
+        let looks_like_id = id.len() >= 3
+            && id.chars().all(|c| c.is_ascii_alphanumeric() || "-_./:@".contains(c))
+            && id.chars().any(|c| c.is_ascii_digit() || c == '-')
+            && !id.eq_ignore_ascii_case("model")
+            && !id.eq_ignore_ascii_case("models");
+        if !looks_like_id || v.iter().any(|m| m.id == id) {
+            continue;
+        }
+        let name = if rest.is_empty() { id.to_string() } else { rest.split('|').next().unwrap_or(rest).trim().to_string() };
+        v.push(ModelInfo { id: id.to_string(), name, note: None });
+    }
+    v
+}
+
+/// Lance `<bin> <args>` et renvoie la sortie standard (délai 60 s).
+pub(crate) async fn run_text(bin: &str, args: &[&str]) -> Result<String> {
+    let path = which::which(bin).map_err(|_| anyhow::anyhow!("« {bin} » introuvable"))?;
+    let o = tokio::time::timeout(
+        Duration::from_secs(60),
+        tokio::process::Command::new(path).args(args).kill_on_drop(true).output(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("« {bin} {} » ne répond pas", args.join(" ")))??;
+    if !o.status.success() {
+        anyhow::bail!("« {bin} {} » a échoué : {}", args.join(" "), String::from_utf8_lossy(&o.stderr).trim());
+    }
+    Ok(String::from_utf8_lossy(&o.stdout).to_string())
+}
+
 /// Lance `<bin> mcp list` et analyse la sortie.
 pub(crate) async fn run_mcp_list(bin: &str, args: &[&str]) -> Result<Vec<McpServer>> {
     let path = which::which(bin).map_err(|_| anyhow::anyhow!("« {bin} » introuvable"))?;
@@ -321,6 +402,17 @@ pub(crate) async fn run_mcp_list(bin: &str, args: &[&str]) -> Result<Vec<McpServ
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn liste_de_modeles() {
+        let out = "Available models\n\ngemini-4-neon-xhigh            Gemini 4 Neon (XHigh)\ngemini-3.8-flash-medium   Gemini 3.8 Flash\n";
+        let v = parse_model_list(out);
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].id, "gemini-4-neon-xhigh");
+        assert_eq!(v[0].name, "Gemini 4 Neon (XHigh)");
+        let v = parse_model_list("MODEL       CONTEXT\ngrok-4.7    2M\ngrok-4.5    256k\n");
+        assert_eq!(v.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), ["grok-4.7", "grok-4.5"]);
+    }
 
     #[test]
     fn liste_mcp() {

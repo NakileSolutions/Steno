@@ -31,6 +31,8 @@ fn env() -> &'static PathBuf {
             std::env::set_var("SCRIBE_HOME", &home);
             std::env::set_var("PATH", path);
             std::env::set_var("FAKE_CLAUDE_LOG", home.join("fake-claude.log"));
+            std::env::set_var("FAKE_AGY_LOG", home.join("fake-agy.log"));
+            std::env::set_var("FAKE_GROK_LOG", home.join("fake-grok.log"));
             std::env::remove_var("ANTHROPIC_API_KEY");
         }
         home
@@ -406,4 +408,49 @@ fn liste_des_apps_surveillees() {
     let w = scribe_core::live::watch_list(&audio);
     assert_eq!(w.len(), 1);
     assert!(w[0].bundles.iter().any(|b| b == "com.google.Chrome"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_modele_et_reflexion_par_usage() {
+    use scribe_core::settings::TierChoice;
+    let c = core("par-usage", None);
+    let mut s = c.settings();
+    s.agent.tiers.search = TierChoice { agent: "grok".into(), model: "grok-4.7".into(), effort: "medium".into() };
+    s.agent.tiers.summary = TierChoice { agent: "antigravity".into(), model: "gemini-4-neon-xhigh".into(), effort: "max".into() };
+    c.save_settings(s).unwrap();
+
+    // Listes de modèles lues depuis les CLI (faux) ; suggestions pour Claude Code.
+    let agy: Vec<String> = c.list_models("antigravity").await.unwrap().into_iter().map(|m| m.id).collect();
+    assert_eq!(agy, ["gemini-4-neon-xhigh", "gemini-3.8-flash-medium"]);
+    assert_eq!(c.list_models("grok").await.unwrap()[0].id, "grok-4.7");
+    assert!(c.list_models("claude-code").await.unwrap().iter().any(|m| m.id == "opus"));
+    let agents = c.detect_agents().await;
+    let grok = agents.iter().find(|a| a.id == "grok").unwrap();
+    assert!(grok.installed && grok.lists_models && grok.efforts.contains(&"xhigh".to_string()));
+
+    // Recherche → Grok, avec son modèle et sa réflexion.
+    let m = c.start_meeting(Some("Point tarifs".into())).await.unwrap();
+    let r = c.ask("où est géré le verrou de créneau ?", None, "text").unwrap();
+    let r = wait_request(&c, &r.id).await;
+    assert_eq!(r.status, "done", "{:?}", r.error);
+    assert!(r.answer_md.unwrap().contains("(grok)"));
+    let log = std::fs::read_to_string(env().join("fake-grok.log")).unwrap();
+    let last: Vec<String> = serde_json::from_str(log.lines().last().unwrap()).unwrap();
+    let joined = last.join(" ");
+    assert!(joined.contains("-m grok-4.7") && joined.contains("--effort medium"), "{joined}");
+    assert!(joined.contains("--disallowed-tools"), "lecture seule : outils d'écriture interdits");
+
+    // Compte rendu → Antigravity, avec son modèle et sa réflexion.
+    c.add_note(&m.id, "Marie corrige le APP-1234").unwrap();
+    c.stop_meeting().await.unwrap();
+    wait_until("compte rendu", 60, || c.db().get_meeting(&m.id).unwrap().unwrap().status == "done").await;
+    let rep = c.db().get_report(&m.id).unwrap().unwrap();
+    assert!(rep.markdown.contains("Compte rendu factice (agy)"));
+    assert_eq!(rep.provider.as_deref(), Some("antigravity"));
+    let log = std::fs::read_to_string(env().join("fake-agy.log")).unwrap();
+    let last: Vec<String> = serde_json::from_str(log.lines().last().unwrap()).unwrap();
+    let joined = last.join(" ");
+    assert!(joined.contains("--model gemini-4-neon-xhigh") && joined.contains("--effort max"), "{joined}");
+    assert!(c.db().actions(&m.id).unwrap().iter().any(|a| a.owner.as_deref() == Some("Marie")));
+    c.shutdown();
 }

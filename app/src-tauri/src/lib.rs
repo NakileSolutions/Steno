@@ -175,6 +175,7 @@ pub fn run() {
             commands::export_settings,
             commands::import_settings,
             commands::detect_agents,
+            commands::list_models,
             commands::test_agent,
             commands::list_connectors,
             commands::refresh_connectors,

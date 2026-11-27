@@ -71,7 +71,7 @@ pub async fn run(inner: &Inner, meeting_id: &str) -> Result<()> {
     let version = inner.db.save_report(
         meeting_id,
         &new_md,
-        Some(&inner.settings().agent.provider),
+        Some(&inner.settings().agent.agent_for(Tier::Search)),
         res.model.as_deref(),
         true,
     )?;

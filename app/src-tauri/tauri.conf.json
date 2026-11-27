@@ -83,6 +83,8 @@
       "minimumSystemVersion": "14.2",
       "signingIdentity": "-",
       "entitlements": null
-    }
+    },
+    "copyright": "Développé par Nakile Solutions",
+    "publisher": "Nakile Solutions"
   }
 }

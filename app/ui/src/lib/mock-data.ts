@@ -1,7 +1,7 @@
 // Données d'exemple du faux backend (mode navigateur). Fictives, en français.
 
 import type {
-  Action, AgentInfo, Connector, Decision, Draft, Meeting, Note, Repo, Report, ReportRef,
+  Action, AgentInfo, Connector, Decision, Draft, Meeting, ModelInfo, Note, Repo, Report, ReportRef,
   Request, Segment, Settings, Speaker,
 } from './types';
 import { defaultCallApps } from './listening';
@@ -463,6 +463,11 @@ export function defaultSettings(): Settings {
   return {
     agent: {
       provider: 'claude-code',
+      tiers: {
+        search: { agent: '', model: '', effort: '' },
+        summary: { agent: '', model: '', effort: '' },
+        quick: { agent: '', model: '', effort: '' },
+      },
       models: { quick: '', search: '', summary: '' },
       custom_command: '',
       allow_api_key: false,
@@ -501,14 +506,39 @@ export function defaultSettings(): Settings {
 
 const caps = (deny: boolean) => ({ resume_session: true, stream_json: true, read_only_files: true, tool_deny_list: deny, extra_dirs: true });
 
+const EFFORTS_MAX = ['low', 'medium', 'high', 'xhigh', 'max'];
+const none = { resume_session: false, stream_json: false, read_only_files: false, tool_deny_list: false, extra_dirs: false };
+
 export function seedAgents(): AgentInfo[] {
   return [
-    { id: 'claude-code', name: 'Claude Code', support: 'supported', installed: true, version: '2.3.1', error: null, capabilities: caps(true) },
-    { id: 'codex', name: 'Codex CLI', support: 'supported', installed: true, version: '0.98.0', error: null, capabilities: caps(true) },
-    { id: 'gemini', name: 'Gemini CLI', support: 'experimental', installed: true, version: '1.4.0', error: null, capabilities: { ...caps(false), resume_session: false } },
-    { id: 'opencode', name: 'OpenCode', support: 'experimental', installed: false, version: null, error: 'Introuvable dans le PATH', capabilities: caps(false) },
-    { id: 'custom', name: 'Commande personnalisée', support: 'generic', installed: true, version: null, error: null, capabilities: { resume_session: false, stream_json: false, read_only_files: false, tool_deny_list: false, extra_dirs: false } },
+    { id: 'claude-code', name: 'Claude Code', support: 'supported', installed: true, version: '2.3.1', error: null, capabilities: caps(true), efforts: [...EFFORTS_MAX], lists_models: false },
+    { id: 'codex', name: 'Codex', support: 'supported', installed: true, version: '0.98.0', error: null, capabilities: caps(true), efforts: [...EFFORTS_MAX], lists_models: false },
+    { id: 'antigravity', name: 'Antigravity', support: 'experimental', installed: true, version: '1.2.0', error: null, capabilities: caps(true), efforts: [...EFFORTS_MAX], lists_models: true },
+    { id: 'grok', name: 'Grok Build', support: 'experimental', installed: true, version: '0.4.2', error: null, capabilities: caps(true), efforts: ['low', 'medium', 'high', 'xhigh'], lists_models: true },
+    { id: 'gemini', name: 'Gemini CLI', support: 'experimental', installed: false, version: null, error: 'Introuvable dans le PATH', capabilities: { ...caps(false), resume_session: false }, efforts: [], lists_models: false },
+    { id: 'opencode', name: 'OpenCode', support: 'experimental', installed: false, version: null, error: 'Introuvable dans le PATH', capabilities: caps(false), efforts: [], lists_models: false },
+    { id: 'custom', name: 'Commande personnalisée', support: 'generic', installed: false, version: null, error: 'Aucune commande configurée', capabilities: none, efforts: [], lists_models: false },
   ];
+}
+
+/** Modèles proposés par agent (données d'exemple, pas une vérité). */
+export function seedModels(provider: string): ModelInfo[] {
+  const alias = 'alias : dernière version';
+  switch (provider) {
+    case 'claude-code':
+      return [
+        ...['fable', 'opus', 'sonnet', 'haiku'].map((id) => ({ id, name: id, note: alias })),
+        ...['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-2'].map((id) => ({ id, name: id, note: null })),
+      ];
+    case 'codex':
+      return [{ id: 'gpt-5.5-codex', name: 'gpt-5.5-codex', note: 'lu dans ~/.codex/config.toml ; Codex ne liste pas ses modèles' }];
+    case 'antigravity':
+      return ['gemini-3.5-pro', 'gemini-3.5-flash', 'gemini-3-pro', 'gemini-3-flash'].map((id) => ({ id, name: id, note: null }));
+    case 'grok':
+      return ['grok-4.7', 'grok-4.6', 'grok-4.5'].map((id) => ({ id, name: id, note: null }));
+    default:
+      return [];
+  }
 }
 
 export function seedConnectors(): Connector[] {
