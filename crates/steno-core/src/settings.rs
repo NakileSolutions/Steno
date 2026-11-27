@@ -445,6 +445,8 @@ pub struct ProfileSettings {
     pub jira_key_pattern: String,
     /// Apparence de l'app : `auto` (suit macOS), `light` ou `dark`.
     pub theme: String,
+    /// Langue de l'interface et des comptes rendus : `auto` (langue de macOS), `fr` ou `en`.
+    pub language: String,
 }
 
 impl Default for ProfileSettings {
@@ -455,13 +457,40 @@ impl Default for ProfileSettings {
             team: String::new(),
             jira_key_pattern: r"[A-Z][A-Z0-9]+-\d+".into(),
             theme: "auto".into(),
+            language: "auto".into(),
         }
     }
 }
 
 const SECTIONS: [&str; 8] = ["agent", "voice", "audio", "correlation", "privacy", "profile", "report", "updates"];
 
+/// Langue de macOS (préférences de l'utilisateur), `fr` ou `en`.
+pub fn system_lang() -> &'static str {
+    static L: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    L.get_or_init(|| {
+        let from_env = std::env::var("LANG").unwrap_or_default();
+        let mac = std::process::Command::new("/usr/bin/defaults")
+            .args(["read", "-g", "AppleLanguages"])
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default();
+        let first = mac.split(['"', ',', '(', ')', '\n', ' ']).find(|w| w.len() >= 2).unwrap_or(&from_env).to_lowercase();
+        let pick = if first.is_empty() { from_env.to_lowercase() } else { first };
+        if pick.starts_with("fr") || pick.is_empty() { "fr" } else { "en" }
+    })
+}
+
 impl Settings {
+    /// Langue effective (`fr` ou `en`) de l'interface et des comptes rendus.
+    pub fn lang(&self) -> &'static str {
+        match self.profile.language.as_str() {
+            "fr" => "fr",
+            "en" => "en",
+            _ => system_lang(),
+        }
+    }
+
     /// Charge les réglages depuis la base (valeurs par défaut pour ce qui manque).
     pub fn load(db: &Db) -> Result<Settings> {
         let mut root = serde_json::Map::new();
@@ -522,6 +551,9 @@ impl Settings {
             self.report.default_template = "standard".into();
         }
         self.report.context_delay_s = self.report.context_delay_s.min(600);
+        if !["auto", "fr", "en"].contains(&self.profile.language.as_str()) {
+            self.profile.language = "auto".into();
+        }
         if !["auto", "light", "dark"].contains(&self.profile.theme.as_str()) {
             self.profile.theme = "auto".into();
         }

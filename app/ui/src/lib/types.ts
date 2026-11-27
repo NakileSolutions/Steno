@@ -312,7 +312,7 @@ export type Settings = {
     /** Message d'information à coller dans le chat de l'appel. */
     consent_message: string;
   };
-  profile: { name: string; role: string; team: string; jira_key_pattern: string; theme?: 'auto' | 'light' | 'dark' };
+  profile: { name: string; role: string; team: string; jira_key_pattern: string; theme?: 'auto' | 'light' | 'dark'; language?: 'auto' | 'fr' | 'en' };
   /** Comptes rendus : format par défaut, contexte proposé à l'arrêt, formats perso (enregistrés sur ce Mac). */
   report: ReportSettings;
   /** Mises à jour : vérification (API GitHub publique) et installation automatique hors réunion. */

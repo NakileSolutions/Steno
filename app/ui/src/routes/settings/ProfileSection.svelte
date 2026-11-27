@@ -13,6 +13,16 @@
 </script>
 
 <div class="field">
+  <label class="field-label" for="p-lang">Langue<span class="hint">Interface et comptes rendus. Auto suit la langue de macOS.</span></label>
+  <div class="field-body">
+    <select id="p-lang" class="input w" value={settings.profile.language ?? 'auto'} onchange={(e) => (settings.profile.language = e.currentTarget.value as 'auto' | 'fr' | 'en')}>
+      <option value="auto">Auto</option>
+      <option value="fr">Français</option>
+      <option value="en">English</option>
+    </select>
+  </div>
+</div>
+<div class="field">
   <div class="field-label">Apparence<span class="hint">Auto suit le réglage de macOS.</span></div>
   <div class="field-body">
     <div class="seg-ctl" role="radiogroup" aria-label="Apparence">
