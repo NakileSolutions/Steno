@@ -162,6 +162,20 @@ Sur Mac, pour les e2e : `cd app/ui && npx playwright install chromium` une fois.
 - En simulation, il n'y a qu'un intervenant « Eux » : pas de diarisation sans audio. La durée vaut 0 min à cause du rejeu accéléré.
 - En mode HTTP, `openMain(route)` change la route dans la page et `openExternal` ouvre un onglet.
 
+### Agents, modèles, périphériques : à vérifier sur Mac
+- **Antigravity** (`agy`) et **Grok Build** (`grok`) :
+  - options écrites d'après la doc officielle, jamais lancées (voir `docs/adapters.md`) ;
+  - à vérifier : `agy -p … --output-format json`, la forme réelle de la sortie JSON de `grok`, la syntaxe `--disallowed-tools`, et `--effort` selon le modèle.
+- **Claude Code** : vérifier `--effort` sur la version installée.
+- **Codex** : vérifier que `-c model_reasoning_effort=…` est accepté par `codex exec`.
+- **Périphériques** :
+  - micro choisi avec l'annulation d'écho (`kAudioOutputUnitProperty_CurrentDevice` sur `inputNode`) ;
+  - changement de micro pendant l'écoute ;
+  - AirPods branchés puis débranchés (repli `device_missing`) ;
+  - signal joué sur la sortie choisie ;
+  - `scribe-audio --list-devices`.
+  - Liste complète dans `audio/ScribeAudio/README.md`, points 16 à 20.
+
 ### Design v2 : à vérifier sur Mac
 - Translucidité native : la barre latérale à ~60 % d'opacité sur la matière « sidebar », la lisibilité selon le fond d'écran, la fenêtre active ou inactive, et le panneau `#/tray` transparent sur la matière « popover » (`tauri.conf.json` : `transparent`, `windowEffects`, `macOSPrivateApi`).
 - Barre latérale façon Arc :
