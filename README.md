@@ -154,6 +154,12 @@ modification, et lancez `make test` avant de proposer une pull request. La branc
 n'accepte que des pull requests dont la CI est verte et dont les commits sont **signés**
 (GPG ou SSH). Publication d'une version : [`RELEASING.md`](RELEASING.md).
 
+## Contributeurs
+
+<a href="https://github.com/NakileSolutions/Steno/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=NakileSolutions/Steno" alt="Contributeurs de Sténo" />
+</a>
+
 ## Licence
 
 [MIT](LICENSE) © 2026 Nakile Solutions. Les modèles audio et les bibliothèques tierces ont
