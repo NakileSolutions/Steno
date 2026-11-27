@@ -52,7 +52,13 @@
   onMount(() => {
     const uns = [
       onEvent('scribe://segment', async (seg) => {
-        if (seg.meeting_id !== meeting?.id || segments.some((x) => x.id === seg.id)) return;
+        if (seg.meeting_id !== meeting?.id) return;
+        // Une phrase déjà affichée peut revenir mise à jour (rattachée à une demande, écho…).
+        const i = segments.findIndex((x) => x.id === seg.id);
+        if (i >= 0) {
+          segments[i] = seg;
+          return;
+        }
         segments.push(seg);
         if (stick) {
           await tick();

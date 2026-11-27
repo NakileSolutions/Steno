@@ -93,7 +93,6 @@ fn word_variants(w: &str) -> Vec<String> {
     // « s + consonne » en tête : l'ASR ajoute souvent un e (« escribe »)
     if chars[0] == 's' && chars.len() > 1 && !is_vowel(chars[1]) {
         push(format!("e{w}"));
-        push(format!("de{w}"));
     }
     // lettre doublée simplifiée
     for i in 1..chars.len() {

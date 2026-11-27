@@ -688,6 +688,12 @@ pub(crate) fn create_request(
     inner.db.insert_request(&r)?;
     if !segment_ids.is_empty() {
         inner.db.link_segments_to_request(segment_ids, &r.id)?;
+        // L'interface affiche le badge « Demande » sur ces phrases.
+        for id in segment_ids {
+            if let Some(seg) = inner.db.get_segment(*id)? {
+                inner.emit(CoreEvent::Segment(seg));
+            }
+        }
     }
     inner.emit(CoreEvent::Request(r.clone()));
     if r.status == "queued" {

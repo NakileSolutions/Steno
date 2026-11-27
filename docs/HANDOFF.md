@@ -93,6 +93,17 @@ Points clés :
 
 ## 5. Tests
 
+État au moment de la passation : **tout est vert**.
+- Rust : 74 tests au total :
+  - 58 unitaires du cœur ;
+  - 3 de l'app ;
+  - 1 unitaire de la CLI ;
+  - 7 fonctionnels de la CLI ;
+  - 5 d'acceptation.
+- Vitest : 66 tests.
+- Playwright : 16 tests, dont 14 en maquette et 2 scénarios réels.
+- Performance : test vert.
+
 | Commande | Contenu |
 |---|---|
 | `cargo test --workspace` | Rust : unitaires (cœur, app), fonctionnels (CLI en sous-processus), acceptation (pipeline complet avec le faux agent), conformité des commandes |
@@ -140,6 +151,12 @@ Sur Mac, pour les e2e : `cd app/ui && npx playwright install chromium` une fois.
 - `codex`, `gemini`, `opencode` : vérifier les options sur les versions installées, puis mettre à jour `docs/adapters.md`. Si un CLI sait bloquer des outils MCP par motif, passer `tool_deny_list: true` et traduire la politique.
 - Pause / reprise de l'écoute : l'état `paused` existe dans le protocole mais n'est pas exposé.
 - Clic sur une notification → ouvrir la réponse ; « 5 dernières réponses » directement dans le menu natif.
+
+### Remarques laissées par le travail sur l'UI (non bloquantes)
+- `get_settings` renvoie encore `audio.end_grace_s` (obsolète, ignoré) : à retirer lors d'une migration des réglages.
+- `scribe://navigate` n'est pas émis par `scribe serve` (seulement par l'app Tauri). L'UI s'y abonne sans en dépendre.
+- En simulation, il n'y a qu'un intervenant « Eux » : pas de diarisation sans audio. La durée vaut 0 min à cause du rejeu accéléré.
+- En mode HTTP, `openMain(route)` change la route dans la page et `openExternal` ouvre un onglet.
 
 ### P3 — Équipe et finitions
 - Configuration d'équipe : rédiger un TOML de départ (vocabulaire des services, verbes, exclusions).

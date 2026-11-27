@@ -26,7 +26,7 @@ test('captures', async ({ page, browser }) => {
   // Assistant de premier lancement.
   await go(page, '/onboarding');
   await expect(page.locator('ul.doctor li').nth(2)).toBeVisible({ timeout: 20_000 });
-  await shot(page, 'assistant');
+  await shot(page, 'onboarding');
   await passOnboarding(page);
 
   // Panneau de la barre de menu : appel Teams détecté, rien n'écoute.
@@ -35,7 +35,7 @@ test('captures', async ({ page, browser }) => {
   await go(tray, '/tray');
   await expect(tray.getByText('Appel Teams détecté :')).toBeVisible();
   await tray.waitForTimeout(500);
-  await shot(tray, 'barre-de-menu');
+  await shot(tray, 'tray');
   await ctx.close();
 
   // En direct pendant l'écoute.
@@ -65,16 +65,16 @@ test('captures', async ({ page, browser }) => {
   await detail.getByRole('button', { name: 'Corréler' }).click();
   await expect(detail.getByLabel('Version du compte rendu')).toContainText('corrélée', { timeout: 90_000 });
   await page.waitForTimeout(500);
-  await shot(page, 'reunions-compte-rendu');
+  await shot(page, 'detail-compte-rendu');
 
   await detail.getByRole('tab', { name: /Transcription/ }).click();
   await expect(detail.locator('ol.segs li').first()).toBeVisible();
   await detail.getByText('Scribe, cherche les erreurs Datadog sur ms-booking depuis hier.').evaluate((el) => el.scrollIntoView({ block: 'center' }));
-  await shot(page, 'transcription');
+  await shot(page, 'detail-transcription');
 
   await detail.getByRole('tab', { name: /Demandes/ }).click();
   await expect(detail.locator('article.req').first()).toBeVisible();
-  await shot(page, 'demandes');
+  await shot(page, 'detail-demandes');
 
   await nav(page).getByRole('link', { name: 'Recherche', exact: true }).click();
   await page.getByLabel('Rechercher dans toutes les réunions').fill('Brindille');

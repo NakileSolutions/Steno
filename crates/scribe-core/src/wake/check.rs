@@ -32,12 +32,12 @@ pub fn check_wake_word(word: &str, strict: bool, db: Option<&Db>) -> Result<Wake
     c.syllables = syllables_fr(&n);
     if c.syllables < 2 && !strict {
         c.warnings.push(format!(
-            "⚠️ « {word} » n'a qu'une syllabe : risque de faux déclenchements. Le mode strict (« OK {word} ») les réduit."
+            "« {word} » n'a qu'une syllabe : risque de faux déclenchements. Le mode strict (« OK {word} ») les réduit."
         ));
     }
     let common = common_words();
     if n.split(' ').all(|w| common.contains(w)) {
-        c.warnings.push(format!("⚠️ « {word} » est un mot très courant en français : risque de faux déclenchements."));
+        c.warnings.push(format!("« {word} » est un mot très courant en français : risque de faux déclenchements."));
     }
     if let Some(db) = db {
         // Analyse de l'historique : chaque mot du mot d'appel.
@@ -47,12 +47,13 @@ pub fn check_wake_word(word: &str, strict: bool, db: Option<&Db>) -> Result<Wake
         c.meetings_scanned = scanned;
         if count >= 3 {
             c.warnings.push(format!(
-                "⚠️ Ce mot apparaît {count} fois dans vos {scanned} dernières réunions sans être une commande."
+                "Ce mot apparaît {count} fois {} sans être une commande.",
+                if scanned == 1 { "dans votre dernière réunion".to_string() } else { format!("dans vos {scanned} dernières réunions") }
             ));
         }
         let names = db.all_speaker_names()?;
         if let Some(name) = names.iter().find(|nm| normalize(nm).split(' ').any(|p| n.split(' ').any(|w| w == p))) {
-            c.warnings.push(format!("⚠️ « {name} » est le nom d'un participant repéré dans vos réunions."));
+            c.warnings.push(format!("« {name} » est le nom d'un participant repéré dans vos réunions."));
         }
     }
     Ok(c)

@@ -298,7 +298,7 @@ impl Db {
             if let Some(q) = &fts {
                 let mut range = c.prepare("SELECT MIN(id), MAX(id) FROM segments WHERE meeting_id=?1")?;
                 let mut snip = c.prepare(
-                    "SELECT snippet(segments_fts, 0, '«', '»', '…', 12) FROM segments_fts \
+                    "SELECT snippet(segments_fts, 0, '', '', '…', 12) FROM segments_fts \
                      JOIN segments s ON s.id = segments_fts.rowid \
                      WHERE segments_fts MATCH ?1 AND segments_fts.rowid BETWEEN ?2 AND ?3 \
                        AND s.meeting_id = ?4 AND s.private = 0 LIMIT 1",
@@ -429,6 +429,13 @@ impl Db {
                 is_echo: s.is_echo,
                 request_id: None,
             })
+        })
+    }
+
+    pub fn get_segment(&self, id: i64) -> Result<Option<Segment>> {
+        self.with(|c| {
+            c.query_row(&format!("SELECT {SEGMENT_COLS} FROM segments WHERE id=?1"), [id], segment_row)
+                .optional()
         })
     }
 
@@ -1199,7 +1206,7 @@ impl Db {
         self.with(|c| {
             let mut out = vec![];
             let mut st = c.prepare(
-                "SELECT s.meeting_id, m.title, m.started_at, snippet(segments_fts, 0, '«', '»', '…', 16), s.ts \
+                "SELECT s.meeting_id, m.title, m.started_at, snippet(segments_fts, 0, '', '', '…', 16), s.ts \
                  FROM segments_fts JOIN segments s ON s.id = segments_fts.rowid JOIN meetings m ON m.id = s.meeting_id \
                  WHERE segments_fts MATCH ?1 AND s.private = 0 AND s.is_echo = 0 \
                  ORDER BY bm25(segments_fts) LIMIT ?2",
@@ -1218,7 +1225,7 @@ impl Db {
                 out.push(h?);
             }
             let mut st = c.prepare(
-                "SELECT r.meeting_id, m.title, m.started_at, snippet(reports_fts, 0, '«', '»', '…', 16) \
+                "SELECT r.meeting_id, m.title, m.started_at, snippet(reports_fts, 0, '', '', '…', 16) \
                  FROM reports_fts JOIN reports r ON r.rowid = reports_fts.rowid JOIN meetings m ON m.id = r.meeting_id \
                  WHERE reports_fts MATCH ?1 ORDER BY bm25(reports_fts) LIMIT ?2",
             )?;
@@ -1332,7 +1339,7 @@ mod tests {
         assert_eq!(s2.seq, 2);
         let hits = db.search("verrou creneau", 10).unwrap();
         assert_eq!(hits.len(), 1);
-        assert!(hits[0].snippet.contains("«"));
+        assert!(hits[0].snippet.contains("verrou de créneau"));
         assert!(db.search("évaluation", 10).unwrap().is_empty(), "les apartés ne sont pas cherchables");
         assert_eq!(db.segments("m1", false, false).unwrap().len(), 1);
         // accents ignorés
