@@ -124,9 +124,13 @@ test('captures', async ({ page, browser }) => {
   await shot(page, 'actions');
 
   await go(page, '/settings?section=voice');
+  // "Sténo" yields no rejected variant: wait for the generation answer instead.
+  const generated = page.waitForResponse((r) => r.url().includes('/api/invoke/generate_variants'));
   await page.getByRole('button', { name: 'Générer les variantes' }).click();
-  await expect(page.locator('.rejected')).toBeVisible();
+  await generated;
+  await page.waitForTimeout(300);
   await page.locator('#wake').blur();
+  await page.locator('#wake').evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await shot(page, 'reglages-voix');
 
   // Réglages → Audio & transcription : carte « Micro » (périphériques du simulateur), puis
