@@ -5,6 +5,8 @@
   import type { MeetingDetail } from '../lib/types';
   import { duration, fullDate, time, MEETING_STATUS } from '../lib/format';
   import { confirmDialog, promptDialog, toast, toastError } from '../lib/ui.svelte';
+  import { meetingCallChip } from '../lib/listening';
+  import { prefs } from '../lib/prefs.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import ReportTab from './meeting/ReportTab.svelte';
   import TranscriptTab from './meeting/TranscriptTab.svelte';
@@ -49,6 +51,7 @@
   });
 
   const m = $derived(detail?.meeting);
+  const callApp = $derived(meetingCallChip(m?.call_app, prefs.callApps));
 
   // Changement d'onglet : on repart du haut (sauf pour une demande ciblée, qui se place seule).
   let panel: HTMLElement | undefined = $state();
@@ -151,6 +154,7 @@
       <div class="row meta wrap">
         <span class="mi"><Icon name="calendar" size={13} />{fullDate(m.started_at)}</span>
         <span class="mi tnum"><Icon name="clock" size={13} />{time(m.started_at)}{#if m.ended_at}{' – '}{time(m.ended_at)}{/if}<span class="sep">·</span>{duration(m.started_at, m.ended_at)}</span>
+        {#if callApp}<span class="mi app" title="Appel {callApp}"><Icon name="phone" size={13} />{callApp}</span>{/if}
         {#if detail.speakers.length}
           <span class="mi"><Icon name="users" size={13} />{detail.speakers.length} intervenants</span>
         {/if}

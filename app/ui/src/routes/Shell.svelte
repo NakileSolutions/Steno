@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { router, href, navigate } from '../lib/router.svelte';
   import { live, clock, STATE_LABEL } from '../lib/live.svelte';
-  import { isListening, teamsOffer } from '../lib/listening';
+  import { callOffer, isListening } from '../lib/listening';
+  import { prefs } from '../lib/prefs.svelte';
   import { recent, initRecent } from '../lib/meetings.svelte';
   import { api, isTauri } from '../lib/api';
   import { MAIN_SECTIONS, SETTINGS_SECTIONS } from '../lib/sections';
@@ -36,7 +37,7 @@
   const settingsSection = $derived(router.route.query.section ?? 'agent');
   const s = $derived(live.s);
   const isLive = $derived(isListening(s));
-  const offer = $derived(teamsOffer(s));
+  const offer = $derived(callOffer(s, prefs.callApps));
 
   onMount(initRecent);
 
@@ -88,12 +89,12 @@
         {/if}
       </a>
     {:else if offer}
-      <a class="live-card offer" href={href('/live')} title="Appel Teams détecté : {offer}. Le Scribe n’écoute pas encore.">
-        <span class="lc-ic"><Icon name="speaker" size={14} /></span>
+      <a class="live-card offer" href={href('/live')} title="{offer.label}. Le Scribe n’écoute pas encore.">
+        <span class="lc-ic"><Icon name="phone" size={14} /></span>
         {#if !collapsed}
           <span class="grow">
-            <span class="lc-state">Appel Teams détecté</span>
-            <span class="lc-title ellipsis">{offer}</span>
+            <span class="lc-state">{offer.heading}</span>
+            <span class="lc-title ellipsis">{offer.title}</span>
           </span>
         {/if}
       </a>

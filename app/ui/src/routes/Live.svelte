@@ -2,8 +2,8 @@
   import { onMount, tick } from 'svelte';
   import { api, onEvent } from '../lib/api';
   import { live, clock, STATE_LABEL } from '../lib/live.svelte';
-  import { isListening, teamsOffer } from '../lib/listening';
-  import { stopHint } from '../lib/prefs.svelte';
+  import { callOffer, isListening, meetingCallChip } from '../lib/listening';
+  import { prefs, stopHint } from '../lib/prefs.svelte';
   import { href } from '../lib/router.svelte';
   import type { Request, Segment, Speaker } from '../lib/types';
   import { duration, timeS } from '../lib/format';
@@ -17,7 +17,9 @@
   const s = $derived(live.s);
   const meeting = $derived(s.meeting);
   const active = $derived(isListening(s));
-  const offer = $derived(teamsOffer(s));
+  const offer = $derived(callOffer(s, prefs.callApps));
+  /** Nom du canal « eux » : l'app de l'appel en cours. */
+  const themLabel = $derived(meetingCallChip(meeting?.call_app, prefs.callApps) ?? 'Visio');
 
   let segments = $state<Segment[]>([]);
   let speakers = $state<Speaker[]>([]);
@@ -171,7 +173,7 @@
         <div class="row ctl">
           <div class="meters">
             <Meter db={s.levels.me} label="Micro" icon="mic" />
-            <Meter db={s.levels.them} label="Teams" icon="speaker" />
+            <Meter db={s.levels.them} label={themLabel} icon="speaker" />
           </div>
           <button
             class="btn aside"
@@ -263,11 +265,11 @@
         <div class="progress" aria-hidden="true"><span></span></div>
       {:else if offer}
         <span class="hic"><Logo size={56} tile /></span>
-        <div class="teams-offer big" role="status">
-          <span class="to-ic"><Icon name="speaker" size={18} /></span>
+        <div class="call-offer big" role="status">
+          <span class="to-ic"><Icon name="phone" size={18} /></span>
           <div class="grow">
-            <p class="to-title">Appel Teams détecté : <strong>{offer}</strong></p>
-            <p class="to-sub">Le Scribe n’écoute pas encore : rien n’est transcrit tant que vous ne l’avez pas décidé.</p>
+            <p class="to-title">{offer.heading} : <strong>{offer.title}</strong></p>
+            <p class="to-sub">Le Scribe n’écoute pas encore : rien n’est transcrit tant que vous ne l’avez pas décidé.{#if offer.browser} Attention : tout le son du navigateur sera capté, y compris les autres onglets.{/if}</p>
           </div>
         </div>
         <button class="btn primary go" onclick={start} disabled={busy}><Icon name="play" size={15} stroke={2} />Démarrer l’écoute</button>
@@ -428,10 +430,10 @@
   .lead { font-size: var(--fs-ui); color: var(--text-2); margin-top: -6px; }
   .hic { display: grid; place-items: center; margin-bottom: 4px; border-radius: 16px; box-shadow: 0 6px 20px rgba(23, 27, 38, 0.28), 0 1px 2px rgba(23, 27, 38, 0.2); }
   .hic.proc { border-radius: 10px; }
-  .teams-offer.big { width: 100%; padding: 14px 16px; margin-top: 4px; }
-  .teams-offer.big .to-ic { width: 36px; height: 36px; border-radius: 10px; }
-  .teams-offer.big .to-title { font-size: 14.5px; }
-  .teams-offer.big .to-sub { font-size: 12.5px; margin-top: 3px; }
+  .call-offer.big { width: 100%; padding: 14px 16px; margin-top: 4px; }
+  .call-offer.big .to-ic { width: 36px; height: 36px; border-radius: 10px; }
+  .call-offer.big .to-title { font-size: 14.5px; }
+  .call-offer.big .to-sub { font-size: 12.5px; margin-top: 3px; }
   .start { width: 100%; display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
   .go {
     height: 44px;

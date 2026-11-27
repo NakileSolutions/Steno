@@ -10,6 +10,7 @@ import type {
   LiveState, Meeting, MeetingDetail, MeetingFilter, MeetingSummary, Note, Repo, Report,
   Request, SearchHit, Segment, Settings, TestAgentResult, VariantCheck, WakeCheck, WakeDetect,
 } from './types';
+import { normalizeLiveState, normalizeSettings } from './listening';
 
 export type Unlisten = () => void;
 
@@ -203,7 +204,7 @@ export async function openExternal(url: string): Promise<void> {
 
 export const api = {
   // Direct
-  liveState: () => call<LiveState>('live_state'),
+  liveState: () => call<LiveState>('live_state').then(normalizeLiveState),
   startMeeting: (title?: string) => call<Meeting>('start_meeting', title ? { title } : {}),
   stopMeeting: () => call<null>('stop_meeting'),
   setAside: (on: boolean) => call<null>('set_aside', { on }),
@@ -241,10 +242,10 @@ export const api = {
   listDecisions: (since?: string) => call<Decision[]>('list_decisions', since ? { since } : {}),
 
   // Réglages
-  getSettings: () => call<Settings>('get_settings'),
-  saveSettings: (settings: Settings) => call<Settings>('save_settings', { settings }),
+  getSettings: () => call<Settings>('get_settings').then(normalizeSettings),
+  saveSettings: (settings: Settings) => call<Settings>('save_settings', { settings }).then(normalizeSettings),
   exportSettings: () => call<string>('export_settings'),
-  importSettings: (toml: string) => call<Settings>('import_settings', { toml }),
+  importSettings: (toml: string) => call<Settings>('import_settings', { toml }).then(normalizeSettings),
 
   // Agents, connecteurs, dépôts
   detectAgents: () => call<AgentInfo[]>('detect_agents'),

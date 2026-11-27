@@ -4,6 +4,7 @@ import type {
   Action, AgentInfo, Connector, Decision, Draft, Meeting, Note, Repo, Report, ReportRef,
   Request, Segment, Settings, Speaker,
 } from './types';
+import { defaultCallApps } from './listening';
 
 export type MeetingStore = {
   meeting: Meeting;
@@ -84,9 +85,9 @@ function daily(): MeetingStore {
   const id = 'daily-orion';
   const start = dayAt(0, 9, 30);
   const meeting: Meeting = {
-    id, title: 'Daily ORION', title_source: 'teams_window',
+    id, title: 'Daily ORION', title_source: 'call_window',
     started_at: iso(start), ended_at: iso(plus(start, 17 * 60 + 12)),
-    status: 'done', confidential: false, agent_provider: 'claude-code', correlation: 'on_demand',
+    status: 'done', confidential: false, agent_provider: 'claude-code', correlation: 'on_demand', call_app: 'teams',
   };
   const segments = buildSegments(id, start, [
     [5, 'Eux-1', 'Bonjour à tous, on commence le daily. Je partage le tableau du sprint.'],
@@ -227,7 +228,7 @@ function archi(): MeetingStore {
   const meeting: Meeting = {
     id, title: "Revue d'architecture — export Brindille", title_source: 'user',
     started_at: iso(start), ended_at: iso(plus(start, 62 * 60)),
-    status: 'done', confidential: false, agent_provider: 'claude-code', correlation: 'on_demand',
+    status: 'done', confidential: false, agent_provider: 'claude-code', correlation: 'on_demand', call_app: 'zoom',
   };
   const segments = buildSegments(id, start, [
     [12, 'Eux-1', "L'objectif, c'est de décider comment on alimente Brindille avec les données collaborateurs."],
@@ -281,6 +282,52 @@ function archi(): MeetingStore {
   };
 }
 
+// ---------- Huddle Slack ----------
+
+function huddle(): MeetingStore {
+  const id = 'huddle-equipe-flotte';
+  const start = dayAt(1, 11, 15);
+  const md = `# Huddle #equipe-flotte
+
+## En bref
+- Les déverrouillages des vélos cargo échouent pour les vélos cargo depuis la v2.13.
+- Le fournisseur des cadenas renvoie un code \`CARGO_UNLOCK_UNSUPPORTED\` : il faut déverrouiller en deux temps.
+
+## Décisions
+- Contournement : déverrouillage en deux temps, en attendant le correctif du fournisseur des cadenas.
+
+## Actions — qui / quoi / échéance
+| Qui | Quoi | Échéance |
+|---|---|---|
+| Moi | Ajouter le déverrouillage en deux temps dans ms-pricing | vendredi |
+| Inès | Ouvrir un ticket chez le fournisseur des cadenas | aujourd'hui |`;
+  return {
+    meeting: {
+      id, title: 'Huddle #equipe-flotte', title_source: 'call_window', started_at: iso(start), ended_at: iso(plus(start, 11 * 60)),
+      status: 'done', confidential: false, agent_provider: 'claude-code', correlation: 'on_demand', call_app: 'slack',
+    },
+    segments: buildSegments(id, start, [
+      [4, 'Eux-1', 'Je vous appelle vite fait : les déverrouillages des vélos cargo plantent sur les vélos cargo.'],
+      [21, 'Moi', 'Depuis quand ? On a livré la v2.13 de ms-pricing mardi.'],
+      [36, 'Eux-1', 'Depuis mardi justement. Le fournisseur des cadenas répond CARGO_UNLOCK_UNSUPPORTED.'],
+      [58, 'Moi', 'On peut déverrouiller en deux temps en attendant, c’est déjà prévu dans leur API.'],
+      [80, 'Eux-1', 'D’accord, je leur ouvre un ticket aujourd’hui de mon côté.'],
+      [96, 'Moi', 'Je m’occupe du contournement dans ms-pricing, pour vendredi.'],
+    ]),
+    speakers: [{ label: 'Moi', display_name: null }, { label: 'Eux-1', display_name: 'Inès' }],
+    notes: [],
+    requests: [],
+    reports: [{ meeting_id: id, markdown: md, generated_at: iso(plus(start, 13 * 60)), provider: 'claude-code', model: null, correlated: false, version: 1 }],
+    refs: [],
+    decisions: [{ id: nextIds.decision(), meeting_id: id, text: 'Déverrouillage en deux temps en attendant le correctif du fournisseur des cadenas.', created_at: iso(plus(start, 13 * 60)) }],
+    actions: [
+      { id: nextIds.action(), meeting_id: id, owner: 'Moi', text: 'Ajouter le déverrouillage en deux temps dans ms-pricing', due: iso(dayAt(-3, 18, 0)).slice(0, 10), status: 'open' },
+      { id: nextIds.action(), meeting_id: id, owner: 'Inès', text: 'Ouvrir un ticket chez le fournisseur des cadenas', due: iso(dayAt(1, 18, 0)).slice(0, 10), status: 'done' },
+    ],
+    drafts: [],
+  };
+}
+
 // ---------- 1:1 (confidentielle) ----------
 
 function oneOnOne(): MeetingStore {
@@ -288,8 +335,8 @@ function oneOnOne(): MeetingStore {
   const start = dayAt(2, 16, 30);
   return {
     meeting: {
-      id, title: '1:1 Thomas', title_source: 'teams_window', started_at: iso(start), ended_at: iso(plus(start, 28 * 60)),
-      status: 'ended', confidential: true, agent_provider: null, correlation: 'off',
+      id, title: '1:1 Thomas', title_source: 'call_window', started_at: iso(start), ended_at: iso(plus(start, 28 * 60)),
+      status: 'ended', confidential: true, agent_provider: null, correlation: 'off', call_app: 'teams',
     },
     segments: buildSegments(id, start, [
       [8, 'Eux', 'Comment ça se passe sur le projet en ce moment ?'],
@@ -335,7 +382,7 @@ function incident(): MeetingStore {
   return {
     meeting: {
       id, title: 'Point incident ms-pricing', title_source: 'inferred', started_at: iso(start), ended_at: iso(plus(start, 25 * 60)),
-      status: 'done', confidential: false, agent_provider: 'codex', correlation: 'on_demand',
+      status: 'done', confidential: false, agent_provider: 'codex', correlation: 'on_demand', call_app: null,
     },
     segments,
     speakers: [{ label: 'Moi', display_name: null }, { label: 'Eux-1', display_name: 'Karim' }, { label: 'Eux-2', display_name: null }],
@@ -371,7 +418,7 @@ function incident(): MeetingStore {
 
 // ---------- Réunion en direct ----------
 
-/** Titre de l'appel Teams simulé (proposé, jamais démarré automatiquement). */
+/** Titre de l'appel Teams simulé au démarrage (proposé, jamais démarré automatiquement). */
 export const TEAMS_TITLE = 'Refinement ORION — sprint 48';
 
 /** Script joué en boucle pendant l'écoute simulée (après « Démarrer l'écoute »). */
@@ -391,7 +438,7 @@ export const LIVE_SCRIPT: [speaker: string, text: string][] = [
 ];
 
 export function seedMeetings(): MeetingStore[] {
-  return [daily(), archi(), oneOnOne(), incident()];
+  return [daily(), archi(), huddle(), oneOnOne(), incident()];
 }
 
 /** Demandes faites hors réunion (historique). */
@@ -440,7 +487,8 @@ export function defaultSettings(): Settings {
       feedback: 'system',
     },
     audio: {
-      auto_detect_teams: true,
+      auto_detect_calls: true,
+      call_apps: defaultCallApps(),
       silence_ms: 1000,
       vocabulary: ['ms-booking', 'ms-stations', 'ms-pricing', 'ORION', 'Brindille'],
       shortcuts: { toggle: 'Ctrl+Alt+S', aside: 'Ctrl+Alt+Space', quick_note: 'Ctrl+Alt+N' },

@@ -55,7 +55,7 @@ export function createMockBackend(): Backend {
     return m;
   };
 
-  // L'écoute ne démarre jamais seule : un appel Teams est simplement signalé.
+  // L'écoute ne démarre jamais seule : un appel (Teams au départ) est simplement signalé.
   const live: LiveState = {
     state: 'idle',
     meeting: null,
@@ -64,13 +64,22 @@ export function createMockBackend(): Backend {
     sidecar: 'running',
     last_error: null,
     pending_requests: 0,
-    teams_call: { active: true, title: TEAMS_TITLE },
+    call: { active: true, app: 'teams', app_name: 'Microsoft Teams', title: TEAMS_TITLE },
   };
+  const appName = (id: string) => settings.audio.call_apps.find((a) => a.id === id)?.name ?? id;
   const emitLive = () => {
     live.pending_requests = allRequests().filter((r) => r.status === 'queued' || r.status === 'running').length;
     const m = liveStore();
     live.meeting = m ? clone(m.meeting) : live.state === 'processing' ? live.meeting : null;
     emit('scribe://live', live);
+  };
+
+  /** Comme le cœur : un appel d'une app désactivée n'est plus signalé. */
+  const forgetDisabledCall = () => {
+    if (live.call.active && !settings.audio.call_apps?.some((x) => x.id === live.call.app && x.enabled)) {
+      live.call = { active: false, app: null, app_name: null, title: null };
+      emitLive();
+    }
   };
 
   function allRequests(): Request[] {
@@ -312,13 +321,19 @@ export function createMockBackend(): Backend {
     const out: string[] = ['# Réglages Scribe — sans chemins ni données personnelles', ''];
     const val = (v: unknown): string =>
       Array.isArray(v) ? `[${v.map(val).join(', ')}]` : typeof v === 'string' ? JSON.stringify(v) : String(v);
-    const walk = (obj: Record<string, unknown>, path: string) => {
-      const scalars = Object.entries(obj).filter(([, v]) => v === null || typeof v !== 'object' || Array.isArray(v));
+    const isTableArray = (v: unknown) => Array.isArray(v) && v.length > 0 && v.every((x) => x !== null && typeof x === 'object');
+    const walk = (obj: Record<string, unknown>, path: string, header = path ? `[${path}]` : '') => {
+      const scalars = Object.entries(obj).filter(([, v]) => v === null || typeof v !== 'object' || (Array.isArray(v) && !isTableArray(v)));
       const tables = Object.entries(obj).filter(([, v]) => v !== null && typeof v === 'object' && !Array.isArray(v));
-      if (path) out.push(`[${path}]`);
+      const arrays = Object.entries(obj).filter(([, v]) => isTableArray(v));
+      if (header) out.push(header);
       for (const [k, v] of scalars) if (v !== null) out.push(`${k} = ${val(v)}`);
-      if (path) out.push('');
+      if (header) out.push('');
       for (const [k, v] of tables) walk(v as Record<string, unknown>, path ? `${path}.${k}` : k);
+      for (const [k, v] of arrays) {
+        const p = path ? `${path}.${k}` : k;
+        for (const item of v as Record<string, unknown>[]) walk(item, p, `[[${p}]]`);
+      }
     };
     const copy = clone(s) as unknown as Record<string, Record<string, unknown>>;
     delete copy.profile.name;
@@ -330,9 +345,28 @@ export function createMockBackend(): Backend {
   function fromToml(text: string): Settings {
     const next = clone(settings) as unknown as Record<string, unknown>;
     let table: Record<string, unknown> = next;
+    const seenArrays = new Set<string>();
     for (const rawLine of text.split('\n')) {
       const line = rawLine.trim();
       if (!line || line.startsWith('#')) continue;
+      const arr = line.match(/^\[\[([\w.]+)\]\]$/);
+      if (arr) {
+        const parts = arr[1].split('.');
+        const last = parts.pop()!;
+        table = next;
+        for (const part of parts) {
+          if (typeof table[part] !== 'object' || table[part] === null) table[part] = {};
+          table = table[part] as Record<string, unknown>;
+        }
+        if (!seenArrays.has(arr[1])) {
+          seenArrays.add(arr[1]);
+          table[last] = [];
+        }
+        const item: Record<string, unknown> = {};
+        (table[last] as Record<string, unknown>[]).push(item);
+        table = item;
+        continue;
+      }
       const sec = line.match(/^\[([\w.]+)\]$/);
       if (sec) {
         table = next;
@@ -362,9 +396,11 @@ export function createMockBackend(): Backend {
       const start = new Date();
       const id = `reunion-${start.getTime()}`;
       const meeting: Meeting = {
-        id, title: (a.title as string) || live.teams_call.title || 'Réunion', title_source: a.title ? 'user' : live.teams_call.active ? 'teams_window' : null,
+        id, title: (a.title as string) || (live.call.active && live.call.title) || 'Réunion',
+        title_source: a.title ? 'user' : live.call.active && live.call.title ? 'call_window' : null,
         started_at: iso(start), ended_at: null, status: 'live', confidential: false,
         agent_provider: settings.agent.provider, correlation: settings.correlation.mode,
+        call_app: live.call.active ? live.call.app : null,
       };
       meetings.unshift({ meeting, segments: [], speakers: [{ label: 'Moi', display_name: null }], notes: [], requests: [], reports: [], refs: [], decisions: [], actions: [], drafts: [] });
       scriptPos = 0;
@@ -556,11 +592,13 @@ export function createMockBackend(): Backend {
     get_settings: () => clone(settings),
     save_settings: (a) => {
       settings = clone(a.settings as Settings);
+      forgetDisabledCall();
       return clone(settings);
     },
     export_settings: () => toToml(settings),
     import_settings: (a) => {
       settings = fromToml(String(a.toml));
+      forgetDisabledCall();
       return clone(settings);
     },
     detect_agents: () => clone(agents),
@@ -651,8 +689,8 @@ export function createMockBackend(): Backend {
       const items: DoctorItem[] = [
         { name: 'Microphone', status: 'ok', message: 'Autorisé.', fix: null },
         { name: 'Audio du système', status: 'warn', message: 'Pas encore demandé.', fix: 'Démarrez une réunion : macOS affichera la demande « Enregistrement audio du système ».' },
-        { name: 'Accessibilité', status: 'error', message: 'Refusée : le titre de la fenêtre Teams ne sera pas lu.', fix: 'Réglages Système → Confidentialité et sécurité → Accessibilité → cochez Scribe.' },
-        { name: 'Teams', status: 'ok', message: 'Nouveau Teams détecté.', fix: null },
+        { name: 'Accessibilité', status: 'error', message: 'Refusée : le titre des appels (Teams, Slack, Zoom…) ne sera pas lu.', fix: 'Réglages Système → Confidentialité et sécurité → Accessibilité → cochez Scribe.' },
+        { name: 'Apps de visio', status: 'ok', message: `Surveillées : ${settings.audio.call_apps.filter((x) => x.enabled).map((x) => x.name).join(', ') || 'aucune'}.`, fix: null },
         { name: 'Sidecar audio', status: 'ok', message: 'scribe-audio 0.1.0, modèle de transcription présent.', fix: null },
         { name: 'Agent IA', status: 'ok', message: `${agents.find((x) => x.id === settings.agent.provider)?.name ?? settings.agent.provider} détecté.`, fix: null },
         { name: 'Politique lecture seule', status: 'ok', message: 'Test « poste sur Slack » : refusé comme attendu.', fix: null },
@@ -707,10 +745,19 @@ export function createMockBackend(): Backend {
       hear(store, speaker, text);
       return true;
     },
-    /** Simule le début ou la fin d'un appel Teams (aucun effet sur l'écoute). */
-    teams(active: boolean, title: string | null = TEAMS_TITLE) {
-      live.teams_call = { active, title: active ? title : null };
+    /**
+     * Simule le début d'un appel dans une app de visio (`slack`, `zoom`…), ou sa fin avec
+     * `app = null`. Aucun effet sur l'écoute ; une app désactivée dans les réglages est ignorée.
+     */
+    call(app: string | null, title: string | null = null) {
+      if (app && !settings.audio.call_apps.some((a) => a.id === app && a.enabled)) return false;
+      live.call = app ? { active: true, app, app_name: appName(app), title } : { active: false, app: null, app_name: null, title: null };
       emitLive();
+      return true;
+    },
+    /** Raccourci : appel Teams (ou fin d'appel avec `false`). */
+    teams(active: boolean, title: string | null = TEAMS_TITLE) {
+      return this.call(active ? 'teams' : null, active ? title : null);
     },
   };
   return backend;

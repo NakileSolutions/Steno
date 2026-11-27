@@ -3,6 +3,7 @@
 import { api, onEvent } from './api';
 import type { LiveState } from './types';
 import { loadPrefs } from './prefs.svelte';
+import { normalizeLiveState } from './listening';
 
 export const live = $state<{ s: LiveState; ready: boolean }>({
   s: {
@@ -13,7 +14,7 @@ export const live = $state<{ s: LiveState; ready: boolean }>({
     sidecar: 'starting',
     last_error: null,
     pending_requests: 0,
-    teams_call: { active: false, title: null },
+    call: { active: false, app: null, app_name: null, title: null },
   },
   ready: false,
 });
@@ -24,9 +25,9 @@ let started = false;
 export function initLive(): void {
   if (started) return;
   started = true;
-  // Un backend plus ancien peut omettre `teams_call` : on le complète.
+  // Un cœur plus ancien envoie `teams_call` au lieu de `call` : on le convertit.
   const set = (s: LiveState) => {
-    live.s = { ...s, teams_call: s.teams_call ?? { active: false, title: null } };
+    live.s = normalizeLiveState(s);
     live.ready = true;
   };
   api.liveState().then(set).catch(() => {});

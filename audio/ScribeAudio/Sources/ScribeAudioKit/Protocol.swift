@@ -54,6 +54,64 @@ struct SegmentPayload: Equatable {
     var isPrivate: Bool
 }
 
+/// App de visio surveillée (commande `watch`).
+///
+/// Un processus appartient à l'app si son bundle ID **commence par** l'un des préfixes
+/// (comparaison sans casse) : les processus auxiliaires (`com.microsoft.teams2.helper…`)
+/// sont donc couverts.
+struct WatchedApp: Equatable {
+    /// Identifiant stable (`teams`, `slack`, `zoom`…), repris dans `call.app` et `start.apps`.
+    var id: String
+    /// Nom affiché (journaux, messages d'erreur).
+    var name: String
+    /// Préfixes de bundle ID.
+    var bundlePrefixes: [String]
+
+    /// Liste surveillée avant le premier `watch` : Teams seul (docs/contracts.md §2).
+    static let defaults: [WatchedApp] = [
+        WatchedApp(id: "teams", name: "Microsoft Teams", bundlePrefixes: ["com.microsoft.teams2", "com.microsoft.teams"]),
+    ]
+
+    /// Apps connues des modes en ligne de commande (`--apps`). En mode protocole, c'est le
+    /// cœur qui fournit la liste par `watch` ; ce catalogue ne sert qu'aux spikes.
+    /// À VÉRIFIER (spike S1) : préfixes réels de Zoom et des navigateurs (`--list-audio-processes`).
+    static let catalog: [WatchedApp] = defaults + [
+        WatchedApp(id: "slack", name: "Slack", bundlePrefixes: ["com.tinyspeck.slackmacgap"]),
+        WatchedApp(id: "zoom", name: "Zoom", bundlePrefixes: ["us.zoom.xos", "us.zoom.CptHost"]),
+        WatchedApp(id: "meet", name: "Google Meet (navigateur)", bundlePrefixes: [
+            "com.google.Chrome", "com.microsoft.edgemac", "company.thebrowser.Browser",
+            "com.brave.Browser", "org.mozilla.firefox", "com.apple.Safari",
+        ]),
+    ]
+
+    /// Vrai si `bundleID` commence par l'un des préfixes (sans casse).
+    func matches(bundleID: String) -> Bool {
+        matchLength(bundleID: bundleID) != nil
+    }
+
+    /// Longueur du plus long préfixe correspondant (nil si aucun).
+    func matchLength(bundleID: String) -> Int? {
+        let bundle = bundleID.lowercased()
+        return bundlePrefixes
+            .map { $0.lowercased() }
+            .filter { !$0.isEmpty && bundle.hasPrefix($0) }
+            .map(\.count)
+            .max()
+    }
+
+    /// App à laquelle appartient `bundleID` : celle dont le préfixe correspondant est le plus
+    /// long (ex. `com.microsoft.teams2` l'emporte sur un hypothétique `com.microsoft`) ; à
+    /// égalité, la première de la liste.
+    static func match(bundleID: String, in apps: [WatchedApp]) -> WatchedApp? {
+        var best: (app: WatchedApp, length: Int)?
+        for app in apps {
+            guard let length = app.matchLength(bundleID: bundleID) else { continue }
+            if length > (best?.length ?? 0) { best = (app, length) }
+        }
+        return best?.app
+    }
+}
+
 struct DiarizationTurn: Equatable, Encodable {
     var t0: Double
     var t1: Double
@@ -65,7 +123,8 @@ struct DiarizationTurn: Equatable, Encodable {
 enum OutgoingMessage: Equatable {
     case ready(version: String, asr: String)
     case permissions(PermissionsSnapshot)
-    case teamsCall(active: Bool, title: String?)
+    /// Un appel commence ou se termine dans une app surveillée (remplace `teams_call`).
+    case call(active: Bool, app: String, title: String?)
     case segment(SegmentPayload)
     case level(me: Double, them: Double)
     case state(CaptureState)
@@ -81,7 +140,7 @@ extension OutgoingMessage: Encodable {
         case microphone
         case systemAudio = "system_audio"
         case accessibility
-        case active, title
+        case active, app, title
         case ts, t0, t1, channel, text
         case isPrivate = "private"
         case me, them
@@ -105,9 +164,10 @@ extension OutgoingMessage: Encodable {
             try c.encode(p.systemAudio, forKey: .systemAudio)
             try c.encode(p.accessibility, forKey: .accessibility)
 
-        case let .teamsCall(active, title):
-            try c.encode("teams_call", forKey: .type)
+        case let .call(active, app, title):
+            try c.encode("call", forKey: .type)
             try c.encode(active, forKey: .active)
+            try c.encode(app, forKey: .app)
             // Le contrat veut `"title": null` explicite quand le titre est inconnu.
             if let title {
                 try c.encode(title, forKey: .title)
@@ -167,12 +227,17 @@ struct StartOptions: Equatable {
     var silenceMs: Int = 1000
     var keepAudio: Bool = false
     var audioDir: String?
+    /// Identifiants des apps dont le son est capté (canal `them`) ; vide = toutes les apps
+    /// surveillées.
+    var apps: [String] = []
 
     /// Bornes raisonnables pour `silence_ms` (le plan vise 0,8 à 1,2 s).
     static let silenceRange = 300...3000
 }
 
 enum Command: Equatable {
+    /// Liste des apps de visio à surveiller (remplace la précédente).
+    case watch([WatchedApp])
     case start(StartOptions)
     case stop
     case aside(on: Bool)
@@ -232,7 +297,27 @@ enum CommandParser {
                 }
                 opts.keepAudio = p.keepAudio ?? false
                 if let dir = p.audioDir, !dir.isEmpty { opts.audioDir = dir }
+                opts.apps = uniqueTrimmed(p.apps ?? [])
                 return .success(.start(opts))
+
+            case "watch":
+                let p = try decoder.decode(WatchPayload.self, from: data)
+                guard let entries = p.apps else { return .failure(.invalidField(command: cmd, field: "apps")) }
+                var seen = Set<String>()
+                var apps: [WatchedApp] = []
+                // Entrées sans identifiant ou sans préfixe de bundle : ignorées (elles ne
+                // pourraient correspondre à aucun processus). Doublons : le premier gagne.
+                for entry in entries {
+                    guard let id = entry.id?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty,
+                          !seen.contains(id)
+                    else { continue }
+                    let prefixes = uniqueTrimmed(entry.bundles ?? [])
+                    guard !prefixes.isEmpty else { continue }
+                    let name = entry.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    seen.insert(id)
+                    apps.append(WatchedApp(id: id, name: name.isEmpty ? id : name, bundlePrefixes: prefixes))
+                }
+                return .success(.watch(apps))
 
             case "stop":
                 return .success(.stop)
@@ -273,11 +358,24 @@ enum CommandParser {
         }
     }
 
+    /// Chaînes nettoyées, non vides, sans doublon (ordre conservé).
+    private static func uniqueTrimmed(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for value in values {
+            let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !v.isEmpty, seen.insert(v).inserted else { continue }
+            out.append(v)
+        }
+        return out
+    }
+
     private static func fieldName(from error: Error) -> String? {
         guard let decodingError = error as? DecodingError else { return nil }
         switch decodingError {
         case let .typeMismatch(_, ctx), let .valueNotFound(_, ctx), let .dataCorrupted(ctx):
-            return ctx.codingPath.last?.stringValue
+            // Premier niveau : `"apps":[{"id":3}]` est signalé comme le champ « apps ».
+            return ctx.codingPath.first?.stringValue
         case let .keyNotFound(key, _):
             return key.stringValue
         @unknown default:
@@ -297,13 +395,25 @@ enum CommandParser {
         let silenceMs: Double?
         let keepAudio: Bool?
         let audioDir: String?
+        let apps: [String]?
 
         enum CodingKeys: String, CodingKey {
             case vocabulary
             case silenceMs = "silence_ms"
             case keepAudio = "keep_audio"
             case audioDir = "audio_dir"
+            case apps
         }
+    }
+
+    private struct WatchPayload: Decodable {
+        let apps: [WatchAppPayload]?
+    }
+
+    private struct WatchAppPayload: Decodable {
+        let id: String?
+        let name: String?
+        let bundles: [String]?
     }
 
     private struct AsidePayload: Decodable {

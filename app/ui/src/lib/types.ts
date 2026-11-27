@@ -12,6 +12,8 @@ export type Meeting = {
   confidential: boolean;
   agent_provider: string | null;
   correlation: 'off' | 'on_demand' | 'auto';
+  /** Identifiant de l'app de l'appel (teams, slack…) ; `null` si l'écoute a démarré sans appel. */
+  call_app: string | null;
 };
 
 export type MeetingSummary = Meeting & {
@@ -135,9 +137,11 @@ export type LiveState = {
   sidecar: 'running' | 'starting' | 'stopped' | 'missing' | 'error';
   last_error: string | null;
   pending_requests: number;
-  /** Appel Teams en cours (détecté par le sidecar). N'entraîne jamais de démarrage automatique. */
-  teams_call: { active: boolean; title: string | null };
+  /** Appel en cours dans une app de visio surveillée. N'entraîne jamais de démarrage automatique. */
+  call: LiveCall;
 };
+
+export type LiveCall = { active: boolean; app: string | null; app_name: string | null; title: string | null };
 
 export type AgentInfo = {
   id: string;
@@ -207,6 +211,17 @@ export type VoiceVerbs = {
   stop: string[];
 };
 
+/** App de visio surveillée (réglage `audio.call_apps`). */
+export type CallApp = {
+  id: string;
+  name: string;
+  /** Préfixes d'identifiant de bundle macOS (auxiliaires compris). */
+  bundles: string[];
+  enabled: boolean;
+  /** Navigateur : tout le son du navigateur est capté, autres onglets compris. */
+  browser: boolean;
+};
+
 export type Settings = {
   agent: {
     provider: string;
@@ -227,11 +242,13 @@ export type Settings = {
     feedback: 'none' | 'system' | 'headset';
   };
   audio: {
-    /** Proposer de démarrer l'écoute quand un appel Teams commence (notification seulement). */
-    auto_detect_teams: boolean;
+    /** Proposer de démarrer l'écoute quand un appel commence dans une app surveillée (notification seulement). */
+    auto_detect_calls: boolean;
+    /** Apps de visio surveillées. */
+    call_apps: CallApp[];
     silence_ms: number;
     vocabulary: string[];
-    /** Obsolète : la fin d'un appel Teams ne termine plus la réunion. Conservé tel quel s'il est présent. */
+    /** Obsolète : la fin d'un appel ne termine plus la réunion. Conservé tel quel s'il est présent. */
     end_grace_s?: number;
     shortcuts: { toggle: string; aside: string; quick_note: string };
   };

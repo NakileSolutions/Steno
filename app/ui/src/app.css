@@ -535,9 +535,9 @@ input[type='checkbox'].switch:focus-visible { outline: 2px solid var(--focus); o
   user-select: none;
 }
 
-/* ---------- Appel Teams détecté (proposition, jamais un démarrage) ---------- */
+/* ---------- Appel détecté dans une app de visio (proposition, jamais un démarrage) ---------- */
 
-.teams-offer {
+.call-offer {
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -547,7 +547,7 @@ input[type='checkbox'].switch:focus-visible { outline: 2px solid var(--focus); o
   border: 1px solid var(--offer-line);
   text-align: left;
 }
-.teams-offer .to-ic {
+.call-offer .to-ic {
   width: 30px;
   height: 30px;
   border-radius: 9px;
@@ -557,9 +557,9 @@ input[type='checkbox'].switch:focus-visible { outline: 2px solid var(--focus); o
   background: var(--offer-ic-bg);
   color: var(--offer-ic);
 }
-.teams-offer .to-title { font-size: var(--fs-ui); line-height: 1.4; color: var(--text); }
-.teams-offer .to-title strong { font-weight: 600; }
-.teams-offer .to-sub { font-size: var(--fs-meta); color: var(--text-2); margin-top: 2px; line-height: 1.45; }
+.call-offer .to-title { font-size: var(--fs-ui); line-height: 1.4; color: var(--text); }
+.call-offer .to-title strong { font-weight: 600; }
+.call-offer .to-sub { font-size: var(--fs-meta); color: var(--text-2); margin-top: 2px; line-height: 1.45; }
 
 /* ---------- Surfaces ---------- */
 

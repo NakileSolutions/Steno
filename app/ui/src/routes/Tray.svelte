@@ -3,8 +3,8 @@
   import { onMount } from 'svelte';
   import { api, onEvent, openMain } from '../lib/api';
   import { live, clock, STATE_LABEL } from '../lib/live.svelte';
-  import { isListening, teamsOffer } from '../lib/listening';
-  import { stopHint } from '../lib/prefs.svelte';
+  import { callOffer, isListening, meetingCallChip } from '../lib/listening';
+  import { prefs, stopHint } from '../lib/prefs.svelte';
   import type { Request } from '../lib/types';
   import { duration, relDay, STATUS_CLASS, STATUS_LABEL } from '../lib/format';
   import { toastError } from '../lib/ui.svelte';
@@ -16,7 +16,8 @@
   const s = $derived(live.s);
   const m = $derived(s.meeting);
   const active = $derived(isListening(s));
-  const offer = $derived(teamsOffer(s));
+  const offer = $derived(callOffer(s, prefs.callApps));
+  const themLabel = $derived(meetingCallChip(m?.call_app, prefs.callApps) ?? 'Visio');
 
   let recent = $state<Request[]>([]);
   let query = $state('');
@@ -90,7 +91,7 @@
       {#if active}
         <div class="meters">
           <Meter db={s.levels.me} label="Micro" icon="mic" active />
-          <Meter db={s.levels.them} label="Teams" icon="speaker" active />
+          <Meter db={s.levels.them} label={themLabel} icon="speaker" active />
         </div>
         <div class="row ctl">
           <button class="btn danger grow stop" onclick={toggle} disabled={busy}>
@@ -105,11 +106,11 @@
       {/if}
     {:else}
       {#if offer}
-        <div class="teams-offer" role="status">
-          <span class="to-ic"><Icon name="speaker" size={15} /></span>
+        <div class="call-offer" role="status">
+          <span class="to-ic"><Icon name="phone" size={15} /></span>
           <div class="grow">
-            <p class="to-title">Appel Teams détecté : <strong>{offer}</strong></p>
-            <p class="to-sub">Le Scribe n’écoute pas encore.</p>
+            <p class="to-title">{offer.heading} : <strong>{offer.title}</strong></p>
+            <p class="to-sub">Le Scribe n’écoute pas encore.{#if offer.browser} Tout le son du navigateur sera capté.{/if}</p>
           </div>
         </div>
       {:else}

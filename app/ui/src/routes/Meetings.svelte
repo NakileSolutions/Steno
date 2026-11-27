@@ -5,6 +5,8 @@
   import type { MeetingFilter, MeetingSummary } from '../lib/types';
   import { cleanSnippet, debounce, duration, highlight, isoDate, time } from '../lib/format';
   import { groupByDay } from '../lib/group';
+  import { meetingCallChip } from '../lib/listening';
+  import { prefs } from '../lib/prefs.svelte';
   import { toastError } from '../lib/ui.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import MeetingDetail from './MeetingDetail.svelte';
@@ -153,6 +155,7 @@
             </div>
             <div class="row meta">
               <span class="tnum">{duration(m.started_at, m.ended_at)}</span>
+              {#if m.call_app}{@const app = meetingCallChip(m.call_app, prefs.callApps)}<span class="pill app" title="Appel {app}"><Icon name="phone" size={11} /> {app}</span>{/if}
               {#if m.confidential}<span class="pill" title="Confidentielle"><Icon name="lock" size={11} /> Confidentielle</span>{/if}
               {#if m.correlated}<span class="pill" title="Compte rendu corrélé"><Icon name="link2" size={11} /> Corrélée</span>{/if}
               {#if m.open_actions}<span class="pill acc" title="Actions ouvertes"><Icon name="actions" size={11} /> {m.open_actions} action{m.open_actions > 1 ? 's' : ''}</span>{/if}
