@@ -13,8 +13,8 @@ test('« Scribe, arrête l’écoute » termine la réunion', async ({ page }) =
   await live.getByRole('button', { name: 'Démarrer l’écoute' }).click();
   await expect(live.getByRole('heading', { name: 'Point mise en production' })).toBeVisible();
 
-  const tx = live.getByRole('region', { name: 'Transcription en direct' });
-  await expect(tx.getByText('Scribe, arrête l’écoute.').or(tx.getByText("Scribe, arrête l'écoute."))).toBeAttached({ timeout: 20_000 });
+  // La phrase d'arrêt n'est affichée en direct qu'environ 0,3 s avant la fin de la réunion :
+  // on la vérifie plus bas dans la transcription enregistrée (pas de course avec l'affichage).
 
   // Fin sans aucun clic : plus de bouton d'arrêt, l'appel Teams est de nouveau proposé.
   await expect(nav(page).getByRole('button', { name: 'Démarrer l’écoute' })).toBeVisible({ timeout: 20_000 });
@@ -25,6 +25,7 @@ test('« Scribe, arrête l’écoute » termine la réunion', async ({ page }) =
   const detail = page.getByRole('region', { name: 'Détail de la réunion' });
   await detail.getByRole('tab', { name: /Transcription/ }).click();
   await expect(detail.getByText('Parfait, on déploie mardi matin comme prévu.')).toBeVisible();
+  await expect(detail.getByText('Scribe, arrête l’écoute.').or(detail.getByText("Scribe, arrête l'écoute."))).toBeVisible();
   await expect(detail.getByText(/Phrase dite après l'arrêt/)).toHaveCount(0);
   await expect(detail.getByText('Encore une phrase après l’arrêt.')).toHaveCount(0);
   await expect(detail.locator('.badge.live')).toHaveCount(0);
