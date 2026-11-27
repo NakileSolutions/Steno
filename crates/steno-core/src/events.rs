@@ -63,6 +63,8 @@ pub enum CoreEvent {
     /// Une commande vocale vient d'être détectée. `played` : le sidecar a déjà joué le signal
     /// (sinon l'app peut le jouer elle-même).
     CommandDetected { played: bool },
+    /// État des mises à jour (nouvelle version, installation en cours ou terminée).
+    Update(crate::updates::UpdateStatus),
 }
 
 impl CoreEvent {
@@ -80,6 +82,7 @@ impl CoreEvent {
                 ("steno://report", serde_json::json!({ "meeting_id": meeting_id, "version": version }))
             }
             CoreEvent::MeetingsChanged => ("steno://meetings", serde_json::Value::Null),
+            CoreEvent::Update(u) => ("steno://update", serde_json::to_value(u).ok()?),
             CoreEvent::Notify { .. } | CoreEvent::CommandDetected { .. } => return None,
         })
     }

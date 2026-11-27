@@ -48,6 +48,11 @@ enum Cmd {
     },
     /// Premier lancement en ligne de commande (équivalent de l'assistant de l'app).
     Init,
+    /// Nouvelle version publiée ? `--install` : met à jour les sources et lance `make install`.
+    Update {
+        #[arg(long)]
+        install: bool,
+    },
     /// Exporte une réunion (ou toutes) en markdown.
     Export {
         id: Option<String>,
@@ -212,6 +217,27 @@ async fn main() -> Result<()> {
             };
             print_request(&r);
         }
+        Cmd::Update { install } => {
+            let core = open_core(None)?;
+            let st = core.check_update().await?;
+            println!("Version installée : {}", st.current);
+            match (&st.latest, st.available) {
+                (None, _) => println!("Aucune version publiée pour l'instant."),
+                (Some(v), false) => println!("À jour (dernière version publiée : {v})."),
+                (Some(v), true) => {
+                    println!("Nouvelle version disponible : {v}{}", st.url.as_deref().map(|u| format!(" — {u}")).unwrap_or_default());
+                    if install {
+                        println!("Installation (quelques minutes, journal : {})…", steno_core::paths::logs_dir().join("update.log").display());
+                        steno_core::updates::install(core.inner()).await?;
+                        println!("Installé : relancez Sténo.");
+                    } else if let Some(why) = &st.message {
+                        println!("Installation automatique impossible : {why}");
+                    } else {
+                        println!("Pour l'installer : steno update --install");
+                    }
+                }
+            }
+        }
         Cmd::Doctor { live } => {
             let core = open_core(None)?;
             let items = steno_core::doctor::run(&core, live).await;
@@ -360,6 +386,7 @@ fn log_event(ev: &CoreEvent) {
         CoreEvent::Report { meeting_id, version } => println!("» compte rendu v{version} : {meeting_id}"),
         CoreEvent::Notify { title, body, .. } => println!("🔔 {title} — {body}"),
         CoreEvent::CommandDetected { .. } => println!("🔔 commande vocale détectée"),
+        CoreEvent::Update(u) => println!("⬆ mise à jour : {} {}", u.state, u.message.clone().unwrap_or_default()),
         CoreEvent::Live(_) | CoreEvent::MeetingsChanged | CoreEvent::SegmentDeleted { .. } => {}
     }
 }

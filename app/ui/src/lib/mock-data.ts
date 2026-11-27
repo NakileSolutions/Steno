@@ -512,6 +512,7 @@ export function defaultSettings(): Settings {
       consent_message: DEFAULT_CONSENT_MESSAGE,
     },
     profile: { name: 'Camille', role: 'Développeuse back-end', team: 'ORION', jira_key_pattern: '[A-Z][A-Z0-9]+-\\d+', theme: 'auto' },
+    updates: { check: true, auto_install: false },
     report: { default_template: 'standard', ask_context_on_stop: false, context_delay_s: 60, templates: [{ id: 'perso-note-comex', name: 'Note COMEX', instructions: 'Trois puces au plus, ton exécutif, chiffres en gras.' }] },
   };
 }

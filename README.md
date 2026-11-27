@@ -74,8 +74,10 @@ accessibilité facultative), choix et test de l'agent, dépôts lisibles, connec
 d'appel et test vocal. Équivalent en ligne de commande : `steno init`. Diagnostic à tout
 moment : `steno doctor`.
 
-**Mise à jour** : `git pull && make install` (la base est sauvegardée puis migrée
-automatiquement).
+**Mises à jour** : Sténo vérifie sur GitHub si une nouvelle version est publiée et la signale
+dans la barre latérale. « Installer » (Réglages → Mises à jour) met vos sources à jour sur la
+version publiée puis relance `make install` ; il ne reste qu'à redémarrer. L'installation peut
+être automatique (hors réunion). À la main : `git pull && make install`, ou `steno update --install`.
 
 ## Utilisation
 
@@ -141,7 +143,9 @@ les CLI d'agent dans [`docs/adapters.md`](docs/adapters.md), le plan initial dan
 [`PLAN.md`](PLAN.md).
 
 Les contributions sont bienvenues : ouvrez une issue pour en discuter avant une grosse
-modification, et lancez `make test` avant de proposer une pull request.
+modification, et lancez `make test` avant de proposer une pull request. La branche `main`
+n'accepte que des pull requests dont la CI est verte et dont les commits sont **signés**
+(GPG ou SSH). Publication d'une version : [`RELEASING.md`](RELEASING.md).
 
 ## Licence
 

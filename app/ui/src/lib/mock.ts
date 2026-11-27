@@ -6,7 +6,7 @@ import type {
   Action, ActionFilter, DoctorItem, EventMap, EventName, LiveState, Meeting, MeetingDetail,
   MeetingFilter, MeetingSummary, Note, Repo, Request, SearchHit, Segment, Settings,
   PermissionKind, PermissionValue, VariantCheck, WakeCheck, WakeDetect,
-  ContextFile, MeetingContext, ReportTemplate,
+  ContextFile, MeetingContext, ReportTemplate, UpdateStatus,
 } from './types';
 import {
   LIVE_SCRIPT, TEAMS_TITLE, defaultSettings, iso, nextIds, seedAgents, seedAudioDevices, seedConnectors,
@@ -449,6 +449,14 @@ export function createMockBackend(): Backend {
   ];
   const KINDS: Record<string, string> = { pdf: 'pdf', xlsx: 'tableur', xls: 'tableur', ods: 'tableur', csv: 'csv', docx: 'document', doc: 'document', rtf: 'document', md: 'texte', txt: 'texte', json: 'texte' };
 
+  // --- Mises à jour (version 0.2.0 publiée) ---
+  const updateStatus: UpdateStatus = {
+    current: '0.1.0', latest: '0.2.0', available: true, url: 'https://github.com/NakileSolutions/Steno/releases/tag/v0.2.0',
+    notes: '## Nouveautés\n- Contexte et documents dans le compte rendu\n- Formats de sortie personnalisés', published_at: iso(new Date()),
+    checked_at: iso(new Date()), state: 'idle', message: null, source_dir: '/Users/camille/dev/steno', can_install: true, log_path: null,
+  };
+  const emitUpdate = () => emit('steno://update', clone(updateStatus));
+
   // --- Commandes ---
   type Args = Record<string, unknown>;
   const handlers: Record<string, (a: Args) => unknown> = {
@@ -829,6 +837,30 @@ export function createMockBackend(): Backend {
       return null;
     },
     complete_onboarding: () => null,
+    get_update_status: () => clone(updateStatus),
+    check_update: () => {
+      updateStatus.checked_at = iso(new Date());
+      emitUpdate();
+      return clone(updateStatus);
+    },
+    install_update: () => {
+      if (liveStore()) throw 'Une réunion est en cours : installez la mise à jour après la réunion.';
+      if (!updateStatus.available) throw 'Aucune nouvelle version à installer.';
+      updateStatus.state = 'installing';
+      updateStatus.message = `Installation de Sténo ${updateStatus.latest}… (quelques minutes)`;
+      emitUpdate();
+      setTimeout(() => {
+        updateStatus.state = 'installed';
+        updateStatus.message = `Sténo ${updateStatus.latest} est installé : redémarrez pour l'utiliser.`;
+        emitUpdate();
+      }, 1500);
+      return null;
+    },
+    restart_app: () => {
+      Object.assign(updateStatus, { current: updateStatus.latest, available: false, state: 'idle', message: null });
+      emitUpdate();
+      return null;
+    },
     get_meeting_context: (a) => {
       const p = pendingReports.get(String(a.id));
       return { ...clone(ctxOf(String(a.id))), report_at: p && p.at > Date.now() + 1000 ? new Date(p.at).toISOString() : null };

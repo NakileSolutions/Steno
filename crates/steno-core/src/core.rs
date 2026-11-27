@@ -37,6 +37,8 @@ pub struct Inner {
     /// Réunions dont le compte rendu doit partir sans attendre (« Rédiger maintenant » cliqué
     /// avant que la tâche de rédaction n'existe).
     pub report_now: Mutex<std::collections::HashSet<String>>,
+    /// État des mises à jour (voir `updates`).
+    pub update: Mutex<crate::updates::UpdateStatus>,
     meeting_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     agent_override: Option<Arc<dyn AgentAdapter>>,
     pub live_state: Mutex<LiveState>,
@@ -285,6 +287,7 @@ impl Core {
                 jobs_notify: Notify::new(),
                 cancels: Mutex::new(HashMap::new()),
                 report_now: Mutex::new(Default::default()),
+                update: Mutex::new(crate::updates::initial_status()),
                 meeting_locks: Mutex::new(HashMap::new()),
                 agent_override: opts.agent_override,
                 live_state: Mutex::new(LiveState::default()),
@@ -300,6 +303,11 @@ impl Core {
         &self.inner.db
     }
 
+    /// État partagé du cœur (tâches longues lancées hors de l'app, ex. `steno update`).
+    pub fn inner(&self) -> Arc<Inner> {
+        self.inner.clone()
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<CoreEvent> {
         self.inner.events.subscribe()
     }
@@ -310,6 +318,7 @@ impl Core {
         let _ = self.inner.db.recover_jobs();
         crate::jobs::spawn_runner(self.inner.clone());
         crate::maintenance::spawn(self.inner.clone());
+        crate::updates::spawn(self.inner.clone());
         let handle = crate::live::spawn(self.inner.clone());
         *self.inner.live.lock().unwrap() = Some(handle);
     }
@@ -317,6 +326,35 @@ impl Core {
     pub fn shutdown(&self) {
         self.inner.send_live(LiveCmd::Shutdown);
         self.inner.shutdown.cancel();
+    }
+
+    // ------------------------------------------------------------------ mises à jour
+
+    pub fn update_status(&self) -> crate::updates::UpdateStatus {
+        self.inner.update_status()
+    }
+
+    pub async fn check_update(&self) -> Result<crate::updates::UpdateStatus> {
+        crate::updates::check(&self.inner).await
+    }
+
+    /// Lance l'installation en arrière-plan (quelques minutes) ; l'avancement arrive par
+    /// `steno://update`.
+    pub fn install_update(&self) -> Result<()> {
+        let st = self.inner.update_status();
+        if !st.available {
+            bail!("aucune nouvelle version à installer");
+        }
+        if self.inner.db.live_meeting()?.is_some() {
+            bail!("une réunion est en cours : installez la mise à jour après la réunion");
+        }
+        let inner = self.inner.clone();
+        tokio::spawn(async move {
+            if let Err(e) = crate::updates::install(inner).await {
+                tracing::warn!("mise à jour : {e:#}");
+            }
+        });
+        Ok(())
     }
 
     // ------------------------------------------------------------------ réglages

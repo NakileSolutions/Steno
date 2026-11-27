@@ -315,6 +315,8 @@ export type Settings = {
   profile: { name: string; role: string; team: string; jira_key_pattern: string; theme?: 'auto' | 'light' | 'dark' };
   /** Comptes rendus : format par défaut, contexte proposé à l'arrêt, formats perso (enregistrés sur ce Mac). */
   report: ReportSettings;
+  /** Mises à jour : vérification (API GitHub publique) et installation automatique hors réunion. */
+  updates?: { check: boolean; auto_install: boolean };
 };
 
 export type CustomTemplate = { id: string; name: string; instructions: string };
@@ -354,6 +356,22 @@ export type MeetingFilter = {
   offset?: number;
 };
 
+/** État des mises à jour (version publiée, installation depuis les sources). */
+export type UpdateStatus = {
+  current: string;
+  latest: string | null;
+  available: boolean;
+  url: string | null;
+  notes: string | null;
+  published_at: string | null;
+  checked_at: string | null;
+  state: 'idle' | 'checking' | 'installing' | 'installed' | 'error';
+  message: string | null;
+  source_dir: string | null;
+  can_install: boolean;
+  log_path: string | null;
+};
+
 export type ActionFilter = { status?: 'open' | 'done'; owner?: string; from?: string; to?: string };
 
 // --- Événements ---
@@ -365,6 +383,7 @@ export type EventMap = {
   'steno://request': Request;
   'steno://report': { meeting_id: string; version: number };
   'steno://meetings': null;
+  'steno://update': UpdateStatus;
   'steno://navigate': { route: string };
 };
 export type EventName = keyof EventMap;

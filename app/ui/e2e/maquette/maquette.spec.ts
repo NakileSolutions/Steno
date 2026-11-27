@@ -133,7 +133,12 @@ test.describe('palette de commandes', () => {
     await expect(detail.getByRole('heading', { name: "Revue d'architecture — export Brindille" })).toBeVisible();
 
     // Récemment ouvert ; ↑↓ déplacent la sélection ; Échap ferme.
-    await page.locator('body').press('ControlOrMeta+k');
+    // La page de la réunion peut encore être en transition : on rouvre la palette jusqu'à ce
+    // qu'elle s'affiche (instable sinon sous Linux, en CI).
+    await expect(async () => {
+      if (!(await dlg.isVisible())) await page.locator('body').press('ControlOrMeta+k');
+      await expect(dlg).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 10_000 });
     await expect(dlg.getByRole('group', { name: 'Récemment ouvert' }).getByRole('option', { name: /Revue d'architecture/ })).toHaveAttribute('aria-selected', 'true');
     await box.press('ArrowDown');
     await expect(dlg.getByRole('option', { name: /Démarrer l’écoute/ })).toHaveAttribute('aria-selected', 'true');
@@ -745,4 +750,19 @@ test('réglages : formats de compte rendu perso', async ({ page }) => {
   await page.getByLabel('Format par défaut').selectOption({ label: 'Mail de synthèse' });
   await page.getByRole('button', { name: 'Enregistrer' }).click();
   await expect(page.getByLabel('Format par défaut')).toHaveValue('mail');
+});
+
+test('mises à jour : nouvelle version signalée, installée puis redémarrage', async ({ page }) => {
+  await open(page, '/meetings');
+  const badge = nav(page).getByRole('link', { name: 'Sténo 0.2.0 est disponible' });
+  await expect(badge).toBeVisible();
+  await badge.click();
+  await expect(page.getByText('Version installée :')).toContainText('0.1.0');
+  await expect(page.getByText('Contexte et documents dans le compte rendu')).toBeVisible();
+  await page.getByRole('button', { name: 'Installer 0.2.0' }).click();
+  const restart = nav(page).getByRole('button', { name: /Redémarrer pour passer à 0.2.0/ });
+  await expect(restart).toBeVisible({ timeout: 8000 });
+  await restart.click();
+  await expect(page.getByText('Version installée :')).toContainText('0.2.0');
+  await expect(nav(page).getByText(/0\.2\.0/)).toHaveCount(0);
 });

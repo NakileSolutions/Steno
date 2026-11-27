@@ -17,6 +17,7 @@
   import Permissions from '../lib/components/Permissions.svelte';
   import ProfileSection from './settings/ProfileSection.svelte';
   import ReportsSection from './settings/ReportsSection.svelte';
+  import UpdatesSection from './settings/UpdatesSection.svelte';
   import ImportSection from './settings/ImportSection.svelte';
   import { version } from '../../package.json';
 
@@ -104,6 +105,7 @@
             <Permissions />
           </section>
         {:else if section.id === 'reports'}<ReportsSection bind:settings={settings} />
+        {:else if section.id === 'updates'}<UpdatesSection bind:settings={settings} />
         {:else if section.id === 'privacy'}<PrivacySection bind:settings={settings} />
         {:else if section.id === 'profile'}<ProfileSection bind:settings={settings} />
         {:else}<ImportSection onimported={replaced} {dirty} />{/if}

@@ -39,6 +39,10 @@ Seule la dernière version de la branche principale reçoit des correctifs de s�
 - **Réunion confidentielle** : aucun appel à l'IA, ni recherche ni compte rendu.
 - Les **modèles audio** sont téléchargés depuis Hugging Face au premier usage ; aucune donnée
   n'est envoyée lors de ce téléchargement.
+- **Mises à jour** : au démarrage puis toutes les 6 h, Sténo lit la dernière version publiée
+  sur l'API publique de GitHub (`api.github.com`), sans authentification ni donnée personnelle.
+  Désactivable dans Réglages → Mises à jour. L'installation récupère le tag de la version dans
+  votre clone (`git fetch`) et recompile localement ; les tags publiés sont signés et protégés.
 
 ### L'agent ne fait que lire
 

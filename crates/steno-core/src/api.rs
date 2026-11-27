@@ -21,7 +21,7 @@ pub const COMMANDS: &[&str] = &[
     "get_permissions", "request_permission", "open_permission_settings", "complete_onboarding",
     "delete_segment", "set_mic_muted", "save_export", "print_window", "pause_meeting", "resume_meeting",
     "get_meeting_context", "set_meeting_context", "add_context_file", "delete_context_file", "list_report_templates",
-    "report_now",
+    "report_now", "get_update_status", "check_update", "install_update", "restart_app",
 ];
 
 struct Args(Value);
@@ -93,6 +93,11 @@ pub async fn dispatch(core: &Core, cmd: &str, args: Value) -> Result<Value, Stri
         "delete_context_file" => ok(core.delete_context_file(a.get("fileId")?).map_err(e)?),
         "list_report_templates" => ok(core.report_templates()),
         "report_now" => ok(core.report_now(&a.s("id")?).map_err(e)?),
+        "get_update_status" => ok(core.update_status()),
+        "check_update" => ok(core.check_update().await.map_err(e)?),
+        "install_update" => ok(core.install_update().map_err(e)?),
+        // Redémarrage : propre à l'app Tauri.
+        "restart_app" => Ok(Value::Null),
         "correlate" => ok(core.correlate(&a.s("id")?).map_err(e)?),
         "export_meeting" => {
             let format: Option<String> = a.opt("format")?;

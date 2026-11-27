@@ -17,6 +17,23 @@ pub struct Settings {
     pub privacy: PrivacySettings,
     pub profile: ProfileSettings,
     pub report: ReportSettings,
+    pub updates: UpdateSettings,
+}
+
+/// Mises à jour (contact de l'API publique de GitHub, aucune donnée envoyée).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct UpdateSettings {
+    /// Vérifier les nouvelles versions (au démarrage puis toutes les 6 h).
+    pub check: bool,
+    /// Installer automatiquement, hors réunion (le redémarrage reste manuel).
+    pub auto_install: bool,
+}
+
+impl Default for UpdateSettings {
+    fn default() -> Self {
+        UpdateSettings { check: true, auto_install: false }
+    }
 }
 
 /// Modèle de compte rendu ajouté par l'utilisateur.
@@ -442,7 +459,7 @@ impl Default for ProfileSettings {
     }
 }
 
-const SECTIONS: [&str; 7] = ["agent", "voice", "audio", "correlation", "privacy", "profile", "report"];
+const SECTIONS: [&str; 8] = ["agent", "voice", "audio", "correlation", "privacy", "profile", "report", "updates"];
 
 impl Settings {
     /// Charge les réglages depuis la base (valeurs par défaut pour ce qui manque).
