@@ -139,7 +139,7 @@
 </div>
 
 <div class="field">
-  <div class="field-label">Retour sonore<span class="hint">Quand une commande est détectée. Jamais dans l’audio de Teams.</span></div>
+  <div class="field-label">Retour sonore<span class="hint">Quand une commande est détectée. Jamais dans l’audio de l’appel.</span></div>
   <div class="field-body">
     <div class="seg-ctl" role="radiogroup" aria-label="Retour sonore">
       {#each [['none', 'Aucun'], ['system', 'Son système'], ['headset', 'Casque uniquement']] as [v, l]}
@@ -152,7 +152,7 @@
 <div class="field">
   <div class="field-label">Aparté</div>
   <div class="field-body">
-    <p class="muted small">Coupez votre micro dans Teams et maintenez <kbd>{settings.audio.shortcuts.aside}</kbd> en parlant : pas besoin de mot d’appel, et vos phrases restent privées. Raccourci modifiable dans « Audio & transcription ».</p>
+    <p class="muted small">Coupez votre micro dans l’app de visio (Teams, Slack, Zoom…) et maintenez <kbd>{settings.audio.shortcuts.aside}</kbd> en parlant : pas besoin de mot d’appel, et vos phrases restent privées. Raccourci modifiable dans « Audio & transcription ».</p>
   </div>
 </div>
 

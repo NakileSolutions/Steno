@@ -176,7 +176,7 @@
 
         {#if STEPS[step].id === 'permissions'}
           <h1>Permissions macOS</h1>
-          <p class="lead">Le Scribe a besoin du micro, de l’audio du système (pour entendre Teams) et de l’accessibilité (pour lire le titre de la réunion). Il n’écoute que lorsque vous démarrez l’écoute.</p>
+          <p class="lead">Le Scribe a besoin du micro, de l’audio du système (pour entendre l’app de l’appel : Teams, Slack, Zoom…) et de l’accessibilité (pour lire le titre de l’appel). Il n’écoute que lorsque vous démarrez l’écoute.</p>
           <ul class="doctor">
             {#each doctor as d (d.name)}
               <li class={d.status}>

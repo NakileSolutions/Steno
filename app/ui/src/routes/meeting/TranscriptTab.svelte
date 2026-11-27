@@ -147,7 +147,7 @@
 
   {#if echoCount || (!showPrivate && loaded)}
     <p class="foot faint small"><Icon name="info" size={13} />
-      {#if echoCount}{echoCount} {echoCount > 1 ? 'échos masqués' : 'écho masqué'} (votre micro a capté le son de Teams).{/if}
+      {#if echoCount}{echoCount} {echoCount > 1 ? 'échos masqués' : 'écho masqué'} (votre micro a capté le son de l’appel).{/if}
       {#if !showPrivate} Les phrases privées sont masquées.{/if}
     </p>
   {/if}
