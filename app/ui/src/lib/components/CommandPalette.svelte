@@ -15,6 +15,7 @@
   import { buildGroups, filterItems, flatten, mergeById, moveIndex, type PaletteItem } from '../palette';
   import type { MeetingSummary } from '../types';
   import Icon from './Icon.svelte';
+  import { t } from '../i18n.svelte';
 
   type Item = PaletteItem & { run: () => void | Promise<void> };
 
@@ -81,9 +82,9 @@
     const snippet = m.snippet && q ? cleanSnippet(m.snippet, q) : '';
     return {
       id: `m:${m.id}`,
-      title: m.title ?? 'Réunion sans titre',
+      title: m.title ?? t('Réunion sans titre'),
       subtitle: snippet || `${dayLabel(m.started_at)} · ${time(m.started_at)}`,
-      hint: m.status === 'live' ? 'En cours' : relDay(m.started_at),
+      hint: m.status === 'live' ? t('En cours') : relDay(m.started_at),
       icon: m.status === 'live' ? 'live' : 'meetings',
       run: () => go(`/meetings/${m.id}`),
     };
@@ -125,39 +126,39 @@
     const items: Item[] = [
       {
         id: 'listen',
-        title: listening ? 'Arrêter l’écoute' : 'Démarrer l’écoute',
-        keywords: 'écoute enregistrer réunion micro transcrire stop',
+        title: listening ? t('Arrêter l’écoute') : t('Démarrer l’écoute'),
+        keywords: t('écoute enregistrer réunion micro transcrire stop'),
         icon: listening ? 'stop' : 'play',
         shortcut: toggleKey || undefined,
         run: startStop,
       },
       {
         id: 'ask',
-        title: 'Nouvelle demande à Sténo',
-        keywords: 'question agent ia demander chercher',
+        title: t('Nouvelle demande à Sténo'),
+        keywords: t('question agent ia demander chercher'),
         icon: 'ask',
         run: () => newRequest(''),
       },
       ...MAIN_SECTIONS.map((s, i) => ({
         id: `go:${s.id}`,
-        title: `Aller à ${s.label}`,
-        keywords: s.id === 'actions' ? 'décisions tâches' : '',
+        title: t('Aller à {section}', { section: t(s.label) }),
+        keywords: s.id === 'actions' ? t('décisions tâches') : '',
         icon: s.icon,
         shortcut: `${mod}${i + 1}`,
         run: () => go(s.path),
       })),
       ...SETTINGS_SECTIONS.map((s) => ({
         id: `settings:${s.id}`,
-        title: `Réglages › ${s.label}`,
-        keywords: 'préférences configuration',
+        title: t('Réglages › {section}', { section: t(s.label) }),
+        keywords: t('préférences configuration'),
         icon: s.icon,
         shortcut: s.id === 'agent' ? `${mod},` : undefined,
         run: () => go(`/settings?section=${s.id}`),
       })),
       {
         id: 'sidebar',
-        title: sidebarCollapsed ? 'Afficher la barre latérale' : 'Réduire la barre latérale',
-        keywords: 'sidebar panneau masquer',
+        title: sidebarCollapsed ? t('Afficher la barre latérale') : t('Réduire la barre latérale'),
+        keywords: t('sidebar panneau masquer'),
         icon: 'sidebar',
         shortcut: `${mod}\\`,
         run: () => ontogglesidebar?.(),
@@ -185,15 +186,15 @@
     return [
       {
         id: 'ask-q',
-        title: `Demander à Sténo : « ${q} »`,
-        subtitle: listening ? 'Demande pendant la réunion en cours' : 'Question sur l’historique des réunions',
+        title: t('Demander à Sténo : « {q} »', { q }),
+        subtitle: listening ? t('Demande pendant la réunion en cours') : t('Question sur l’historique des réunions'),
         icon: 'ask',
         run: () => newRequest(q),
       },
       {
         id: 'search-all',
-        title: `Rechercher « ${q} » dans toutes les réunions`,
-        subtitle: 'Transcriptions et comptes rendus',
+        title: t('Rechercher « {q} » dans toutes les réunions', { q }),
+        subtitle: t('Transcriptions et comptes rendus'),
         icon: 'search',
         run: () => navigate(`/search?q=${encodeURIComponent(q)}`, { transition: true }),
       },
@@ -242,7 +243,7 @@
 <dialog
   class="palette"
   bind:this={el}
-  aria-label="Palette de commandes"
+  aria-label={t('Palette de commandes')}
   oncancel={(e) => { e.preventDefault(); close(); }}
   onclose={() => (open = false)}
   {onclick}
@@ -262,15 +263,15 @@
           aria-controls="cmdk-list"
           aria-autocomplete="list"
           aria-activedescendant={activeItem ? optId(activeItem) : undefined}
-          aria-label="Rechercher une réunion ou une commande"
-          placeholder="Rechercher une réunion, une commande…"
+          aria-label={t('Rechercher une réunion ou une commande')}
+          placeholder={t('Rechercher une réunion, une commande…')}
           autocomplete="off"
           spellcheck="false"
         />
-        <kbd class="esc">échap</kbd>
+        <kbd class="esc">{t('échap')}</kbd>
       </div>
 
-      <div class="list scroll" id="cmdk-list" role="listbox" aria-label="Résultats" bind:this={listEl}>
+      <div class="list scroll" id="cmdk-list" role="listbox" aria-label={t('Résultats')} bind:this={listEl}>
         {#each groups as g (g.id)}
           <div class="group" role="group" aria-labelledby="cmdk-g-{g.id}">
             <div class="glabel" id="cmdk-g-{g.id}">{g.label}</div>
@@ -298,15 +299,15 @@
           </div>
         {:else}
           <div class="none">
-            <p>Aucun résultat pour « {query.trim()} ».</p>
+            <p>{t('Aucun résultat pour « {q} ».', { q: query.trim() })}</p>
           </div>
         {/each}
       </div>
 
       <footer class="foot" aria-hidden="true">
-        <span><kbd>↑</kbd><kbd>↓</kbd> naviguer</span>
-        <span><kbd>↵</kbd> ouvrir</span>
-        <span><kbd>échap</kbd> fermer</span>
+        <span><kbd>↑</kbd><kbd>↓</kbd> {t('naviguer')}</span>
+        <span><kbd>↵</kbd> {t('ouvrir')}</span>
+        <span><kbd>{t('échap')}</kbd> {t('fermer')}</span>
         <span class="grow"></span>
         <span class="brand">Sténo</span>
       </footer>

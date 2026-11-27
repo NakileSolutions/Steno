@@ -8,6 +8,7 @@
   import { toastError } from '../../lib/ui.svelte';
   import Markdown from '../../lib/components/Markdown.svelte';
   import Icon from '../../lib/components/Icon.svelte';
+  import { t } from '../../lib/i18n.svelte';
 
   let { settings = $bindable() }: { settings: Settings } = $props();
   initUpdates();
@@ -30,52 +31,52 @@
   const restart = () => run(() => api.restartApp());
 </script>
 
-<p class="intro muted">Sténo vérifie sur GitHub si une nouvelle version est publiée (aucune donnée n’est envoyée). La mise à jour se fait depuis vos sources : récupération de la version, puis <code>make install</code>, sans toucher à vos données.</p>
+<p class="intro muted">{t('Sténo vérifie sur GitHub si une nouvelle version est publiée (aucune donnée n’est envoyée). La mise à jour se fait depuis vos sources : récupération de la version, puis')} <code>make install</code>{t(', sans toucher à vos données.')}</p>
 
 <div class="card upd" aria-live="polite">
   {#if !s}
-    <p class="muted">Chargement…</p>
+    <p class="muted">{t('Chargement…')}</p>
   {:else}
     <div class="row head">
       <div class="grow">
-        <p class="ver">Version installée : <strong class="tnum">{s.current}</strong></p>
+        <p class="ver">{t('Version installée :')} <strong class="tnum">{s.current}</strong></p>
         <p class="small muted">
-          {#if s.state === 'checking'}Vérification…
-          {:else if s.latest && s.available}Nouvelle version disponible : <strong class="tnum">{s.latest}</strong>{#if s.published_at} · publiée le {shortDate(s.published_at)}{/if}
-          {:else if s.latest}À jour (dernière version publiée : {s.latest})
-          {:else if s.checked_at}Aucune version publiée pour l’instant
-          {:else}Pas encore vérifié{/if}
-          {#if s.checked_at && s.state !== 'checking'} · vérifié à {time(s.checked_at)}{/if}
+          {#if s.state === 'checking'}{t('Vérification…')}
+          {:else if s.latest && s.available}{t('Nouvelle version disponible :')} <strong class="tnum">{s.latest}</strong>{#if s.published_at}{' · '}{t('publiée le {date}', { date: shortDate(s.published_at) })}{/if}
+          {:else if s.latest}{t('À jour (dernière version publiée : {v})', { v: s.latest })}
+          {:else if s.checked_at}{t('Aucune version publiée pour l’instant')}
+          {:else}{t('Pas encore vérifié')}{/if}
+          {#if s.checked_at && s.state !== 'checking'}{' · '}{t('vérifié à {time}', { time: time(s.checked_at) })}{/if}
         </p>
       </div>
       {#if s.state === 'installed'}
-        <button class="btn primary" onclick={restart} disabled={busy}><Icon name="refresh" size={14} />Redémarrer Sténo</button>
+        <button class="btn primary" onclick={restart} disabled={busy}><Icon name="refresh" size={14} />{t('Redémarrer Sténo')}</button>
       {:else if s.state === 'installing'}
-        <span class="badge"><span class="spin" aria-hidden="true"></span>Installation…</span>
+        <span class="badge"><span class="spin" aria-hidden="true"></span>{t('Installation…')}</span>
       {:else if s.available}
-        <button class="btn primary" onclick={install} disabled={busy || !s.can_install} title={s.can_install ? 'Installer depuis les sources (quelques minutes)' : (s.message ?? '')}><Icon name="download" size={14} />Installer {s.latest}</button>
+        <button class="btn primary" onclick={install} disabled={busy || !s.can_install} title={s.can_install ? t('Installer depuis les sources (quelques minutes)') : (s.message ?? '')}><Icon name="download" size={14} />{t('Installer {v}', { v: s.latest ?? '' })}</button>
       {/if}
-      <button class="btn" onclick={check} disabled={busy || s.state === 'checking' || s.state === 'installing'}>Vérifier</button>
+      <button class="btn" onclick={check} disabled={busy || s.state === 'checking' || s.state === 'installing'}>{t('Vérifier')}</button>
     </div>
-    {#if s.message}<p class="small msg" class:err={s.state === 'error'}><Icon name={s.state === 'error' ? 'warn' : 'info'} size={13} />{s.message}{#if s.state === 'error' && s.log_path} — journal : <code>{s.log_path}</code>{/if}</p>{/if}
+    {#if s.message}<p class="small msg" class:err={s.state === 'error'}><Icon name={s.state === 'error' ? 'warn' : 'info'} size={13} />{s.message}{#if s.state === 'error' && s.log_path}{' — '}{t('journal :')} <code>{s.log_path}</code>{/if}</p>{/if}
     {#if s.available && s.notes}
       <div class="notes"><Markdown source={s.notes} /></div>
     {/if}
-    {#if s.url}<p class="small"><a href={s.url} target="_blank" rel="noreferrer">Voir la version sur GitHub</a></p>{/if}
-    {#if s.source_dir}<p class="small faint">Sources : <code>{s.source_dir}</code></p>{/if}
+    {#if s.url}<p class="small"><a href={s.url} target="_blank" rel="noreferrer">{t('Voir la version sur GitHub')}</a></p>{/if}
+    {#if s.source_dir}<p class="small faint">{t('Sources :')} <code>{s.source_dir}</code></p>{/if}
   {/if}
 </div>
 
 <div class="field">
-  <div class="field-label">Vérification<span class="hint">Au démarrage, puis toutes les 6 heures.</span></div>
+  <div class="field-label">{t('Vérification')}<span class="hint">{t('Au démarrage, puis toutes les 6 heures.')}</span></div>
   <div class="field-body">
-    <label class="check toggle"><span>Vérifier les nouvelles versions</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.updates!.check} /></label>
+    <label class="check toggle"><span>{t('Vérifier les nouvelles versions')}</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.updates!.check} /></label>
   </div>
 </div>
 <div class="field">
-  <div class="field-label">Installation automatique<span class="hint">Jamais pendant une réunion. Le redémarrage reste à votre initiative.</span></div>
+  <div class="field-label">{t('Installation automatique')}<span class="hint">{t('Jamais pendant une réunion. Le redémarrage reste à votre initiative.')}</span></div>
   <div class="field-body">
-    <label class="check toggle"><span>Installer les nouvelles versions automatiquement</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.updates!.auto_install} disabled={!settings.updates!.check} /></label>
+    <label class="check toggle"><span>{t('Installer les nouvelles versions automatiquement')}</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.updates!.auto_install} disabled={!settings.updates!.check} /></label>
   </div>
 </div>
 

@@ -18,6 +18,10 @@
 	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Sténo lit vos réunions à venir et leurs invités pour préparer les comptes rendus et nommer les participants. Rien n’est modifié dans votre calendrier.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Sténo lit vos réunions à venir et leurs invités pour préparer les comptes rendus et nommer les participants. Rien n’est modifié dans votre calendrier.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Sténo utilise le micro pour transcrire localement ce que vous dites pendant vos réunions et détecter vos commandes vocales. L'audio ne quitte jamais votre Mac.</string>
 	<key>NSAudioCaptureUsageDescription</key>

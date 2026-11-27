@@ -51,6 +51,8 @@ fn core(name: &str, sidecar: Option<SidecarSpec>) -> Core {
     // Compte rendu sans délai de contexte (testé à part dans `delai_de_contexte_avant_la_redaction`).
     let mut s = c.settings();
     s.report.context_delay_s = 0;
+    // Langue fixe : les tests ne dépendent pas de la langue de la machine.
+    s.profile.language = "fr".into();
     c.save_settings(s).unwrap();
     c.start_background();
     c
@@ -610,5 +612,53 @@ async fn delai_de_contexte_avant_la_redaction() {
     c.report_now(&m.id).unwrap();
     assert!(c.meeting_context(&m.id).unwrap().report_at.is_none());
     wait_until("compte rendu", 30, || c.db().get_report(&m.id).unwrap().is_some()).await;
+    c.shutdown();
+}
+
+/// Phase 3 : réunion prévue avec participants ; l'écoute la reprend, et les participants
+/// arrivent dans la demande de compte rendu.
+#[tokio::test(flavor = "multi_thread")]
+async fn reunion_prevue_reprise_et_participants() {
+    let file = env().join("prevue.jsonl");
+    let lines = [
+        r#"{"type":"teams_call","active":true,"title":"Revue Nova"}"#,
+        r#"{"type":"segment","ts":"2026-11-26T10:00:03+01:00","t0":1.0,"t1":3.0,"channel":"them","text":"Merci Inès pour la démo de la v2.","private":false}"#,
+        r#"{"type":"segment","ts":"2026-11-26T10:00:06+01:00","t0":4.0,"t1":6.0,"channel":"me","text":"On valide la sortie de la v2 vendredi.","private":false}"#,
+    ];
+    std::fs::write(&file, lines.join("\n") + "\n").unwrap();
+    let c = core("prevue", Some(replay_sidecar(&file)));
+    wait_until("appel annoncé", 20, || c.live_state().call.active).await;
+
+    // Prévue dans 10 min : reprise au démarrage de l'écoute.
+    let at = (chrono::Local::now() + chrono::Duration::minutes(10)).to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
+    let planned = c.plan_meeting("Revue Nova", &at, None).unwrap();
+    assert_eq!(planned.status, "planned");
+    assert!(c.upcoming(7).await.unwrap().planned.iter().any(|m| m.id == planned.id));
+    let people = [("Inès Martin", Some("ines@exemple.fr")), ("Paul Durand", None)]
+        .iter()
+        .map(|(n, e)| steno_core::planning::Participant { name: n.to_string(), email: e.map(String::from), source: "manual".into() })
+        .collect::<Vec<_>>();
+    assert_eq!(c.set_participants(&planned.id, &people).unwrap().len(), 2);
+    c.set_meeting_context(&planned.id, "Revue de la v2 de Nova.", None).unwrap();
+
+    let m = c.start_meeting(None).await.unwrap();
+    assert_eq!(m.id, planned.id, "la réunion prévue est reprise");
+    assert_eq!(m.status, "live");
+    assert_eq!(m.call_app.as_deref(), Some("teams"));
+    wait_until("phrases reçues", 20, || c.db().segments(&m.id, true, true).unwrap().len() == 2).await;
+    c.stop_meeting().await.unwrap();
+    c.report_now(&m.id).unwrap();
+    wait_until("compte rendu", 60, || c.db().get_report(&m.id).unwrap().is_some()).await;
+    let prompts = std::fs::read_to_string(env().join("fake-claude-prompts.log")).unwrap();
+    let last: String = prompts
+        .lines()
+        .filter_map(|l| serde_json::from_str::<String>(l).ok())
+        .filter(|p| p.contains("Compte rendu à rédiger") && p.contains("Revue Nova"))
+        .last()
+        .expect("demande de compte rendu");
+    assert!(last.contains("## Participants invités") && last.contains("- Inès Martin") && last.contains("- Paul Durand"));
+    assert!(last.contains("Revue de la v2 de Nova."));
+    // Une réunion qui a démarré n'est plus « à venir ».
+    assert!(!c.upcoming(7).await.unwrap().planned.iter().any(|x| x.id == m.id));
     c.shutdown();
 }

@@ -23,6 +23,7 @@ struct PermissionsSnapshot: Equatable {
     var microphone: PermissionValue
     var systemAudio: PermissionValue
     var accessibility: PermissionValue
+    var calendar: PermissionValue = .unknown
 }
 
 enum CaptureState: String, Codable, Equatable {
@@ -155,6 +156,8 @@ enum OutgoingMessage: Equatable {
     case state(CaptureState)
     case wakeTest(text: String)
     case diarization(meetingId: String, turns: [DiarizationTurn])
+    /// Événements du calendrier (réponse à `calendar_events`).
+    case calendar(events: [CalendarEvent])
     /// Phrases retranscrites en fin de réunion (celles qui ne figurent pas gardent le direct).
     case retranscription(meetingId: String, items: [RetranscribedItem])
     case error(code: ErrorCode, message: String, recoverable: Bool)
@@ -166,7 +169,7 @@ extension OutgoingMessage: Encodable {
         case version, asr
         case microphone
         case systemAudio = "system_audio"
-        case accessibility
+        case accessibility, calendar, events
         case active, app, title
         case ts, t0, t1, channel, text
         case isPrivate = "private"
@@ -192,6 +195,7 @@ extension OutgoingMessage: Encodable {
             try c.encode(p.microphone, forKey: .microphone)
             try c.encode(p.systemAudio, forKey: .systemAudio)
             try c.encode(p.accessibility, forKey: .accessibility)
+            try c.encode(p.calendar, forKey: .calendar)
 
         case let .call(active, app, title):
             try c.encode("call", forKey: .type)
@@ -236,6 +240,10 @@ extension OutgoingMessage: Encodable {
             try c.encode("diarization", forKey: .type)
             try c.encode(meetingId, forKey: .meetingId)
             try c.encode(turns, forKey: .turns)
+
+        case let .calendar(events):
+            try c.encode("calendar", forKey: .type)
+            try c.encode(events, forKey: .events)
 
         case let .retranscription(meetingId, items):
             try c.encode("retranscription", forKey: .type)
@@ -303,6 +311,8 @@ enum Command: Equatable {
     /// Retranscription de fin de réunion, langue imposée (`fr`…).
     case retranscribe(meetingId: String, audioDir: String, language: String, vocabulary: [String], items: [RetranscribeItem])
     case permissions
+    /// Événements du calendrier entre deux instants (ISO 8601 ; défaut : maintenant → +7 jours).
+    case calendarEvents(from: Date?, to: Date?)
     /// Déclenche l'invite système d'un droit.
     case requestPermission(PermissionKind)
     case shutdown
@@ -313,6 +323,7 @@ enum PermissionKind: String, Equatable {
     case microphone
     case systemAudio = "system_audio"
     case accessibility
+    case calendar
 }
 
 enum CommandParseError: Error, Equatable {
@@ -466,6 +477,16 @@ enum CommandParser {
             case "permissions":
                 return .success(.permissions)
 
+            case "calendar_events":
+                let p = try decoder.decode(CalendarEventsPayload.self, from: data)
+                let iso = ISO8601DateFormatter()
+                let from = p.from.flatMap { iso.date(from: $0) }
+                let to = p.to.flatMap { iso.date(from: $0) }
+                if (p.from != nil && from == nil) || (p.to != nil && to == nil) {
+                    return .failure(.invalidField(command: cmd, field: p.from != nil && from == nil ? "from" : "to"))
+                }
+                return .success(.calendarEvents(from: from, to: to))
+
             case "request_permission":
                 let p = try decoder.decode(RequestPermissionPayload.self, from: data)
                 guard let raw = p.kind, let kind = PermissionKind(rawValue: raw) else {
@@ -608,6 +629,11 @@ enum CommandParser {
 
     private struct WakeTestPayload: Decodable {
         let seconds: Double?
+    }
+
+    private struct CalendarEventsPayload: Decodable {
+        let from: String?
+        let to: String?
     }
 
     private struct RetranscribePayload: Decodable {

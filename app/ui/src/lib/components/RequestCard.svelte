@@ -6,6 +6,7 @@
   import { toastError } from '../ui.svelte';
   import Markdown from './Markdown.svelte';
   import Icon from './Icon.svelte';
+  import { t } from '../i18n.svelte';
 
   let {
     req,
@@ -39,19 +40,19 @@
 <article class="req" class:focused class:compact class:pending bind:this={el} aria-busy={pending}>
   <header class="row hd">
     <span class="iic {req.intent}" aria-hidden="true"><Icon name={INTENT_ICON[req.intent] ?? 'ask'} size={13} stroke={1.8} /></span>
-    <span class="intent" title="Demande {ORIGIN_LABEL[req.origin] ?? req.origin}">
-      {INTENT_LABEL[req.intent] ?? req.intent}
-      {#if req.origin === 'voice'}<span class="origin" title="Demande vocale"><Icon name="mic" size={11} /></span>{/if}
+    <span class="intent" title={t('Demande {origin}', { origin: ORIGIN_LABEL[req.origin] ? t(ORIGIN_LABEL[req.origin]) : req.origin })}>
+      {INTENT_LABEL[req.intent] ? t(INTENT_LABEL[req.intent]) : req.intent}
+      {#if req.origin === 'voice'}<span class="origin" title={t('Demande vocale')}><Icon name="mic" size={11} /></span>{/if}
     </span>
     <span class="grow"></span>
     {#if showMeta}<time class="faint tiny">{time(req.created_at)}</time>{/if}
-    {#if took}<span class="faint tiny" title="Durée de la recherche">en {took}</span>{/if}
+    {#if took}<span class="faint tiny" title={t('Durée de la recherche')}>{t('en {took}', { took })}</span>{/if}
     <span class="badge status {STATUS_CLASS[req.status]}">
       {#if pending}<span class="spin" aria-hidden="true"></span>{/if}
-      {STATUS_LABEL[req.status] ?? req.status}
+      {STATUS_LABEL[req.status] ? t(STATUS_LABEL[req.status]) : req.status}
     </span>
     {#if pending}
-      <button class="btn ghost sm icon" title="Annuler la demande" aria-label="Annuler la demande" onclick={cancel}><Icon name="x" size={13} /></button>
+      <button class="btn ghost sm icon" title={t('Annuler la demande')} aria-label={t('Annuler la demande')} onclick={cancel}><Icon name="x" size={13} /></button>
     {/if}
   </header>
 
@@ -64,8 +65,8 @@
   {#if req.answer_md}
     {#if compact && !open}
       <button class="summary" onclick={() => (open = true)} aria-expanded="false">
-        {plainText(req.summary) || 'Afficher la réponse'}
-        <span class="more">Afficher la réponse <Icon name="chevron" size={11} stroke={2} /></span>
+        {plainText(req.summary) || t('Afficher la réponse')}
+        <span class="more">{t('Afficher la réponse')} <Icon name="chevron" size={11} stroke={2} /></span>
       </button>
     {/if}
     {#if showAnswer}
@@ -75,7 +76,7 @@
     <div class="thinking">
       <span class="skeleton" style="width: 82%"></span>
       <span class="skeleton" style="width: 56%"></span>
-      <p class="faint small">{req.status === 'queued' ? 'En attente d’un créneau pour l’agent…' : 'L’agent cherche…'}</p>
+      <p class="faint small">{req.status === 'queued' ? t('En attente d’un créneau pour l’agent…') : t('L’agent cherche…')}</p>
     </div>
   {/if}
 
@@ -83,7 +84,7 @@
     <footer>
       {#if sources.length}
         <div class="row wrap chips">
-          <span class="label">Sources</span>
+          <span class="label">{t('Sources')}</span>
           {#each sources as s (s.url)}
             <button class="chip" title={s.url} onclick={() => openExternal(s.url)}><Icon name="link" size={11} />{s.text}</button>
           {/each}
@@ -91,8 +92,8 @@
       {/if}
       {#if req.tools_used.length}
         <div class="row wrap chips">
-          <span class="label">Outils</span>
-          {#each req.tools_used as t}<code class="tool">{t}</code>{/each}
+          <span class="label">{t('Outils')}</span>
+          {#each req.tools_used as tool}<code class="tool">{tool}</code>{/each}
         </div>
       {/if}
     </footer>

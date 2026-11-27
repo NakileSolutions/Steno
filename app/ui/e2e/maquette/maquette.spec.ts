@@ -766,3 +766,66 @@ test('mises à jour : nouvelle version signalée, installée puis redémarrage',
   await expect(page.getByText('Version installée :')).toContainText('0.2.0');
   await expect(nav(page).getByText(/0\.2\.0/)).toHaveCount(0);
 });
+
+test('interface en anglais : Réglages → Profil → Langue', async ({ page }) => {
+  await open(page, '/settings?section=profile');
+  await page.getByLabel('Langue').selectOption('en');
+  await page.getByRole('button', { name: 'Enregistrer' }).click();
+  const enNav = page.getByRole('navigation', { name: 'Main navigation' });
+  await expect(enNav.getByRole('link', { name: 'Meetings', exact: true })).toBeVisible();
+  await expect(enNav.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
+  await enNav.getByRole('link', { name: 'Meetings', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Meetings', exact: true })).toBeVisible();
+  // Retour au français (la langue choisie est conservée au rechargement).
+  await enNav.getByRole('link', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Profile' }).or(page.getByRole('link', { name: 'Profile' })).first().click();
+  await page.getByLabel('Language').selectOption('fr');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(nav(page).getByRole('link', { name: 'Réunions', exact: true })).toBeVisible();
+});
+
+test('phase 3 : réunion du calendrier préparée avec l’IA puis démarrée', async ({ page }) => {
+  await open(page, '/meetings');
+  const list = page.getByRole('region', { name: 'Liste des réunions' });
+  await expect(list.getByRole('heading', { name: 'À venir' })).toBeVisible();
+  const ev = list.locator('.mitem.event', { hasText: 'Revue Nova — v2' });
+  await expect(ev.getByText('2 invités')).toBeVisible();
+  await ev.getByRole('button', { name: 'Préparer' }).click();
+
+  const detail = page.getByRole('region', { name: 'Détail de la réunion' });
+  await expect(detail.getByRole('heading', { name: 'Revue Nova — v2' })).toBeVisible();
+  await expect(detail.getByText('Réunion prévue')).toBeVisible();
+  await expect(detail.getByText('Inès Martin')).toBeVisible();
+  await expect(detail.getByText('Paul Durand')).toBeVisible();
+  await expect(detail.getByLabel('Contexte')).toHaveValue(/Ordre du jour : périmètre de la v2/);
+
+  // Participant ajouté à la main.
+  await detail.getByLabel('Nom du participant').fill('Sophie Bernard');
+  await detail.getByRole('button', { name: 'Ajouter', exact: true }).click();
+  await expect(detail.getByText('Sophie Bernard')).toBeVisible();
+
+  // Préparation guidée.
+  await detail.getByRole('button', { name: 'Préparer avec l’IA' }).click();
+  await detail.getByLabel('Quel est l’objectif principal de cette réunion ?').fill('Valider la date de sortie de la v2');
+  await detail.getByRole('button', { name: 'Rédiger le contexte' }).click();
+  await expect(detail.getByLabel('Contexte')).toHaveValue(/Valider la date de sortie de la v2/);
+
+  // La réunion n'apparaît plus comme événement libre : elle est prévue.
+  await expect(list.locator('.mitem.planned', { hasText: 'Revue Nova — v2' })).toBeVisible();
+  await expect(list.locator('.mitem.event', { hasText: 'Revue Nova — v2' })).toHaveCount(0);
+
+  // Démarrage : l'écoute reprend la réunion prévue.
+  await detail.getByRole('button', { name: 'Démarrer l’écoute' }).click();
+  await expect(main(page).getByRole('heading', { name: 'Revue Nova — v2' })).toBeVisible();
+  await main(page).getByRole('button', { name: 'Arrêter l’écoute' }).click();
+});
+
+test('phase 3 : prévoir une réunion à la main', async ({ page }) => {
+  await open(page, '/meetings');
+  await page.getByRole('button', { name: 'Prévoir' }).click();
+  const dlg = page.getByRole('dialog', { name: 'Prévoir une réunion' });
+  await dlg.getByLabel('Titre de la réunion').fill('Atelier tarifs');
+  await dlg.getByRole('button', { name: 'Prévoir' }).click();
+  await expect(page.getByRole('region', { name: 'Détail de la réunion' }).getByRole('heading', { name: 'Atelier tarifs' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Liste des réunions' }).locator('.mitem.planned', { hasText: 'Atelier tarifs' })).toBeVisible();
+});

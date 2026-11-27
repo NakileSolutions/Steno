@@ -41,9 +41,9 @@ pub async fn run(inner: &Inner, meeting_id: &str) -> Result<()> {
     let mut src = sources.clone();
     src.budget = budget;
     let base_md = crate::report::remove_section(&report.markdown, SECTION);
-    let prompt = crate::prompts::correlate(&meeting, &base_md, &src);
+    let prompt = crate::prompts::correlate(&meeting, &base_md, &src) + crate::i18n::answer_language(inner.lang());
     inner.emit(CoreEvent::Notify {
-        title: "🔗 Corrélation en cours".into(),
+        title: inner.tr("🔗 Corrélation en cours", "🔗 Correlating"),
         body: meeting.title.clone().unwrap_or_default(),
         route: None,
     });
@@ -67,7 +67,8 @@ pub async fn run(inner: &Inner, meeting_id: &str) -> Result<()> {
         // L'agent n'a pas mis le titre : tout son texte est la section.
         md.trim().to_string()
     });
-    let new_md = format!("{base_md}\n\n## {SECTION}\n\n{section_body}\n");
+    let heading = inner.tr(SECTION, "Links to code and tools");
+    let new_md = format!("{base_md}\n\n## {heading}\n\n{section_body}\n");
     let version = inner.db.save_report(
         meeting_id,
         &new_md,
@@ -79,8 +80,8 @@ pub async fn run(inner: &Inner, meeting_id: &str) -> Result<()> {
     inner.emit(CoreEvent::Report { meeting_id: meeting_id.into(), version });
     inner.emit(CoreEvent::MeetingsChanged);
     inner.emit(CoreEvent::Notify {
-        title: "🔗 Corrélation terminée".into(),
-        body: format!("{} lien(s) trouvé(s)", refs.len()),
+        title: inner.tr("🔗 Corrélation terminée", "🔗 Correlation done"),
+        body: if inner.lang() == "en" { format!("{} link(s) found", refs.len()) } else { format!("{} lien(s) trouvé(s)", refs.len()) },
         route: Some(format!("/meetings/{meeting_id}?tab=report")),
     });
     Ok(())

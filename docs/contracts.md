@@ -86,6 +86,7 @@ inconnus (compatibilité ascendante).
 {"type":"wake_test","text":"steno cherche quelque chose"}
 {"type":"diarization","meeting_id":"…","turns":[{"t0":12.0,"t1":18.5,"speaker":"S1"}]}
 {"type":"retranscription","meeting_id":"…","items":[{"id":42,"text":"Ce deuxième sujet…"}]}
+{"type":"calendar","events":[{"id":"…","title":"Revue Nova","start":"…","end":"…","all_day":false,"attendees":[{"name":"Inès","email":"ines@exemple.fr","status":"accepted","organizer":false,"me":false}]}]}
 {"type":"error","code":"tap_failed","message":"…","recoverable":true}
 ```
 
@@ -129,6 +130,7 @@ inconnus (compatibilité ascendante).
 {"cmd":"diarize","meeting_id":"…","audio_dir":"…","file":"me.wav"}   // présentiel : le micro (défaut : them.wav)
 {"cmd":"retranscribe","meeting_id":"…","audio_dir":"…","language":"fr","vocabulary":["Atlas"],
  "items":[{"id":42,"file":"them.wav","t0":12.0,"t1":18.5}]}
+{"cmd":"calendar_events","from":"2026-11-27T08:00:00+01:00","to":"2026-12-04T08:00:00+01:00"}   // permission « calendar » (facultative)
 {"cmd":"permissions"}
 {"cmd":"request_permission","kind":"microphone"}   // ou "system_audio", "accessibility"
 {"cmd":"shutdown"}
@@ -417,6 +419,13 @@ type Settings = /* section 4 */;
 | `check_update` | — | `UpdateStatus` après lecture de la dernière version publiée (API GitHub publique, sans authentification) |
 | `install_update` | — | `null` : lance en arrière-plan la mise à jour des sources (tag `v<version>`, avance rapide sur `main` ou tag détaché) puis `make install` ; refusé pendant une réunion, si les sources ont des modifications ou sont sur une autre branche. Avancement par `steno://update` |
 | `restart_app` | — | (app uniquement) redémarre Sténo après une mise à jour ; refusé pendant une réunion |
+| `upcoming` | `days?` (défaut 7) | `Upcoming` `{planned: Meeting[], events: UpcomingEvent[], calendar}` : réunions prévues (statut `planned`, `started_at` = heure prévue) et événements du calendrier macOS (`{id, title, start, end, all_day, location, url, notes, calendar, attendees: [{name, email, status, organizer, me}], meeting_id}`) ; `calendar` : `granted \| denied \| unknown \| unavailable` |
+| `plan_meeting` | `title, scheduledAt` (ISO 8601), `eventId?` | `Meeting` prévue ; depuis un événement : invités (sauf soi et les refus) en participants, description de l'invitation en contexte. Démarrer l'écoute entre 30 min avant et 30 min après l'heure prévue reprend cette réunion |
+| `start_planned` | `id, inPerson?` | `Meeting` : démarre l'écoute de la réunion prévue, même en avance |
+| `get_participants` | `id` | `Participant[]` `{name, email, source}` (`calendar \| manual`) |
+| `set_participants` | `id, participants` | `Participant[]` ; transmis au compte rendu (« Participants invités ») pour nommer les intervenants |
+| `prepare_questions` | `id` | `string[]` : 3 à 5 questions de l'agent pour préparer la réunion |
+| `prepare_apply` | `id, answers: [{question, answer}]` | `MeetingContext` : l'agent rédige le contexte à partir des réponses (ajouté au contexte existant) |
 | `list_report_templates` | — | `Template[]` `{id, name, description, instructions, builtin}` : formats intégrés (`standard`, `daily`, `client`, `atelier`, `arbitrage`, `mail`, `slack`) puis formats perso (`report.templates`) |
 | `correlate` | `id` | `null` |
 | `export_meeting` | `id, format?: "markdown" \| "txt" \| "srt" \| "vtt"` | `string` (markdown complet par défaut ; `txt`/`srt`/`vtt` : transcription seule) |

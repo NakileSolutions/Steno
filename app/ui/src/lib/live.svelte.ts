@@ -4,6 +4,7 @@ import { api, onEvent } from './api';
 import type { LiveState } from './types';
 import { loadPrefs } from './prefs.svelte';
 import { normalizeLiveState } from './listening';
+import { tk } from './i18n.svelte';
 
 export const live = $state<{ s: LiveState; ready: boolean }>({
   s: {
@@ -37,9 +38,10 @@ export function initLive(): void {
   setInterval(() => (clock.now = Date.now()), 1000);
 }
 
+/** Libellés (marqués `tk`) : à traduire à l'affichage avec `t(...)`. */
 export const STATE_LABEL: Record<LiveState['state'], string> = {
-  idle: 'N’écoute pas',
-  listening: 'Écoute',
-  paused: 'En pause',
-  processing: 'Traitement',
+  idle: tk('N’écoute pas'),
+  listening: tk('Écoute'),
+  paused: tk('En pause'),
+  processing: tk('Traitement'),
 };

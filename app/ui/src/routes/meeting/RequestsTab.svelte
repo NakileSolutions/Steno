@@ -4,6 +4,7 @@
   import { toastError } from '../../lib/ui.svelte';
   import RequestCard from '../../lib/components/RequestCard.svelte';
   import Icon from '../../lib/components/Icon.svelte';
+  import { t } from '../../lib/i18n.svelte';
 
   let { detail, focusId }: { detail: MeetingDetail; focusId?: string } = $props();
   const m = $derived(detail.meeting);
@@ -32,16 +33,16 @@
   {#if !m.confidential}
     <form class="ask row" onsubmit={ask}>
       <Icon name="ask" size={16} />
-      <input class="grow" bind:value={query} placeholder="Poser une question sur cette réunion…" aria-label="Demander à Sténo à propos de cette réunion" />
-      <button class="btn sm primary" disabled={!query.trim() || sending}>Demander</button>
+      <input class="grow" bind:value={query} placeholder={t('Poser une question sur cette réunion…')} aria-label={t('Demander à Sténo à propos de cette réunion')} />
+      <button class="btn sm primary" disabled={!query.trim() || sending}>{t('Demander')}</button>
     </form>
   {/if}
 
   {#if !list.length}
     <div class="empty">
       <Icon name="ask" size={24} stroke={1.5} />
-      <h2>Aucune demande</h2>
-      <p class="small">Pendant une réunion, dites « Sténo, cherche… » ou tapez votre question.</p>
+      <h2>{t('Aucune demande')}</h2>
+      <p class="small">{t('Pendant une réunion, dites « Sténo, cherche… » ou tapez votre question.')}</p>
     </div>
   {:else}
     <div class="col list">

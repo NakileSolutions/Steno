@@ -11,8 +11,8 @@ lit, vous publiez.
 
 > *English: Sténo is a local-first meeting assistant for macOS. Live transcription runs on
 > device (Parakeet / Canary on the Neural Engine and GPU); summaries and voice-driven searches
-> use the AI coding agent CLI you already have. Audio never leaves your Mac. The UI is in
-> French. MIT licensed.*
+> use the AI coding agent CLI you already have. Audio never leaves your Mac. The UI and the
+> summaries are available in English and French. MIT licensed.*
 
 ![Compte rendu](docs/screenshots/detail-compte-rendu-clair.png)
 
@@ -37,6 +37,10 @@ lit, vous publiez.
 - **Contexte et documents** : texte libre et documents joints (PDF, Excel, CSV, Word,
   Markdown…) pour orienter le compte rendu ; une section « ⚠️ Changements importants » signale
   ce qui contredit le contexte. Un délai après la réunion laisse le temps de les ajouter.
+- **Préparation des réunions** : réunions à venir (prévues dans Sténo ou lues dans le
+  calendrier macOS), participants invités pour nommer les intervenants, et préparation
+  guidée par l'IA (quelques questions, puis un contexte rédigé). Démarrer l'écoute à l'heure
+  prévue reprend la réunion préparée.
 - **Formats de sortie** : standard, daily, point client, atelier, arbitrage, mail de synthèse,
   message Slack/Teams, et vos propres formats enregistrés sur le Mac.
 - **Corrélation** (désactivée, à la demande ou automatique) : le compte rendu est croisé avec
@@ -45,7 +49,8 @@ lit, vous publiez.
   `.txt`, sous-titres `.srt` / `.vtt`.
 - **Historique** : recherche plein texte, décisions et actions, questions en langage naturel,
   et serveur MCP `steno mcp` (lecture seule) pour vos agents.
-- Thème clair, sombre ou automatique.
+- Interface et comptes rendus en **français ou en anglais** (automatique selon macOS) ;
+  thème clair, sombre ou automatique.
 
 ## Prérequis
 

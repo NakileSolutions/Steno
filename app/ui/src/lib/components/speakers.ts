@@ -1,5 +1,6 @@
 // Couleur et nom affiché par intervenant.
 import type { Speaker } from '../types';
+import { t } from '../i18n.svelte';
 
 export function speakerColor(label: string): string {
   if (label === 'Moi') return 'var(--sp-me)';
@@ -11,9 +12,12 @@ export function speakerColor(label: string): string {
 export function speakerName(label: string, speakers: Speaker[]): string {
   const named = speakers.find((s) => s.label === label)?.display_name;
   if (named) return named;
+  // Canaux par défaut : « Moi » (micro) et « Eux » (appel).
+  if (label === 'Moi') return t('Moi');
+  if (label === 'Eux') return t('Eux');
   // Intervenants reconnus à la voix : « Eux-3 » → « Intervenant 3 ».
   const n = /^Eux-(\d+)$/.exec(label);
-  return n ? `Intervenant ${n[1]}` : label;
+  return n ? t('Intervenant {n}', { n: n[1] }) : label;
 }
 
 /** Initiale affichée dans la pastille d'un intervenant. */

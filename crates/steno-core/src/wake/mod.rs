@@ -17,6 +17,7 @@ use crate::text::normalize;
 const FILLERS: &[&str] = &[
     "est-ce que tu peux", "est ce que tu peux", "est-ce que tu pourrais", "tu peux", "peux-tu", "peux tu",
     "tu pourrais", "pourrais-tu", "pourrais tu", "s il te plait", "stp", "please", "alors", "euh", "vas-y", "vas y",
+    "can you", "could you", "would you",
 ];
 
 #[derive(Debug, Clone, PartialEq)]

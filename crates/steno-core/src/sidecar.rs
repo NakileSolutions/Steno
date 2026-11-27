@@ -47,6 +47,8 @@ pub enum SidecarEvent {
         system_audio: String,
         #[serde(default)]
         accessibility: String,
+        #[serde(default)]
+        calendar: String,
     },
     /// Appel détecté ou terminé dans une app surveillée.
     Call {
@@ -96,6 +98,11 @@ pub enum SidecarEvent {
         #[serde(default)]
         meeting_id: String,
         turns: Vec<Turn>,
+    },
+    /// Réponse à `calendar_events`.
+    Calendar {
+        #[serde(default)]
+        events: Vec<crate::planning::CalendarEvent>,
     },
     Retranscription {
         #[serde(default)]
@@ -194,6 +201,13 @@ pub enum SidecarCommand {
     Permissions,
     /// Déclenche l'invite système du droit (`microphone | system_audio | accessibility`).
     RequestPermission { kind: String },
+    /// Événements du calendrier (ISO 8601).
+    CalendarEvents {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        from: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        to: Option<String>,
+    },
     Shutdown,
 }
 

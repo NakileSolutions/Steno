@@ -2,17 +2,18 @@
 // `voice.feedback_device` ; §5 `list_audio_devices`).
 
 import type { AudioDevice } from './types';
+import { t, tk } from './i18n.svelte';
 
 /** « Micro par défaut du système (Micro du MacBook Pro) » ; sans nom connu, sans parenthèses. */
 export function defaultInputLabel(inputs: readonly AudioDevice[] | null | undefined): string {
   const d = inputs?.find((x) => x.default);
-  return d ? `Micro par défaut du système (${d.name})` : 'Micro par défaut du système';
+  return d ? t('Micro par défaut du système ({name})', { name: d.name }) : t('Micro par défaut du système');
 }
 
 /** « Sortie par défaut (AirPods Pro) ». */
 export function defaultOutputLabel(outputs: readonly AudioDevice[] | null | undefined): string {
   const d = outputs?.find((x) => x.default);
-  return d ? `Sortie par défaut (${d.name})` : 'Sortie par défaut';
+  return d ? t('Sortie par défaut ({name})', { name: d.name }) : t('Sortie par défaut');
 }
 
 /**
@@ -26,16 +27,17 @@ export function isDeviceMissing(id: string | null | undefined, devices: readonly
 
 /** « AirPods Pro — débranché, micro par défaut utilisé ». */
 export function missingInputLabel(name: string | null | undefined, id?: string | null): string {
-  return `${name?.trim() || id?.trim() || 'Micro choisi'} — débranché, micro par défaut utilisé`;
+  return t('{name} — débranché, micro par défaut utilisé', { name: name?.trim() || id?.trim() || t('Micro choisi') });
 }
 
+/** Libellés (marqués `tk`) : à traduire à l'affichage avec `t(...)`. */
 export const TRANSPORT_LABEL: Record<AudioDevice['transport'], string> = {
-  builtin: 'Intégré',
-  usb: 'USB',
-  bluetooth: 'Bluetooth',
-  virtual: 'Virtuel',
-  aggregate: 'Agrégé',
-  other: 'Autre',
+  builtin: tk('Intégré'),
+  usb: tk('USB'),
+  bluetooth: tk('Bluetooth'),
+  virtual: tk('Virtuel'),
+  aggregate: tk('Agrégé'),
+  other: tk('Autre'),
 };
 
 /** Icône (Icon.svelte) selon le transport : intégré, bluetooth, usb, autre. */

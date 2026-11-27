@@ -8,16 +8,18 @@
   import type { PermissionKind, Permissions } from '../types';
   import { toastError } from '../ui.svelte';
   import Icon from './Icon.svelte';
+  import { t, tk } from '../i18n.svelte';
 
   const ROWS: { kind: PermissionKind; label: string; why: string; pane: string; optional?: boolean }[] = [
-    { kind: 'microphone', label: 'Micro', why: 'Transcrire votre voix et détecter le mot d’appel.', pane: 'Micro' },
+    { kind: 'microphone', label: tk('Micro'), why: tk('Transcrire votre voix et détecter le mot d’appel.'), pane: tk('Micro') },
     {
       kind: 'system_audio',
-      label: 'Audio du système',
-      why: 'Entendre les autres participants dans l’app de l’appel (Teams, Slack, Zoom…).',
-      pane: 'Enregistrement de l’écran et de l’audio système',
+      label: tk('Audio du système'),
+      why: tk('Entendre les autres participants dans l’app de l’appel (Teams, Slack, Zoom…).'),
+      pane: tk('Enregistrement de l’écran et de l’audio système'),
     },
-    { kind: 'accessibility', label: 'Accessibilité', why: 'Lire le titre de l’appel en cours.', pane: 'Accessibilité', optional: true },
+    { kind: 'accessibility', label: tk('Accessibilité'), why: tk('Lire le titre de l’appel en cours.'), pane: tk('Accessibilité'), optional: true },
+    { kind: 'calendar', label: tk('Calendriers'), why: tk('Proposer vos réunions à venir et nommer les participants invités.'), pane: tk('Calendriers'), optional: true },
   ];
 
   let perms = $state<Permissions | null>(null);
@@ -59,7 +61,7 @@
     }
   }
 
-  const LABEL = { granted: 'Autorisé', denied: 'Refusé', unknown: 'Pas encore demandé' } as const;
+  const LABEL = { granted: tk('Autorisé'), denied: tk('Refusé'), unknown: tk('Pas encore demandé') };
   const BADGE = { granted: 'ok', denied: 'err', unknown: 'warn' } as const;
   const ICON = { granted: 'check', denied: 'x', unknown: 'warn' } as const;
 </script>
@@ -71,32 +73,32 @@
       <span class="st"><Icon name={ICON[v]} size={14} stroke={2} /></span>
       <div class="grow">
         <p>
-          <strong>{r.label}</strong>
-          {#if r.optional}<span class="faint small">facultatif</span>{/if}
-          <span class="badge {BADGE[v]}">{perms ? LABEL[v] : '…'}</span>
+          <strong>{t(r.label)}</strong>
+          {#if r.optional}<span class="faint small">{t('facultatif')}</span>{/if}
+          <span class="badge {BADGE[v]}">{perms ? t(LABEL[v]) : '…'}</span>
         </p>
-        <p class="small muted">{r.why}</p>
+        <p class="small muted">{t(r.why)}</p>
         {#if v === 'denied'}
-          <p class="small hint">macOS ne redemandera pas : cochez Sténo dans Réglages Système → Confidentialité et sécurité → {r.pane}.</p>
+          <p class="small hint">{t('macOS ne redemandera pas : cochez Sténo dans Réglages Système → Confidentialité et sécurité → {pane}.', { pane: t(r.pane) })}</p>
         {:else if v === 'unknown' && asked[r.kind]}
-          <p class="small hint">Aucune fenêtre ? Ouvrez les Réglages Système et cochez Sténo dans « {r.pane} ».</p>
+          <p class="small hint">{t('Aucune fenêtre ? Ouvrez les Réglages Système et cochez Sténo dans « {pane} ».', { pane: t(r.pane) })}</p>
         {/if}
       </div>
       <div class="acts">
         {#if v === 'unknown' && perms?.available}
-          <button class="btn primary sm" onclick={() => request(r.kind)}>Autoriser</button>
-          <button class="btn ghost sm" onclick={() => openSettings(r.kind)}>Réglages Système</button>
+          <button class="btn primary sm" onclick={() => request(r.kind)}>{t('Autoriser')}</button>
+          <button class="btn ghost sm" onclick={() => openSettings(r.kind)}>{t('Réglages Système')}</button>
         {:else if v === 'granted'}
-          <button class="btn ghost sm" onclick={() => openSettings(r.kind)} title="Ouvrir la page {r.pane} des Réglages Système">Réglages Système</button>
+          <button class="btn ghost sm" onclick={() => openSettings(r.kind)} title={t('Ouvrir la page {pane} des Réglages Système', { pane: t(r.pane) })}>{t('Réglages Système')}</button>
         {:else}
-          <button class="btn sm" class:primary={v === 'denied'} onclick={() => openSettings(r.kind)}>Ouvrir les Réglages Système</button>
+          <button class="btn sm" class:primary={v === 'denied'} onclick={() => openSettings(r.kind)}>{t('Ouvrir les Réglages Système')}</button>
         {/if}
       </div>
     </li>
   {/each}
 </ul>
 {#if perms && !perms.available}
-  <p class="small warnc"><Icon name="warn" size={13} /> Capture audio non démarrée : l’état affiché peut être ancien et les demandes directes sont indisponibles.</p>
+  <p class="small warnc"><Icon name="warn" size={13} /> {t('Capture audio non démarrée : l’état affiché peut être ancien et les demandes directes sont indisponibles.')}</p>
 {/if}
 
 <style>

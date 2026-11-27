@@ -1,23 +1,32 @@
-// Formatage des dates, durées et libellés (français).
+// Formatage des dates, durées et libellés (langue de l'interface).
 
-const dtf = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('fr-FR', o);
-const fTime = dtf({ hour: '2-digit', minute: '2-digit' });
-const fTimeS = dtf({ hour: '2-digit', minute: '2-digit', second: '2-digit' });
-const fDay = dtf({ weekday: 'long', day: 'numeric', month: 'long' });
-const fShort = dtf({ day: 'numeric', month: 'short' });
-const fFull = dtf({ weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+import { locale, t, tk } from './i18n.svelte';
+
+/** Formateurs `Intl` mis en cache par locale et par options. */
+const cache = new Map<string, Intl.DateTimeFormat>();
+const dtf = (o: Intl.DateTimeFormatOptions) => {
+  const k = locale() + JSON.stringify(o);
+  let f = cache.get(k);
+  if (!f) cache.set(k, (f = new Intl.DateTimeFormat(locale(), o)));
+  return f;
+};
+const O_TIME: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+const O_TIME_S: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', second: '2-digit' };
+const O_DAY: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long' };
+const O_SHORT: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
+const O_FULL: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
 
 /** Formate une date ISO ; une valeur qui n'est pas une date (ex. « vendredi ») est rendue telle quelle. */
-function safe(f: Intl.DateTimeFormat, iso: string | null | undefined): string {
+function safe(o: Intl.DateTimeFormatOptions, iso: string | null | undefined): string {
   if (!iso) return '';
   const d = new Date(iso);
-  return Number.isFinite(d.getTime()) ? f.format(d) : String(iso);
+  return Number.isFinite(d.getTime()) ? dtf(o).format(d) : String(iso);
 }
 
-export const time = (iso: string | null | undefined) => safe(fTime, iso);
-export const timeS = (iso: string | null | undefined) => safe(fTimeS, iso);
-export const shortDate = (iso: string) => safe(fShort, iso);
-export const fullDate = (iso: string) => cap(safe(fFull, iso));
+export const time = (iso: string | null | undefined) => safe(O_TIME, iso);
+export const timeS = (iso: string | null | undefined) => safe(O_TIME_S, iso);
+export const shortDate = (iso: string) => safe(O_SHORT, iso);
+export const fullDate = (iso: string) => cap(safe(O_FULL, iso));
 
 export function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -32,9 +41,9 @@ export function dayLabel(iso: string): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return iso;
   const diff = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86400000);
-  if (diff === 0) return "Aujourd'hui";
-  if (diff === 1) return 'Hier';
-  return cap(fDay.format(d));
+  if (diff === 0) return t("Aujourd'hui");
+  if (diff === 1) return t('Hier');
+  return cap(dtf(O_DAY).format(d));
 }
 
 export function relDay(iso: string): string {
@@ -42,7 +51,7 @@ export function relDay(iso: string): string {
   if (!Number.isFinite(d.getTime())) return iso;
   const diff = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86400000);
   if (diff === 0) return time(iso);
-  if (diff === 1) return 'Hier';
+  if (diff === 1) return t('Hier');
   if (diff < 7) return cap(dtf({ weekday: 'short' }).format(d).replace('.', ''));
   return shortDate(iso);
 }
@@ -57,16 +66,16 @@ export function shortDuration(fromIso: string | null, toIso: string | null): str
   if (!fromIso || !toIso) return null;
   const s = Math.round((new Date(toIso).getTime() - new Date(fromIso).getTime()) / 1000);
   if (!Number.isFinite(s) || s < 0) return null;
-  if (s < 60) return `${s} s`;
+  if (s < 60) return t('{s} s', { s });
   const m = Math.floor(s / 60);
-  return s % 60 ? `${m} min ${s % 60} s` : `${m} min`;
+  return s % 60 ? t('{m} min {s} s', { m, s: s % 60 }) : t('{m} min', { m });
 }
 
 export function clockDuration(totalSeconds: number, withSeconds = true): string {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = Math.floor(totalSeconds % 60);
-  if (!withSeconds) return h ? `${h} h ${String(m).padStart(2, '0')}` : `${m} min`;
+  if (!withSeconds) return h ? t('{h} h {mm}', { h, mm: String(m).padStart(2, '0') }) : t('{m} min', { m });
   return (h ? `${h}:${String(m).padStart(2, '0')}` : String(m)) + ':' + String(s).padStart(2, '0');
 }
 
@@ -79,13 +88,14 @@ export function offset(t0: number | null): string {
 export const isoDate = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+/** Libellés (français, marqués `tk`) : à traduire à l'affichage avec `t(...)`. */
 export const STATUS_LABEL: Record<string, string> = {
-  queued: 'En attente',
-  running: 'En cours',
-  done: 'Terminée',
-  error: 'Erreur',
-  cancelled: 'Annulée',
-  refused: 'Refusée',
+  queued: tk('En attente'),
+  running: tk('En cours'),
+  done: tk('Terminée'),
+  error: tk('Erreur'),
+  cancelled: tk('Annulée'),
+  refused: tk('Refusée'),
 };
 export const STATUS_CLASS: Record<string, string> = {
   queued: '',
@@ -96,26 +106,27 @@ export const STATUS_CLASS: Record<string, string> = {
   refused: 'err',
 };
 export const INTENT_LABEL: Record<string, string> = {
-  search: 'Recherche',
-  check: 'Vérification',
-  note: 'Note',
-  recap: 'Récap',
-  cancel: 'Annulation',
-  stop: 'Arrêt de l’écoute',
-  history: 'Historique',
+  search: tk('Recherche'),
+  check: tk('Vérification'),
+  note: tk('Note'),
+  recap: tk('Récap'),
+  cancel: tk('Annulation'),
+  stop: tk('Arrêt de l’écoute'),
+  history: tk('Historique'),
 };
 export const ORIGIN_LABEL: Record<string, string> = {
-  voice: 'à la voix',
-  text: 'tapée',
-  hotkey: 'raccourci',
-  cli: 'CLI',
+  voice: tk('à la voix'),
+  text: tk('tapée'),
+  hotkey: tk('raccourci'),
+  cli: tk('CLI'),
 };
 export const MEETING_STATUS: Record<string, string> = {
-  live: 'En direct',
-  ended: 'Terminée',
-  processing: 'Traitement',
-  done: 'Terminée',
-  error: 'Erreur',
+  planned: tk('Prévue'),
+  live: tk('En direct'),
+  ended: tk('Terminée'),
+  processing: tk('Traitement'),
+  done: tk('Terminée'),
+  error: tk('Erreur'),
 };
 
 export function debounce<A extends unknown[]>(fn: (...a: A) => void, ms: number): (...a: A) => void {

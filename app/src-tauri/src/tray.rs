@@ -55,7 +55,7 @@ pub fn refresh_answers(app: &AppHandle) {
         }
     }
     if recent.is_empty() {
-        if let Ok(empty) = MenuItem::with_id(app, "answers-empty", "Aucune réponse pour l'instant", false, None::<&str>) {
+        if let Ok(empty) = MenuItem::with_id(app, "answers-empty", l(core_lang(app), "Aucune réponse pour l'instant", "No answers yet"), false, None::<&str>) {
             let _ = items.answers.append(&empty);
         }
         return;
@@ -67,47 +67,67 @@ pub fn refresh_answers(app: &AppHandle) {
     }
 }
 
-/// Libellés selon l'état (fonction pure, testée).
+/// Texte du menu dans la langue des réglages.
+fn l(lang: &str, fr: &str, en: &str) -> String {
+    steno_core::i18n::tr(lang, fr, en)
+}
+
+/// Libellés selon l'état, en français (fonction pure, testée).
 pub fn labels(st: &LiveState, shortcut: &str) -> (String, String) {
+    labels_in(st, shortcut, "fr")
+}
+
+/// Libellés selon l'état, dans la langue donnée.
+pub fn labels_in(st: &LiveState, shortcut: &str, lang: &str) -> (String, String) {
     let toggle_hint = if shortcut.is_empty() { String::new() } else { format!("  ({shortcut})") };
+    let start = format!("{}{toggle_hint}", l(lang, "Démarrer l'écoute", "Start listening"));
     match (&st.meeting, st.call.active) {
         (Some(m), _) => (
-            format!("● Écoute en cours — {}", m.title.clone().unwrap_or_else(|| "réunion".into())),
-            format!("Arrêter l'écoute{toggle_hint}"),
+            format!(
+                "{} — {}",
+                l(lang, "● Écoute en cours", "● Listening"),
+                m.title.clone().unwrap_or_else(|| l(lang, "réunion", "meeting"))
+            ),
+            format!("{}{toggle_hint}", l(lang, "Arrêter l'écoute", "Stop listening")),
         ),
         (None, true) => (
-            format!("{} : {}", call_label(st), st.call.title.clone().unwrap_or_else(|| "sans titre".into())),
-            format!("Démarrer l'écoute{toggle_hint}"),
+            format!("{} : {}", call_label(st, lang), st.call.title.clone().unwrap_or_else(|| l(lang, "sans titre", "untitled"))),
+            start,
         ),
-        (None, false) => ("En attente — aucune écoute".into(), format!("Démarrer l'écoute{toggle_hint}")),
+        (None, false) => (l(lang, "En attente — aucune écoute", "Idle — not listening"), start),
     }
 }
 
 /// « Appel Teams détecté », « Appel Slack détecté », « Appel détecté dans le navigateur ».
-fn call_label(st: &LiveState) -> String {
+fn call_label(st: &LiveState, lang: &str) -> String {
+    let en = lang == "en";
     match (st.call.app.as_deref(), st.call.app_name.as_deref()) {
-        (Some("browser"), _) => "Appel détecté dans le navigateur".into(),
-        (Some("teams"), _) => "Appel Teams détecté".into(),
-        (_, Some(name)) => format!("Appel {} détecté", name.split(" (").next().unwrap_or(name)),
-        _ => "Appel détecté".into(),
+        (Some("browser"), _) => l(lang, "Appel détecté dans le navigateur", "Call detected in the browser"),
+        (Some("teams"), _) => l(lang, "Appel Teams détecté", "Teams call detected"),
+        (_, Some(name)) => {
+            let name = name.split(" (").next().unwrap_or(name);
+            if en { format!("{name} call detected") } else { format!("Appel {name} détecté") }
+        }
+        _ => l(lang, "Appel détecté", "Call detected"),
     }
 }
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let core = app.state::<crate::AppState>().core.clone();
     let shortcut = core.settings().audio.shortcuts.toggle;
-    let (status_txt, toggle_txt) = labels(&core.live_state(), &shortcut);
+    let lang = core.settings().lang();
+    let (status_txt, toggle_txt) = labels_in(&core.live_state(), &shortcut, lang);
     let status = MenuItem::with_id(app, "status", status_txt, false, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle", toggle_txt, true, None::<&str>)?;
-    let confidential = CheckMenuItem::with_id(app, "confidential", "Réunion confidentielle (aucune IA)", true, false, None::<&str>)?;
-    let room = MenuItem::with_id(app, "room", "Démarrer une réunion en présentiel", true, None::<&str>)?;
-    let mute = CheckMenuItem::with_id(app, "mute", "Couper mon micro dans Sténo", false, false, None::<&str>)?;
-    let answers = Submenu::with_id(app, "answers", "Dernières réponses", true)?;
-    let quick = MenuItem::with_id(app, "quick", "Demande rapide…", true, None::<&str>)?;
-    let live = MenuItem::with_id(app, "live", "Voir la transcription en direct", true, None::<&str>)?;
-    let open = MenuItem::with_id(app, "open", "Ouvrir Sténo", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Réglages…", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quitter Sténo", true, None::<&str>)?;
+    let confidential = CheckMenuItem::with_id(app, "confidential", l(lang, "Réunion confidentielle (aucune IA)", "Confidential meeting (no AI)"), true, false, None::<&str>)?;
+    let room = MenuItem::with_id(app, "room", l(lang, "Démarrer une réunion en présentiel", "Start an in-person meeting"), true, None::<&str>)?;
+    let mute = CheckMenuItem::with_id(app, "mute", l(lang, "Couper mon micro dans Sténo", "Mute my mic in Sténo"), false, false, None::<&str>)?;
+    let answers = Submenu::with_id(app, "answers", l(lang, "Dernières réponses", "Latest answers"), true)?;
+    let quick = MenuItem::with_id(app, "quick", l(lang, "Demande rapide…", "Quick request…"), true, None::<&str>)?;
+    let live = MenuItem::with_id(app, "live", l(lang, "Voir la transcription en direct", "Show live transcript"), true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", l(lang, "Ouvrir Sténo", "Open Sténo"), true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", l(lang, "Réglages…", "Settings…"), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", l(lang, "Quitter Sténo", "Quit Sténo"), true, None::<&str>)?;
     let sep = || PredefinedMenuItem::separator(app);
     let menu = Menu::with_items(
         app,
@@ -183,7 +203,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 /// Met à jour le menu et l'icône selon l'état en direct.
 pub fn refresh(app: &AppHandle, st: &LiveState) {
     let core = app.state::<crate::AppState>().core.clone();
-    let (status, toggle) = labels(st, &core.settings().audio.shortcuts.toggle);
+    let (status, toggle) = labels_in(st, &core.settings().audio.shortcuts.toggle, core.settings().lang());
     if let Some(items) = app.try_state::<TrayItems>() {
         let _ = items.status.set_text(status.clone());
         let _ = items.toggle.set_text(toggle);
@@ -267,4 +287,8 @@ mod tests {
         assert_eq!(s, "● Écoute en cours — Daily");
         assert_eq!(t, "Arrêter l'écoute");
     }
+}
+
+fn core_lang(app: &AppHandle) -> &'static str {
+    app.try_state::<crate::AppState>().map(|s| s.core.settings().lang()).unwrap_or("fr")
 }

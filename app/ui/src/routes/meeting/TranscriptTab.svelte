@@ -10,6 +10,7 @@
   import Menu, { type MenuItem } from '../../lib/components/Menu.svelte';
   import { initial, speakerColor, speakerName } from '../../lib/components/speakers';
   import Icon from '../../lib/components/Icon.svelte';
+  import { t, tn } from '../../lib/i18n.svelte';
 
   let { detail }: { detail: MeetingDetail } = $props();
   const m = $derived(detail.meeting);
@@ -53,24 +54,24 @@
   async function save(format: ExportFormat) {
     try {
       const where = await saveExport(m.id, format, baseName);
-      if (where) toast(`Enregistré : ${where.split('/').pop()}`);
+      if (where) toast(t('Enregistré : {file}', { file: where.split('/').pop() ?? '' }));
     } catch (e) {
       toastError(e);
     }
   }
   async function copyTranscript() {
     try {
-      if (await copyText(await api.exportMeeting(m.id, 'txt'))) toast('Transcription copiée.');
+      if (await copyText(await api.exportMeeting(m.id, 'txt'))) toast(t('Transcription copiée.'));
     } catch (e) {
       toastError(e);
     }
   }
-  const exportItems: MenuItem[] = [
-    { label: 'Copier la transcription', icon: 'copy', action: copyTranscript },
-    { label: 'Enregistrer en texte…', icon: 'download', hint: '.txt', action: () => save('txt'), separatorBefore: true },
-    { label: 'Sous-titres SRT…', icon: 'download', hint: '.srt', action: () => save('srt') },
-    { label: 'Sous-titres WebVTT…', icon: 'download', hint: '.vtt', action: () => save('vtt') },
-  ];
+  const exportItems: MenuItem[] = $derived([
+    { label: t('Copier la transcription'), icon: 'copy', action: copyTranscript },
+    { label: t('Enregistrer en texte…'), icon: 'download', hint: '.txt', action: () => save('txt'), separatorBefore: true },
+    { label: t('Sous-titres SRT…'), icon: 'download', hint: '.srt', action: () => save('srt') },
+    { label: t('Sous-titres WebVTT…'), icon: 'download', hint: '.vtt', action: () => save('vtt') },
+  ]);
 
   /** Retire une phrase qui n'a pas été dite (erreur de transcription). */
   async function removeSegment(s: Segment) {
@@ -130,7 +131,7 @@
       onkeydown={editKey}
       onblur={saveEdit}
       placeholder={label}
-      aria-label="Nom affiché pour {label}"
+      aria-label={t('Nom affiché pour {label}', { label })}
       style="--c: {speakerColor(label)}"
     />
   {:else}
@@ -138,7 +139,7 @@
       class="sp"
       style="--c: {speakerColor(label)}"
       onclick={() => startEdit(label, key)}
-      title={label === 'Moi' ? 'Moi' : `${label} — cliquer pour renommer`}
+      title={label === 'Moi' ? t('Moi') : t('{label} — cliquer pour renommer', { label })}
     >
       {#if key.startsWith('bar-')}<span class="avatar mini" aria-hidden="true">{initial(speakerName(label, detail.speakers))}</span>{/if}
       {speakerName(label, detail.speakers)}
@@ -149,15 +150,15 @@
 
 <div class="wrap">
   <div class="toolbar row wrap">
-    <span class="label">Intervenants</span>
+    <span class="label">{t('Intervenants')}</span>
     {#each labels as l (l)}
       {@render speakerTag(l, `bar-${l}`)}
     {/each}
     <span class="grow"></span>
-    <label class="check small priv-toggle" title="Les phrases dites en aparté ne sont jamais envoyées à l’IA">
-      <input class="switch" type="checkbox" role="switch" bind:checked={showPrivate} /> Afficher les phrases privées{#if showPrivate && privateCount} ({privateCount}){/if}
+    <label class="check small priv-toggle" title={t('Les phrases dites en aparté ne sont jamais envoyées à l’IA')}>
+      <input class="switch" type="checkbox" role="switch" bind:checked={showPrivate} /> {t('Afficher les phrases privées')}{#if showPrivate && privateCount} ({privateCount}){/if}
     </label>
-    <Menu icon="share" items={exportItems} title="Exporter la transcription (apartés exclus)" />
+    <Menu icon="share" items={exportItems} title={t('Exporter la transcription (apartés exclus)')} />
   </div>
 
   {#if !loaded}
@@ -165,36 +166,36 @@
       {#each [72, 54, 80, 40] as w, k (k)}<span class="skeleton" style="width: {w}%"></span>{/each}
     </div>
   {:else if !visible.length}
-    <div class="empty"><Icon name="wave" size={22} stroke={1.5} /><p>Aucune phrase transcrite.</p></div>
+    <div class="empty"><Icon name="wave" size={22} stroke={1.5} /><p>{t('Aucune phrase transcrite.')}</p></div>
   {/if}
 
   <ol class="segs">
     {#each visible as s, i (s.id)}
       {@const sameAsPrev = i > 0 && visible[i - 1].speaker === s.speaker && !visible[i - 1].private && !s.private}
       <li class="seg" class:cont={sameAsPrev} class:private={s.private} class:cmdseg={!!s.request_id} style="--c: {speakerColor(s.speaker)}">
-        <time class="ts" datetime={s.ts} title="{offset(s.t0)} depuis le début">{timeS(s.ts)}</time>
+        <time class="ts" datetime={s.ts} title={t('{offset} depuis le début', { offset: offset(s.t0) })}>{timeS(s.ts)}</time>
         <span class="av">{#if !sameAsPrev}<span class="avatar" aria-hidden="true">{initial(speakerName(s.speaker, detail.speakers))}</span>{/if}</span>
         <div class="bc">
           {#if !sameAsPrev}<div class="who">{@render speakerTag(s.speaker, `seg-${s.id}`)}</div>{/if}
           <p class="text">
-            {#if s.private}<span class="priv" title="Aparté : exclu du compte rendu"><Icon name="lock" size={11} /> Privé</span>{/if}
+            {#if s.private}<span class="priv" title={t('Aparté : exclu du compte rendu')}><Icon name="lock" size={11} /> {t('Privé')}</span>{/if}
             {s.text}
             {#if s.request_id}
-              <button class="cmd" onclick={() => setQuery({ tab: 'requests', request: s.request_id })} title="Voir la demande">
-                <Icon name="ask" size={11} /> Demande
+              <button class="cmd" onclick={() => setQuery({ tab: 'requests', request: s.request_id })} title={t('Voir la demande')}>
+                <Icon name="ask" size={11} /> {t('Demande')}
               </button>
             {/if}
           </p>
         </div>
-        <button class="del" onclick={() => removeSegment(s)} title="Supprimer cette phrase (jamais dite)" aria-label="Supprimer cette phrase"><Icon name="trash" size={13} /></button>
+        <button class="del" onclick={() => removeSegment(s)} title={t('Supprimer cette phrase (jamais dite)')} aria-label={t('Supprimer cette phrase')}><Icon name="trash" size={13} /></button>
       </li>
     {/each}
   </ol>
 
   {#if echoCount || (!showPrivate && loaded)}
     <p class="foot faint small"><Icon name="info" size={13} />
-      {#if echoCount}{echoCount} {echoCount > 1 ? 'échos masqués' : 'écho masqué'} (votre micro a capté le son de l’appel).{/if}
-      {#if !showPrivate} Les phrases privées sont masquées.{/if}
+      {#if echoCount}{tn(echoCount, '{n} écho masqué (votre micro a capté le son de l’appel).', '{n} échos masqués (votre micro a capté le son de l’appel).')}{/if}
+      {#if !showPrivate}{' '}{t('Les phrases privées sont masquées.')}{/if}
     </p>
   {/if}
 </div>

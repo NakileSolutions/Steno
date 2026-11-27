@@ -5,6 +5,7 @@
   import { relDay } from '../../lib/format';
   import { toastError } from '../../lib/ui.svelte';
   import Icon from '../../lib/components/Icon.svelte';
+  import { t } from '../../lib/i18n.svelte';
 
   let { provider }: { provider: string } = $props();
   let list = $state<Connector[]>([]);
@@ -41,13 +42,13 @@
 </script>
 
 <div class="row top">
-  <p class="muted grow">Serveurs MCP configurés dans l’agent choisi. Sténo ne les utilise qu’en <strong>lecture seule</strong>. Enregistré automatiquement.</p>
-  <button class="btn" onclick={refresh} disabled={refreshing}><Icon name="refresh" size={14} />{refreshing ? 'Détection…' : 'Rafraîchir'}</button>
+  <p class="muted grow">{t('Serveurs MCP configurés dans l’agent choisi. Sténo ne les utilise qu’en')} <strong>{t('lecture seule')}</strong>. {t('Enregistré automatiquement.')}</p>
+  <button class="btn" onclick={refresh} disabled={refreshing}><Icon name="refresh" size={14} />{refreshing ? t('Détection…') : t('Rafraîchir')}</button>
 </div>
 
 <table class="tbl">
   <thead>
-    <tr><th>Connecteur</th><th>État</th><th class="c">En direct</th><th class="c">Corrélation</th></tr>
+    <tr><th>{t('Connecteur')}</th><th>{t('État')}</th><th class="c">{t('En direct')}</th><th class="c">{t('Corrélation')}</th></tr>
   </thead>
   <tbody>
     {#each shown as c (c.id)}
@@ -55,19 +56,19 @@
         <td>
           <strong>{c.name}</strong>
           {#if !c.write_blockable}
-            <p class="why small">L’agent ne sait pas bloquer les outils d’écriture de ce connecteur : il ne peut pas être activé.</p>
+            <p class="why small">{t('L’agent ne sait pas bloquer les outils d’écriture de ce connecteur : il ne peut pas être activé.')}</p>
           {/if}
         </td>
         <td><span class="st small"><span class="sdot" class:on={/connect|ok/i.test(c.status)}></span>{c.status} · {relDay(c.detected_at)}</span></td>
         <td class="c">
-          <input class="switch" type="checkbox" role="switch" checked={c.use_live} disabled={!c.write_blockable} onchange={(e) => update(c, e.currentTarget.checked, c.use_correlation)} aria-label="{c.name} en direct" />
+          <input class="switch" type="checkbox" role="switch" checked={c.use_live} disabled={!c.write_blockable} onchange={(e) => update(c, e.currentTarget.checked, c.use_correlation)} aria-label={t('{name} en direct', { name: c.name })} />
         </td>
         <td class="c">
-          <input class="switch" type="checkbox" role="switch" checked={c.use_correlation} disabled={!c.write_blockable} onchange={(e) => update(c, c.use_live, e.currentTarget.checked)} aria-label="{c.name} pour la corrélation" />
+          <input class="switch" type="checkbox" role="switch" checked={c.use_correlation} disabled={!c.write_blockable} onchange={(e) => update(c, c.use_live, e.currentTarget.checked)} aria-label={t('{name} pour la corrélation', { name: c.name })} />
         </td>
       </tr>
     {:else}
-      <tr><td colspan="4" class="faint">Aucun connecteur détecté. Ajoutez des serveurs MCP dans votre agent puis cliquez sur Rafraîchir.</td></tr>
+      <tr><td colspan="4" class="faint">{t('Aucun connecteur détecté. Ajoutez des serveurs MCP dans votre agent puis cliquez sur Rafraîchir.')}</td></tr>
     {/each}
   </tbody>
 </table>

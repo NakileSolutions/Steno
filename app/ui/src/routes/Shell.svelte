@@ -20,6 +20,7 @@
   import Search from './Search.svelte';
   import Actions from './Actions.svelte';
   import Settings from './Settings.svelte';
+  import { t } from '../lib/i18n.svelte';
 
   // ---- Barre latérale : déployée / réduite (mémorisé), aperçu flottant au survol du bord ----
   const storage = (() => {
@@ -160,20 +161,20 @@
         class="tb-btn"
         bind:this={floatBtn}
         onclick={toggle}
-        aria-label="Afficher la barre latérale"
-        title="Afficher la barre latérale ({modKey}\)"
+        aria-label={t('Afficher la barre latérale')}
+        title={t('Afficher la barre latérale ({k})', { k: `${modKey}\\` })}
         aria-expanded="false"
         aria-controls="sidebar"
       ><Icon name="sidebar" size={16} /></button>
-      <button class="tb-btn" onclick={openPalette} aria-label="Rechercher" title="Rechercher ({modKey}K)" aria-keyshortcuts="Meta+K"><Icon name="search" size={15} /></button>
+      <button class="tb-btn" onclick={openPalette} aria-label={t('Rechercher')} title={t('Rechercher ({k})', { k: `${modKey}K` })} aria-keyshortcuts="Meta+K"><Icon name="search" size={15} /></button>
       {#if s.meeting && s.state !== 'idle'}
-        <a class="tb-live" class:rec={s.state === 'listening'} href={href('/live')} title="Réunion en cours : {STATE_LABEL[s.state]}">
+        <a class="tb-live" class:rec={s.state === 'listening'} href={href('/live')} title={t('Réunion en cours : {state}', { state: t(STATE_LABEL[s.state]) })}>
           <span class="dot {s.state === 'listening' ? 'live' : s.state}"></span>
-          <span class="ellipsis">{s.meeting.title ?? 'Réunion sans titre'}</span>
+          <span class="ellipsis">{s.meeting.title ?? t('Réunion sans titre')}</span>
           {#if s.state !== 'processing'}<span class="tnum tb-time">{elapsed}</span>{/if}
         </a>
       {:else if offer}
-        <a class="tb-live offer" href={href('/live')} title="{offer.label}. Sténo n’écoute pas encore.">
+        <a class="tb-live offer" href={href('/live')} title={t('{label}. Sténo n’écoute pas encore.', { label: offer.label })}>
           <Icon name="phone" size={12} />
           <span class="ellipsis">{offer.heading}</span>
         </a>
@@ -189,7 +190,7 @@
     class="side"
     class:peek={peeking}
     id="sidebar"
-    aria-label="Navigation principale"
+    aria-label={t('Navigation principale')}
     bind:this={navEl}
     inert={collapsed && !peeking}
     onpointerenter={() => ctl.panelEnter()}
@@ -203,32 +204,32 @@
       <span class="logo"><Logo size={20} /></span>
       <span class="name">Sténo</span>
       {#if peeking}
-        <button class="collapse" onclick={pin} title="Épingler la barre latérale ({modKey}\)" aria-label="Épingler la barre latérale" aria-expanded="false" aria-controls="sidebar">
+        <button class="collapse" onclick={pin} title={t('Épingler la barre latérale ({k})', { k: `${modKey}\\` })} aria-label={t('Épingler la barre latérale')} aria-expanded="false" aria-controls="sidebar">
           <Icon name="pin" size={15} />
         </button>
       {:else}
-        <button class="collapse" bind:this={sideBtn} onclick={toggle} title="Replier la barre latérale ({modKey}\)" aria-label="Replier la barre latérale" aria-expanded={!collapsed} aria-controls="sidebar">
+        <button class="collapse" bind:this={sideBtn} onclick={toggle} title={t('Replier la barre latérale ({k})', { k: `${modKey}\\` })} aria-label={t('Replier la barre latérale')} aria-expanded={!collapsed} aria-controls="sidebar">
           <Icon name="sidebar" size={16} />
         </button>
       {/if}
     </div>
 
-    <button class="cmdk" onclick={openPalette} aria-keyshortcuts="Meta+K" title="Palette de commandes">
+    <button class="cmdk" onclick={openPalette} aria-keyshortcuts="Meta+K" title={t('Palette de commandes')}>
       <Icon name="search" size={14} />
-      <span class="grow">Rechercher…</span>
+      <span class="grow">{t('Rechercher…')}</span>
       <kbd>{modKey}K</kbd>
     </button>
 
     {#if s.meeting && s.state !== 'idle'}
-      <a class="live-card" class:rec={s.state === 'listening'} href={href('/live')} title="Réunion en cours">
+      <a class="live-card" class:rec={s.state === 'listening'} href={href('/live')} title={t('Réunion en cours')}>
         <span class="dot {s.state === 'listening' ? 'live' : s.state}"></span>
         <span class="grow">
-          <span class="lc-state">{STATE_LABEL[s.state]}{#if s.state !== 'processing'}<span class="tnum">{' · '}{elapsed}</span>{/if}</span>
-          <span class="lc-title ellipsis">{s.meeting.title ?? 'Réunion sans titre'}</span>
+          <span class="lc-state">{t(STATE_LABEL[s.state])}{#if s.state !== 'processing'}<span class="tnum">{' · '}{elapsed}</span>{/if}</span>
+          <span class="lc-title ellipsis">{s.meeting.title ?? t('Réunion sans titre')}</span>
         </span>
       </a>
     {:else if offer}
-      <a class="live-card offer" href={href('/live')} title="{offer.label}. Sténo n’écoute pas encore.">
+      <a class="live-card offer" href={href('/live')} title={t('{label}. Sténo n’écoute pas encore.', { label: offer.label })}>
         <span class="lc-ic"><Icon name="phone" size={14} /></span>
         <span class="grow">
           <span class="lc-state">{offer.heading}</span>
@@ -247,18 +248,18 @@
           title={`${modKey}${i + 1}`}
         >
           <Icon name={item.icon} size={17} />
-          <span class="grow ellipsis">{item.label}</span>
-          {#if item.id === 'live' && s.state === 'listening'}<span class="dot live small-dot" aria-label="Écoute en cours"></span>{/if}
+          <span class="grow ellipsis">{t(item.label)}</span>
+          {#if item.id === 'live' && s.state === 'listening'}<span class="dot live small-dot" aria-label={t('Écoute en cours')}></span>{/if}
           {#if item.id === 'live' && s.pending_requests > 0}<span class="count">{s.pending_requests}</span>{/if}
           {#if !(item.id === 'live' && (s.state === 'listening' || s.pending_requests > 0))}<span class="kbd-hint" aria-hidden="true">{modKey}{i + 1}</span>{/if}
         </a>
 
         {#if item.id === 'settings' && section === 'settings'}
-          <ul class="sub" aria-label="Sections des réglages">
+          <ul class="sub" aria-label={t('Sections des réglages')}>
             {#each SETTINGS_SECTIONS as sec (sec.id)}
               <li>
                 <a class="subitem" class:active={settingsSection === sec.id} href={href(`/settings?section=${sec.id}`)} aria-current={settingsSection === sec.id ? 'page' : undefined}>
-                  <span class="grow ellipsis">{sec.label}</span>
+                  <span class="grow ellipsis">{t(sec.label)}</span>
                 </a>
               </li>
             {/each}
@@ -267,12 +268,12 @@
       {/each}
 
       {#if recent.list.length}
-        <p class="side-label" aria-hidden="true">Récentes</p>
-        <ul class="recents" aria-label="Réunions récentes">
+        <p class="side-label" aria-hidden="true">{t('Récentes')}</p>
+        <ul class="recents" aria-label={t('Réunions récentes')}>
           {#each recent.list.slice(0, 5) as m (m.id)}
             <li>
               <a class="subitem" class:active={currentMeeting === m.id} href={href(`/meetings/${m.id}`)} aria-current={currentMeeting === m.id ? 'page' : undefined}>
-                <span class="grow ellipsis">{m.title ?? 'Sans titre'}</span>
+                <span class="grow ellipsis">{m.title ?? t('Sans titre')}</span>
                 {#if m.status === 'live'}<span class="dot live small-dot"></span>{:else}<span class="when tnum">{relDay(m.started_at)}</span>{/if}
               </a>
             </li>
@@ -284,7 +285,7 @@
     <div class="foot">
       {#if badge}
         {#if badge.kind === 'installed'}
-          <button class="upd installed" onclick={restart} title="Redémarrer Sténo pour utiliser la nouvelle version"><Icon name="refresh" size={13} /><span class="ellipsis">{badge.label}</span></button>
+          <button class="upd installed" onclick={restart} title={t('Redémarrer Sténo pour utiliser la nouvelle version')}><Icon name="refresh" size={13} /><span class="ellipsis">{badge.label}</span></button>
         {:else}
           <a class="upd {badge.kind}" href={href('/settings?section=updates')}>
             {#if badge.kind === 'installing'}<span class="spin" aria-hidden="true"></span>{:else}<Icon name="download" size={13} />{/if}
@@ -292,9 +293,9 @@
           </a>
         {/if}
       {/if}
-      <button class="start" class:stop={isLive} onclick={startStop} disabled={busy || s.state === 'processing'} title={isLive ? 'Arrêter l’écoute' : 'Démarrer l’écoute'} aria-label={isLive ? 'Arrêter l’écoute' : 'Démarrer l’écoute'}>
+      <button class="start" class:stop={isLive} onclick={startStop} disabled={busy || s.state === 'processing'} title={isLive ? t('Arrêter l’écoute') : t('Démarrer l’écoute')} aria-label={isLive ? t('Arrêter l’écoute') : t('Démarrer l’écoute')}>
         {#if isLive}<span class="stopsq" aria-hidden="true"></span>{:else}<Icon name="play" size={14} stroke={2} />{/if}
-        <span>{isLive ? 'Arrêter l’écoute' : 'Démarrer l’écoute'}</span>
+        <span>{isLive ? t('Arrêter l’écoute') : t('Démarrer l’écoute')}</span>
       </button>
     </div>
   </nav>

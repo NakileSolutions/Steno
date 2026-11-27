@@ -3,6 +3,7 @@
 
 import type { CallApp, LiveCall, LiveState, Settings, VoiceVerbs } from './types';
 import { normalizeAgentSettings } from './agents';
+import { t, tk } from './i18n.svelte';
 
 export const DEFAULT_STOP_VERB = 'arrête l’écoute';
 
@@ -22,7 +23,7 @@ export const DEFAULT_CALL_APPS: readonly CallApp[] = [
   { id: 'discord', name: 'Discord', bundles: ['com.hnc.Discord'], enabled: true, browser: false },
   { id: 'facetime', name: 'FaceTime', bundles: ['com.apple.FaceTime'], enabled: true, browser: false },
   {
-    id: 'browser', name: 'Navigateur (Google Meet…)',
+    id: 'browser', name: tk('Navigateur (Google Meet…)'),
     bundles: ['com.google.Chrome', 'com.apple.Safari', 'company.thebrowser.Browser', 'com.microsoft.edgemac', 'org.mozilla.firefox', 'com.brave.Browser'],
     enabled: false, browser: true,
   },
@@ -49,7 +50,7 @@ export function isBrowserApp(id: string | null | undefined, apps?: Apps): boolea
 export function callAppShortName(id: string | null | undefined, appName?: string | null, apps?: Apps): string {
   const name = findApp(id, apps)?.name?.trim() || appName?.trim() || findApp(id, DEFAULT_CALL_APPS)?.name || id?.trim() || '';
   if (id === 'teams' || /^microsoft teams$/i.test(name)) return 'Teams';
-  return name || 'visio';
+  return name || t('visio');
 }
 
 export type CallOffer = {
@@ -65,19 +66,19 @@ export type CallOffer = {
 
 /** Libellé d'un appel détecté, sans le titre : « Appel Teams détecté ». */
 export function callHeading(call: Pick<LiveCall, 'app' | 'app_name'>, apps?: Apps): string {
-  if (isBrowserApp(call.app, apps)) return 'Appel détecté dans le navigateur';
-  return `Appel ${callAppShortName(call.app, call.app_name, apps)} détecté`;
+  if (isBrowserApp(call.app, apps)) return t('Appel détecté dans le navigateur');
+  return t('Appel {app} détecté', { app: callAppShortName(call.app, call.app_name, apps) });
 }
 
 /** Libellé complet : « Appel Teams détecté : Daily ORION ». */
 export function callLabel(call: Pick<LiveCall, 'app' | 'app_name' | 'title'>, apps?: Apps): string {
-  return `${callHeading(call, apps)} : ${callTitle(call, apps)}`;
+  return t('{heading} : {title}', { heading: callHeading(call, apps), title: callTitle(call, apps) });
 }
 
 function callTitle(call: Pick<LiveCall, 'app' | 'app_name' | 'title'>, apps?: Apps): string {
-  const t = call.title?.trim();
-  if (t) return t;
-  return isBrowserApp(call.app, apps) ? 'Appel sans titre' : `Appel ${callAppShortName(call.app, call.app_name, apps)}`;
+  const title = call.title?.trim();
+  if (title) return title;
+  return isBrowserApp(call.app, apps) ? t('Appel sans titre') : t('Appel {app}', { app: callAppShortName(call.app, call.app_name, apps) });
 }
 
 /**
@@ -89,7 +90,7 @@ export function callOffer(s: Pick<LiveState, 'state' | 'call'>, apps?: Apps): Ca
   if (s.state !== 'idle' || !s.call?.active) return null;
   const heading = callHeading(s.call, apps);
   const title = callTitle(s.call, apps);
-  return { app: s.call.app, title, heading, label: `${heading} : ${title}`, browser: isBrowserApp(s.call.app, apps) };
+  return { app: s.call.app, title, heading, label: t('{heading} : {title}', { heading, title }), browser: isBrowserApp(s.call.app, apps) };
 }
 
 /** Puce d'une réunion : nom court de l'app de l'appel, `null` sans appel. */
@@ -98,8 +99,8 @@ export const ROOM = 'room';
 
 export function meetingCallChip(callApp: string | null | undefined, apps?: Apps): string | null {
   if (!callApp) return null;
-  if (callApp === ROOM) return 'En présentiel';
-  if (isBrowserApp(callApp, apps)) return 'Navigateur';
+  if (callApp === ROOM) return t('En présentiel');
+  if (isBrowserApp(callApp, apps)) return t('Navigateur');
   return callAppShortName(callApp, null, apps);
 }
 
@@ -221,7 +222,9 @@ export function formatShortcut(accel: string | null | undefined): string {
     } else key = g ?? (p.length === 1 ? p.toUpperCase() : p);
   }
   mods.sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
-  return mods.join('') + (key === 'Espace' && mods.length ? ' Espace' : key);
+  const space = key === 'Espace';
+  const k = space ? t('Espace') : key;
+  return mods.join('') + (space && mods.length ? ` ${k}` : k);
 }
 
 /** Phrase d'arrêt à la voix : « Sténo, arrête l’écoute ». */

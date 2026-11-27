@@ -3,6 +3,7 @@
   import { api } from '../api';
   import { toastError } from '../ui.svelte';
   import ContextEditor from './ContextEditor.svelte';
+  import { t } from '../i18n.svelte';
 
   let {
     meetingId,
@@ -46,23 +47,23 @@
 
 <dialog bind:this={el} oncancel={(e) => { e.preventDefault(); close(); }} aria-labelledby="ctxdlg-title">
   {#if open}
-    <h2 id="ctxdlg-title">{mode === 'stop' ? 'Arrêter l’écoute' : 'Contexte du compte rendu'}</h2>
+    <h2 id="ctxdlg-title">{mode === 'stop' ? t('Arrêter l’écoute') : t('Contexte du compte rendu')}</h2>
     <p class="muted small intro">
       {mode === 'stop'
-        ? 'Rien n’est obligatoire : « Arrêter et rédiger » (ou Entrée) lance directement le compte rendu. Vous pouvez aussi préciser le contexte, joindre des documents ou choisir le format.'
-        : 'Pris en compte à la rédaction du compte rendu, en fin de réunion.'}
+        ? t('Rien n’est obligatoire : « Arrêter et rédiger » (ou Entrée) lance directement le compte rendu. Vous pouvez aussi préciser le contexte, joindre des documents ou choisir le format.')
+        : t('Pris en compte à la rédaction du compte rendu, en fin de réunion.')}
     </p>
     <ContextEditor bind:this={editor} {meetingId} compact />
     <div class="row actions">
       {#if mode === 'stop'}
-        <label class="check small dont"><input type="checkbox" bind:checked={dontAsk} /> Ne plus proposer</label>
+        <label class="check small dont"><input type="checkbox" bind:checked={dontAsk} /> {t('Ne plus proposer')}</label>
         <span class="grow"></span>
-        <button class="btn" onclick={close} disabled={busy}>Continuer l’écoute</button>
+        <button class="btn" onclick={close} disabled={busy}>{t('Continuer l’écoute')}</button>
         <!-- svelte-ignore a11y_autofocus -->
-        <button class="btn danger solid" onclick={stop} disabled={busy} autofocus><span class="sq" aria-hidden="true"></span>Arrêter et rédiger</button>
+        <button class="btn danger solid" onclick={stop} disabled={busy} autofocus><span class="sq" aria-hidden="true"></span>{t('Arrêter et rédiger')}</button>
       {:else}
         <span class="grow"></span>
-        <button class="btn primary" onclick={close}>Terminé</button>
+        <button class="btn primary" onclick={close}>{t('Terminé')}</button>
       {/if}
     </div>
   {/if}

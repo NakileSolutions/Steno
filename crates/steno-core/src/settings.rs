@@ -206,14 +206,23 @@ pub struct VoiceSettings {
 pub fn default_verbs() -> BTreeMap<String, Vec<String>> {
     let mut m = BTreeMap::new();
     let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    m.insert("search".into(), v(&["cherche", "recherche", "regarde", "trouve"]));
-    m.insert("check".into(), v(&["vérifie", "confirme"]));
-    m.insert("note".into(), v(&["note", "ajoute une action", "retiens"]));
-    m.insert("recap".into(), v(&["résume", "récap", "récapitule"]));
-    m.insert("cancel".into(), v(&["annule"]));
+    // Français puis anglais : les deux langues sont reconnues par défaut.
+    m.insert("search".into(), v(&["cherche", "recherche", "regarde", "trouve", "search", "find", "look up", "look for"]));
+    m.insert("check".into(), v(&["vérifie", "confirme", "check", "verify", "confirm"]));
+    m.insert("note".into(), v(&["note", "ajoute une action", "retiens", "take a note", "add an action", "remember"]));
+    m.insert("recap".into(), v(&["résume", "récap", "récapitule", "summarize", "summarise", "recap"]));
+    m.insert("cancel".into(), v(&["annule", "cancel"]));
     m.insert(
         "stop".into(),
-        v(&["arrête l'écoute", "arrête d'écouter", "arrête la transcription", "termine la réunion", "fin de la réunion"]),
+        v(&[
+            "arrête l'écoute",
+            "arrête d'écouter",
+            "arrête la transcription",
+            "termine la réunion",
+            "fin de la réunion",
+            "stop listening",
+            "end the meeting",
+        ]),
     );
     m
 }
@@ -445,6 +454,8 @@ pub struct ProfileSettings {
     pub jira_key_pattern: String,
     /// Apparence de l'app : `auto` (suit macOS), `light` ou `dark`.
     pub theme: String,
+    /// Langue de l'interface et des comptes rendus : `auto` (langue de macOS), `fr` ou `en`.
+    pub language: String,
 }
 
 impl Default for ProfileSettings {
@@ -455,13 +466,48 @@ impl Default for ProfileSettings {
             team: String::new(),
             jira_key_pattern: r"[A-Z][A-Z0-9]+-\d+".into(),
             theme: "auto".into(),
+            language: "auto".into(),
         }
     }
 }
 
 const SECTIONS: [&str; 8] = ["agent", "voice", "audio", "correlation", "privacy", "profile", "report", "updates"];
 
+/// `fr` pour un code de langue français ou sans langue réelle (`C`, `POSIX`, vide), `en` pour
+/// toute autre langue.
+pub fn lang_from_code(code: &str) -> &'static str {
+    let c = code.trim().to_lowercase();
+    let base: String = c.chars().take_while(|ch| ch.is_ascii_alphabetic()).collect();
+    if base == "fr" || base.len() < 2 || base == "posix" { "fr" } else { "en" }
+}
+
+/// Langue de macOS (préférences de l'utilisateur), `fr` ou `en`.
+pub fn system_lang() -> &'static str {
+    static L: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    L.get_or_init(|| {
+        let from_env = std::env::var("LANG").unwrap_or_default();
+        let mac = std::process::Command::new("/usr/bin/defaults")
+            .args(["read", "-g", "AppleLanguages"])
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default();
+        let first = mac.split(['"', ',', '(', ')', '\n', ' ']).find(|w| w.len() >= 2).unwrap_or(&from_env).to_lowercase();
+        let pick = if first.is_empty() { from_env.to_lowercase() } else { first };
+        lang_from_code(&pick)
+    })
+}
+
 impl Settings {
+    /// Langue effective (`fr` ou `en`) de l'interface et des comptes rendus.
+    pub fn lang(&self) -> &'static str {
+        match self.profile.language.as_str() {
+            "fr" => "fr",
+            "en" => "en",
+            _ => system_lang(),
+        }
+    }
+
     /// Charge les réglages depuis la base (valeurs par défaut pour ce qui manque).
     pub fn load(db: &Db) -> Result<Settings> {
         let mut root = serde_json::Map::new();
@@ -522,6 +568,9 @@ impl Settings {
             self.report.default_template = "standard".into();
         }
         self.report.context_delay_s = self.report.context_delay_s.min(600);
+        if !["auto", "fr", "en"].contains(&self.profile.language.as_str()) {
+            self.profile.language = "auto".into();
+        }
         if !["auto", "light", "dark"].contains(&self.profile.theme.as_str()) {
             self.profile.theme = "auto".into();
         }
@@ -698,6 +747,16 @@ mod tests {
         let ids: Vec<&str> = v.report.templates.iter().map(|t| t.id.as_str()).collect();
         assert_eq!(ids, ["perso-note-comex", "perso-note-comex-2", "perso-mon-mail"]);
         assert_eq!(v.report.default_template, "standard");
+    }
+
+    #[test]
+    fn langue_systeme() {
+        assert_eq!(lang_from_code("fr-FR"), "fr");
+        assert_eq!(lang_from_code("en-US"), "en");
+        assert_eq!(lang_from_code("de_DE.UTF-8"), "en");
+        assert_eq!(lang_from_code("C.UTF-8"), "fr");
+        assert_eq!(lang_from_code("POSIX"), "fr");
+        assert_eq!(lang_from_code(""), "fr");
     }
 
     #[test]

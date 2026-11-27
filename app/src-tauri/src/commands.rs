@@ -167,6 +167,49 @@ pub fn delete_context_file(st: State<'_, AppState>, file_id: i64) -> R<()> {
 }
 
 #[tauri::command]
+pub async fn upcoming(st: State<'_, AppState>, days: Option<i64>) -> R<steno_core::planning::Upcoming> {
+    st.core.upcoming(days.unwrap_or(7)).await.map_err(er)
+}
+
+#[tauri::command]
+pub fn plan_meeting(st: State<'_, AppState>, title: String, scheduled_at: String, event_id: Option<String>) -> R<Meeting> {
+    st.core.plan_meeting(&title, &scheduled_at, event_id.as_deref()).map_err(er)
+}
+
+#[tauri::command]
+pub async fn start_planned(st: State<'_, AppState>, id: String, in_person: Option<bool>) -> R<Meeting> {
+    st.core.start_planned(&id, in_person.unwrap_or(false)).await.map_err(er)
+}
+
+#[tauri::command]
+pub fn get_participants(st: State<'_, AppState>, id: String) -> R<Vec<steno_core::planning::Participant>> {
+    st.core.participants(&id).map_err(er)
+}
+
+#[tauri::command]
+pub fn set_participants(
+    st: State<'_, AppState>,
+    id: String,
+    participants: Vec<steno_core::planning::Participant>,
+) -> R<Vec<steno_core::planning::Participant>> {
+    st.core.set_participants(&id, &participants).map_err(er)
+}
+
+#[tauri::command]
+pub async fn prepare_questions(st: State<'_, AppState>, id: String) -> R<Vec<String>> {
+    st.core.prepare_questions(&id).await.map_err(er)
+}
+
+#[tauri::command]
+pub async fn prepare_apply(
+    st: State<'_, AppState>,
+    id: String,
+    answers: Vec<steno_core::planning::PrepAnswer>,
+) -> R<steno_core::context::MeetingContext> {
+    st.core.prepare_apply(&id, &answers).await.map_err(er)
+}
+
+#[tauri::command]
 pub fn get_update_status(st: State<'_, AppState>) -> steno_core::updates::UpdateStatus {
     st.core.update_status()
 }

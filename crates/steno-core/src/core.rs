@@ -39,6 +39,8 @@ pub struct Inner {
     pub report_now: Mutex<std::collections::HashSet<String>>,
     /// État des mises à jour (voir `updates`).
     pub update: Mutex<crate::updates::UpdateStatus>,
+    /// Derniers événements du calendrier reçus du sidecar.
+    pub calendar_cache: Mutex<Vec<crate::planning::CalendarEvent>>,
     meeting_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     agent_override: Option<Arc<dyn AgentAdapter>>,
     pub live_state: Mutex<LiveState>,
@@ -288,6 +290,7 @@ impl Core {
                 cancels: Mutex::new(HashMap::new()),
                 report_now: Mutex::new(Default::default()),
                 update: Mutex::new(crate::updates::initial_status()),
+                calendar_cache: Mutex::new(vec![]),
                 meeting_locks: Mutex::new(HashMap::new()),
                 agent_override: opts.agent_override,
                 live_state: Mutex::new(LiveState::default()),
@@ -445,6 +448,53 @@ impl Core {
             bail!("la session en direct n'est pas démarrée");
         }
         rx.await.context("session en direct arrêtée")?
+    }
+
+    // ------------------------------------------------------------------ préparation
+
+    /// Réunions prévues et événements du calendrier des `days` prochains jours.
+    pub async fn upcoming(&self, days: i64) -> Result<crate::planning::Upcoming> {
+        crate::planning::upcoming(&self.inner, days).await
+    }
+
+    pub fn plan_meeting(&self, title: &str, scheduled_at: &str, event_id: Option<&str>) -> Result<Meeting> {
+        crate::planning::plan_meeting(&self.inner, title, scheduled_at, event_id)
+    }
+
+    /// Démarre l'écoute d'une réunion prévue, même en avance sur l'heure prévue.
+    pub async fn start_planned(&self, id: &str, in_person: bool) -> Result<Meeting> {
+        let m = self.inner.db.get_meeting(id)?.context("réunion introuvable")?;
+        if m.status != "planned" {
+            bail!("cette réunion n'est pas une réunion prévue");
+        }
+        // L'heure prévue devient maintenant : la réunion est reprise au démarrage.
+        self.inner.db.with(|c| c.execute("UPDATE meetings SET started_at=?2 WHERE id=?1", rusqlite::params![id, crate::now_iso()]))?;
+        let started = self.start_meeting_with(None, in_person).await?;
+        if started.id != id {
+            bail!("une autre réunion a été démarrée ({})", started.id);
+        }
+        Ok(started)
+    }
+
+    pub fn participants(&self, id: &str) -> Result<Vec<crate::planning::Participant>> {
+        self.inner.db.get_meeting(id)?.context("réunion introuvable")?;
+        self.inner.db.participants(id)
+    }
+
+    pub fn set_participants(&self, id: &str, list: &[crate::planning::Participant]) -> Result<Vec<crate::planning::Participant>> {
+        self.inner.db.get_meeting(id)?.context("réunion introuvable")?;
+        self.inner.db.set_participants(id, list)?;
+        crate::report::context_touched(&self.inner, id)?;
+        self.inner.db.participants(id)
+    }
+
+    pub async fn prepare_questions(&self, id: &str) -> Result<Vec<String>> {
+        crate::planning::prepare_questions(&self.inner, id).await
+    }
+
+    pub async fn prepare_apply(&self, id: &str, answers: &[crate::planning::PrepAnswer]) -> Result<crate::context::MeetingContext> {
+        crate::planning::prepare_apply(&self.inner, id, answers).await?;
+        self.meeting_context(id)
     }
 
     pub async fn stop_meeting(&self) -> Result<()> {
@@ -923,7 +973,7 @@ pub(crate) fn create_request(
         inner.db.enqueue_job("request", r.meeting_id.as_deref(), &serde_json::json!({ "request_id": r.id }))?;
         inner.jobs_notify.notify_one();
         inner.emit(CoreEvent::Notify {
-            title: "🔎 Je cherche…".into(),
+            title: inner.tr("🔎 Je cherche…", "🔎 Searching…"),
             body: crate::text::truncate(query, 120),
             route: None,
         });

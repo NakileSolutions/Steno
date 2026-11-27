@@ -7,7 +7,7 @@
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 
-pub const KINDS: [&str; 3] = ["microphone", "system_audio", "accessibility"];
+pub const KINDS: [&str; 4] = ["microphone", "system_audio", "accessibility", "calendar"];
 
 fn unknown() -> String {
     "unknown".into()
@@ -22,6 +22,9 @@ pub struct Permissions {
     pub system_audio: String,
     #[serde(default = "unknown")]
     pub accessibility: String,
+    /// Calendriers (facultatif) : réunions à venir et invités.
+    #[serde(default = "unknown")]
+    pub calendar: String,
     /// Le sidecar tourne : l'état est à jour et les demandes peuvent aboutir.
     #[serde(default)]
     pub available: bool,
@@ -29,7 +32,7 @@ pub struct Permissions {
 
 impl Default for Permissions {
     fn default() -> Self {
-        Self { microphone: unknown(), system_audio: unknown(), accessibility: unknown(), available: false }
+        Self { microphone: unknown(), system_audio: unknown(), accessibility: unknown(), calendar: unknown(), available: false }
     }
 }
 
@@ -46,6 +49,7 @@ pub fn settings_url(kind: &str) -> Result<&'static str> {
         "microphone" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
         "system_audio" => "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture",
         "accessibility" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+        "calendar" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars",
         other => bail!("permission inconnue : {other}"),
     })
 }

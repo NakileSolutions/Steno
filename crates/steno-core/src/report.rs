@@ -160,8 +160,9 @@ pub fn section(md: &str, heading_prefix: &str) -> Option<String> {
             if inside {
                 break;
             }
-            let h = t.trim_start_matches('#').trim();
-            if crate::text::normalize(h).starts_with(&crate::text::normalize(heading_prefix)) {
+            let h = crate::text::normalize(t.trim_start_matches('#').trim());
+            let matches = |p: &str| h.starts_with(&crate::text::normalize(p));
+            if matches(heading_prefix) || crate::i18n::heading_aliases(heading_prefix).iter().any(|a| matches(a)) {
                 inside = true;
                 continue;
             }
@@ -180,9 +181,10 @@ pub fn remove_section(md: &str, heading_prefix: &str) -> String {
     for line in md.lines() {
         let t = line.trim_start();
         if t.starts_with("## ") || t.starts_with("# ") {
-            let h = t.trim_start_matches('#').trim();
+            let h = crate::text::normalize(t.trim_start_matches('#').trim());
+            let matches = |p: &str| h.starts_with(&crate::text::normalize(p));
             skipping = t.starts_with("## ")
-                && crate::text::normalize(h).starts_with(&crate::text::normalize(heading_prefix));
+                && (matches(heading_prefix) || crate::i18n::heading_aliases(heading_prefix).iter().any(|a| matches(a)));
             if skipping {
                 continue;
             }
@@ -329,7 +331,13 @@ pub fn report_context(inner: &Inner, meeting: &Meeting) -> Result<crate::prompts
     let s = inner.settings();
     let id = c.template.clone().unwrap_or_else(|| s.report.default_template.clone());
     let template = template(&s, &id).or_else(|| template(&s, "standard")).map(|t| (t.name, t.instructions));
-    Ok(crate::prompts::ReportContext { text: c.text, docs: inner.db.context_texts(&meeting.id)?, template })
+    Ok(crate::prompts::ReportContext {
+        text: c.text,
+        docs: inner.db.context_texts(&meeting.id)?,
+        template,
+        lang: s.lang().to_string(),
+        participants: inner.db.participants(&meeting.id)?.into_iter().map(|p| p.name).collect(),
+    })
 }
 
 pub async fn generate(inner: &Inner, meeting_id: &str) -> Result<()> {
@@ -412,8 +420,8 @@ pub async fn generate(inner: &Inner, meeting_id: &str) -> Result<()> {
     inner.emit(CoreEvent::Report { meeting_id: meeting_id.into(), version });
     inner.emit(CoreEvent::MeetingsChanged);
     inner.emit(CoreEvent::Notify {
-        title: "📝 Compte rendu prêt".into(),
-        body: meeting.title.clone().unwrap_or_else(|| "Réunion".into()),
+        title: inner.tr("📝 Compte rendu prêt", "📝 Summary ready"),
+        body: meeting.title.clone().unwrap_or_else(|| inner.tr("Réunion", "Meeting")),
         route: Some(format!("/meetings/{meeting_id}?tab=report")),
     });
     Ok(())

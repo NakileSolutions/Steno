@@ -12,6 +12,8 @@
   import TranscriptTab from './meeting/TranscriptTab.svelte';
   import RequestsTab from './meeting/RequestsTab.svelte';
   import NotesTab from './meeting/NotesTab.svelte';
+  import PlannedPanel from './meeting/PlannedPanel.svelte';
+  import { i18n, t, tk, tn } from '../lib/i18n.svelte';
 
   let { id }: { id: string } = $props();
 
@@ -19,12 +21,12 @@
   let error = $state<string | null>(null);
 
   const TABS = [
-    { id: 'report', label: 'Compte rendu' },
-    { id: 'transcript', label: 'Transcription' },
-    { id: 'requests', label: 'Demandes' },
-    { id: 'notes', label: 'Notes' },
+    { id: 'report', label: tk('Compte rendu') },
+    { id: 'transcript', label: tk('Transcription') },
+    { id: 'requests', label: tk('Demandes') },
+    { id: 'notes', label: tk('Notes') },
   ] as const;
-  const tab = $derived(TABS.some((t) => t.id === router.route.query.tab) ? router.route.query.tab : 'report');
+  const tab = $derived(TABS.some((x) => x.id === router.route.query.tab) ? router.route.query.tab : 'report');
 
   async function load() {
     try {
@@ -62,7 +64,7 @@
 
   async function rename() {
     if (!m) return;
-    const title = await promptDialog({ title: 'Renommer la réunion', value: m.title ?? '', placeholder: 'Titre de la réunion' });
+    const title = await promptDialog({ title: t('Renommer la réunion'), value: m.title ?? '', placeholder: t('Titre de la réunion') });
     if (title === null || !title.trim()) return;
     try {
       await api.renameMeeting(id, title.trim());
@@ -76,14 +78,14 @@
     if (!m) return;
     const on = !m.confidential;
     if (on && !(await confirmDialog({
-      title: 'Marquer comme confidentielle ?',
-      message: 'Aucun appel à l’IA ne sera plus fait pour cette réunion : ni compte rendu, ni corrélation, ni demande.',
-      confirm: 'Marquer confidentielle',
+      title: t('Marquer comme confidentielle ?'),
+      message: t('Aucun appel à l’IA ne sera plus fait pour cette réunion : ni compte rendu, ni corrélation, ni demande.'),
+      confirm: t('Marquer confidentielle'),
     }))) return;
     try {
       await api.setConfidential(id, on);
       await load();
-      toast(on ? 'Réunion marquée confidentielle.' : 'La réunion n’est plus confidentielle.');
+      toast(on ? t('Réunion marquée confidentielle.') : t('La réunion n’est plus confidentielle.'));
     } catch (e) {
       toastError(e);
     }
@@ -92,14 +94,14 @@
   async function remove() {
     if (!m) return;
     if (!(await confirmDialog({
-      title: 'Supprimer cette réunion ?',
-      message: `« ${m.title ?? 'Sans titre'} » : transcription, compte rendu, demandes et notes seront supprimés définitivement.`,
-      confirm: 'Supprimer',
+      title: t('Supprimer cette réunion ?'),
+      message: t('« {title} » : transcription, compte rendu, demandes et notes seront supprimés définitivement.', { title: m.title ?? t('Sans titre') }),
+      confirm: t('Supprimer'),
       danger: true,
     }))) return;
     try {
       await api.deleteMeeting(id);
-      toast('Réunion supprimée.');
+      toast(t('Réunion supprimée.'));
       navigate('/meetings');
     } catch (e) {
       toastError(e);
@@ -107,7 +109,7 @@
   }
 
   function tabKey(e: KeyboardEvent) {
-    const i = TABS.findIndex((t) => t.id === tab);
+    const i = TABS.findIndex((x) => x.id === tab);
     let j = -1;
     if (e.key === 'ArrowRight') j = (i + 1) % TABS.length;
     else if (e.key === 'ArrowLeft') j = (i - 1 + TABS.length) % TABS.length;
@@ -122,6 +124,7 @@
   let ind = $state({ left: 0, width: 0, ready: false });
   $effect(() => {
     void counts[tab];
+    void i18n.lang;
     const el = tabEls[tab];
     if (el) ind = { left: el.offsetLeft, width: el.offsetWidth, ready: true };
   });
@@ -138,49 +141,54 @@
   <div class="empty full">
     <Icon name="warn" size={28} />
     <h2>{error}</h2>
-    <a class="btn" href={href('/meetings')}>Retour à la liste</a>
+    <a class="btn" href={href('/meetings')}>{t('Retour à la liste')}</a>
   </div>
 {:else if detail && m}
   <div class="detail">
     <header class="dhead">
       <div class="row titlerow">
-        <h1 class="grow">{m.title ?? 'Réunion sans titre'}</h1>
+        <h1 class="grow">{m.title ?? t('Réunion sans titre')}</h1>
         <div class="row tools">
-          <button class="btn ghost icon" onclick={rename} title="Renommer" aria-label="Renommer la réunion"><Icon name="pencil" /></button>
-          <button class="btn ghost icon" class:on={m.confidential} onclick={toggleConfidential} title={m.confidential ? 'Confidentielle (cliquer pour lever)' : 'Marquer confidentielle'} aria-label="Réunion confidentielle" aria-pressed={m.confidential}><Icon name="lock" /></button>
-          <button class="btn ghost icon" onclick={remove} title="Supprimer" aria-label="Supprimer la réunion"><Icon name="trash" /></button>
+          <button class="btn ghost icon" onclick={rename} title={t('Renommer')} aria-label={t('Renommer la réunion')}><Icon name="pencil" /></button>
+          <button class="btn ghost icon" class:on={m.confidential} onclick={toggleConfidential} title={m.confidential ? t('Confidentielle (cliquer pour lever)') : t('Marquer confidentielle')} aria-label={t('Réunion confidentielle')} aria-pressed={m.confidential}><Icon name="lock" /></button>
+          <button class="btn ghost icon" onclick={remove} title={t('Supprimer')} aria-label={t('Supprimer la réunion')}><Icon name="trash" /></button>
         </div>
       </div>
       <div class="row meta wrap">
         <span class="mi"><Icon name="calendar" size={13} />{fullDate(m.started_at)}</span>
-        <span class="mi tnum"><Icon name="clock" size={13} />{time(m.started_at)}{#if m.ended_at}{' – '}{time(m.ended_at)}{/if}<span class="sep">·</span>{duration(m.started_at, m.ended_at)}</span>
-        {#if callApp}<span class="mi app" title="Appel {callApp}"><Icon name="phone" size={13} />{callApp}</span>{/if}
+        <span class="mi tnum"><Icon name="clock" size={13} />{time(m.started_at)}{#if m.ended_at}{' – '}{time(m.ended_at)}{/if}{#if m.status !== 'planned'}<span class="sep">·</span>{duration(m.started_at, m.ended_at)}{/if}</span>
+        {#if callApp}<span class="mi app" title={t('Appel {app}', { app: callApp })}><Icon name="phone" size={13} />{callApp}</span>{/if}
         {#if detail.speakers.length}
-          <span class="mi"><Icon name="users" size={13} />{detail.speakers.length} intervenants</span>
+          <span class="mi"><Icon name="users" size={13} />{tn(detail.speakers.length, '{n} intervenant', '{n} intervenants')}</span>
         {/if}
-        {#if m.status === 'live'}<span class="badge live"><span class="dot live" style="width:6px;height:6px"></span>En direct</span>
-        {:else if m.status !== 'done'}<span class="badge">{MEETING_STATUS[m.status]}</span>{/if}
-        {#if m.confidential}<span class="badge warn"><Icon name="lock" size={11} /> Confidentielle</span>{/if}
-        {#if detail.report?.correlated}<span class="badge accent"><Icon name="link2" size={11} /> Corrélée</span>{/if}
+        {#if m.status === 'live'}<span class="badge live"><span class="dot live" style="width:6px;height:6px"></span>{t('En direct')}</span>
+        {:else if m.status !== 'done'}<span class="badge">{t(MEETING_STATUS[m.status])}</span>{/if}
+        {#if m.confidential}<span class="badge warn"><Icon name="lock" size={11} /> {t('Confidentielle')}</span>{/if}
+        {#if detail.report?.correlated}<span class="badge accent"><Icon name="link2" size={11} /> {t('Corrélée')}</span>{/if}
       </div>
-      <div class="tabs" role="tablist" aria-label="Sections de la réunion" tabindex="-1" onkeydown={tabKey}>
-        {#each TABS as t (t.id)}
+      {#if m.status !== 'planned'}
+      <div class="tabs" role="tablist" aria-label={t('Sections de la réunion')} tabindex="-1" onkeydown={tabKey}>
+        {#each TABS as tb (tb.id)}
           <button
-            id="tab-{t.id}"
+            id="tab-{tb.id}"
             role="tab"
-            aria-selected={tab === t.id}
+            aria-selected={tab === tb.id}
             aria-controls="panel"
-            tabindex={tab === t.id ? 0 : -1}
-            bind:this={tabEls[t.id]}
-            onclick={() => setQuery({ tab: t.id, request: null })}
+            tabindex={tab === tb.id ? 0 : -1}
+            bind:this={tabEls[tb.id]}
+            onclick={() => setQuery({ tab: tb.id, request: null })}
           >
-            {t.label}{#if counts[t.id]}<span class="cnt">{counts[t.id]}</span>{/if}
+            {t(tb.label)}{#if counts[tb.id]}<span class="cnt">{counts[tb.id]}</span>{/if}
           </button>
         {/each}
         <span class="ind" class:ready={ind.ready} style="transform: translateX({ind.left}px); width: {ind.width}px" aria-hidden="true"></span>
       </div>
+      {/if}
     </header>
 
+    {#if m.status === 'planned'}
+      <div class="panel scroll"><PlannedPanel {detail} /></div>
+    {:else}
     {#key tab}<div class="panel scroll" id="panel" role="tabpanel" aria-labelledby="tab-{tab}" bind:this={panel}>
       {#if tab === 'report'}
         <ReportTab {detail} reload={load} />
@@ -192,6 +200,7 @@
         <NotesTab {detail} />
       {/if}
     </div>{/key}
+    {/if}
   </div>
 {/if}
 

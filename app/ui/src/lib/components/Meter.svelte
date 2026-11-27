@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
+  import { t } from '../i18n.svelte';
   // Niveau en dBFS (≈ -60 → 0) affiché sur une rangée de barres arrondies.
   let { db, label, icon, active = true }: { db: number; label: string; icon: string; active?: boolean } = $props();
   const N = 18;
@@ -8,7 +9,7 @@
   const H = Array.from({ length: N }, (_, i) => 45 + Math.round((i / (N - 1)) * 55));
 </script>
 
-<div class="meter" role="meter" aria-label={label} aria-valuemin={-60} aria-valuemax={0} aria-valuenow={Math.round(db)} title="{label} : {Math.round(db)} dB">
+<div class="meter" role="meter" aria-label={label} aria-valuemin={-60} aria-valuemax={0} aria-valuenow={Math.round(db)} title={t('{label} : {db} dB', { label, db: Math.round(db) })}>
   <span class="ic"><Icon name={icon} size={14} /></span>
   <span class="lbl">{label}</span>
   <span class="bars" aria-hidden="true">
