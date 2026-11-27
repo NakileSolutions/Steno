@@ -2,11 +2,11 @@ import XCTest
 @testable import ScribeAudioKit
 
 final class VocabularyCorrectorTests: XCTestCase {
-    private let corrector = VocabularyCorrector(vocabulary: ["Scribe", "Atlas", "ms-booking", "ORION", "API"])
+    private let corrector = VocabularyCorrector(vocabulary: ["Scribe", "Andromède", "ms-booking", "ORION", "API"])
 
     func testExactMatchIsCaseAndAccentInsensitive() {
         XCTAssertEqual(corrector.correct("scribe cherche les erreurs"), "Scribe cherche les erreurs")
-        XCTAssertEqual(corrector.correct("le projet atlas avance"), "le projet Atlas avance")
+        XCTAssertEqual(corrector.correct("le projet andromede avance"), "le projet Andromède avance")
         XCTAssertEqual(corrector.correct("daily orion"), "daily ORION")
     }
 
@@ -18,7 +18,7 @@ final class VocabularyCorrectorTests: XCTestCase {
     func testMultiWordFormsAreJoined() {
         XCTAssertEqual(corrector.correct("le service MS booking plante"), "le service ms-booking plante")
         XCTAssertEqual(corrector.correct("ms - booking"), "ms-booking")
-        XCTAssertEqual(corrector.correct("mille nium"), "Atlas")
+        XCTAssertEqual(corrector.correct("andro mède"), "Andromède")
     }
 
     func testWindowDoesNotCrossPunctuation() {

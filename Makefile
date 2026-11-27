@@ -15,7 +15,7 @@ BIN_DIR ?= $(HOME)/.local/bin
 SIDECAR := app/src-tauri/binaries/scribe-audio-$(TRIPLE)
 TAURI := app/ui/node_modules/.bin/tauri
 
-.PHONY: all install check-prereqs ui sidecar sidecar-placeholder cli app models test test-rust test-ui test-e2e serve dev simulate fixtures clean mcp-config
+.PHONY: test-swift all install check-prereqs ui sidecar sidecar-placeholder cli app models test test-rust test-ui test-e2e serve dev simulate fixtures clean mcp-config
 
 all: app cli
 
@@ -79,7 +79,15 @@ endif
 	@echo "✅ Installé. CLI : $(BIN_DIR)/scribe (ajoutez ce dossier à votre PATH si besoin)."
 	@echo "   Lancez Scribe depuis $(APP_DIR), puis vérifiez avec : scribe doctor"
 
-test: test-rust test-ui test-e2e
+test: test-rust test-swift test-ui test-e2e
+
+# Swift : sidecar audio (protocole, filtres, retranscription), macOS uniquement.
+test-swift:
+ifeq ($(UNAME),Darwin)
+	cd audio/ScribeAudio && swift test
+else
+	@echo "(tests Swift : macOS uniquement)"
+endif
 
 # Rust : unitaires, fonctionnels (CLI en sous-processus), acceptation (faux agent), perf.
 test-rust: sidecar-placeholder ui
