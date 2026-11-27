@@ -263,10 +263,13 @@ pub async fn save_export(app: AppHandle, st: State<'_, AppState>, id: String, fo
     let name = st.core.export_file_name(&id, &format).map_err(er)?;
     let ext = steno_core::export::extension(&format).map_err(er)?;
     let (tx, rx) = tokio::sync::oneshot::channel();
-    app.dialog()
-        .file()
-        .set_title("Enregistrer l'export")
-        .set_file_name(name)
+    let title = steno_core::i18n::tr(st.core.settings().lang(), "Enregistrer l'export", "Save export");
+    let mut dialog = app.dialog().file().set_title(title).set_file_name(name);
+    // Ouvert sur Téléchargements par défaut (macOS retient ensuite le dernier dossier choisi).
+    if let Some(dl) = dirs::download_dir().filter(|d| d.is_dir()) {
+        dialog = dialog.set_directory(dl);
+    }
+    dialog
         .add_filter(ext.to_uppercase(), &[ext])
         .save_file(move |f| {
             let _ = tx.send(f);

@@ -73,6 +73,7 @@ fn l(lang: &str, fr: &str, en: &str) -> String {
 }
 
 /// Libellés selon l'état, en français (fonction pure, testée).
+#[cfg(test)]
 pub fn labels(st: &LiveState, shortcut: &str) -> (String, String) {
     labels_in(st, shortcut, "fr")
 }
