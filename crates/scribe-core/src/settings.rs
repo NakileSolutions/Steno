@@ -191,7 +191,7 @@ pub fn default_call_apps() -> Vec<CallApp> {
     vec![
         app("teams", "Microsoft Teams", &["com.microsoft.teams2", "com.microsoft.teams"], true, false),
         app("slack", "Slack", &["com.tinyspeck.slackmacgap"], true, false),
-        app("zoom", "Zoom", &["us.zoom.xos"], true, false),
+        app("zoom", "Zoom", &["us.zoom.xos", "us.zoom.CptHost"], true, false),
         app("webex", "Webex", &["Cisco-Systems.Spark", "com.cisco.webexmeetingsapp", "com.webex.meetingmanager"], true, false),
         app("discord", "Discord", &["com.hnc.Discord"], true, false),
         app("facetime", "FaceTime", &["com.apple.FaceTime"], true, false),

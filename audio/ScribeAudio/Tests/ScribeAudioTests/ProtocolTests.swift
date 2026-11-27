@@ -29,18 +29,28 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(json["accessibility"] as? String, "denied")
     }
 
-    func testTeamsCallWithTitle() throws {
-        let json = try encode(.teamsCall(active: true, title: "Daily ORION"))
-        XCTAssertEqual(json["type"] as? String, "teams_call")
+    func testCallWithTitle() throws {
+        let json = try encode(.call(active: true, app: "slack", title: "Huddle dans #equipe-flotte"))
+        XCTAssertEqual(json["type"] as? String, "call")
         XCTAssertEqual(json["active"] as? Bool, true)
-        XCTAssertEqual(json["title"] as? String, "Daily ORION")
+        XCTAssertEqual(json["app"] as? String, "slack")
+        XCTAssertEqual(json["title"] as? String, "Huddle dans #equipe-flotte")
+        XCTAssertEqual(json.count, 4)
     }
 
-    func testTeamsCallWithoutTitleEncodesExplicitNull() throws {
-        let json = try encode(.teamsCall(active: false, title: nil))
+    func testCallWithoutTitleEncodesExplicitNull() throws {
+        let json = try encode(.call(active: false, app: "teams", title: nil))
+        XCTAssertEqual(json["type"] as? String, "call")
         XCTAssertEqual(json["active"] as? Bool, false)
+        XCTAssertEqual(json["app"] as? String, "teams")
         XCTAssertTrue(json.keys.contains("title"), "title doit être présent")
         XCTAssertTrue(json["title"] is NSNull, "title doit valoir null")
+    }
+
+    func testOldTeamsCallFormatIsNoLongerEmitted() throws {
+        let data = try Output.encodeLine(.call(active: true, app: "teams", title: "Daily"))
+        let raw = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertFalse(raw.contains("teams_call"))
     }
 
     func testSegment() throws {
@@ -135,6 +145,79 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(opts.silenceMs, 1000)
         XCTAssertTrue(opts.keepAudio)
         XCTAssertEqual(opts.audioDir, "/tmp/Scribe/m1")
+        XCTAssertEqual(opts.apps, [], "apps absent = toutes les apps surveillées")
+    }
+
+    func testParseStartApps() {
+        let line = #"{"cmd":"start","vocabulary":[],"silence_ms":1000,"keep_audio":false,"audio_dir":"/x","apps":["slack"]}"#
+        guard case let .success(.start(opts)) = CommandParser.parse(line) else { return XCTFail() }
+        XCTAssertEqual(opts.apps, ["slack"])
+
+        // Nettoyage : espaces, vides et doublons retirés, ordre conservé.
+        guard case let .success(.start(messy)) = CommandParser.parse(#"{"cmd":"start","apps":[" zoom ","","slack","zoom"]}"#)
+        else { return XCTFail() }
+        XCTAssertEqual(messy.apps, ["zoom", "slack"])
+
+        guard case let .success(.start(empty)) = CommandParser.parse(#"{"cmd":"start","apps":[]}"#) else { return XCTFail() }
+        XCTAssertEqual(empty.apps, [])
+
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"start","apps":"slack"}"#),
+                       .failure(.invalidField(command: "start", field: "apps")))
+    }
+
+    func testParseWatch() {
+        let line = #"{"cmd":"watch","apps":[{"id":"teams","name":"Microsoft Teams","bundles":["com.microsoft.teams2","com.microsoft.teams"]},{"id":"slack","name":"Slack","bundles":["com.tinyspeck.slackmacgap"]}]}"#
+        XCTAssertEqual(CommandParser.parse(line), .success(.watch([
+            WatchedApp(id: "teams", name: "Microsoft Teams", bundlePrefixes: ["com.microsoft.teams2", "com.microsoft.teams"]),
+            WatchedApp(id: "slack", name: "Slack", bundlePrefixes: ["com.tinyspeck.slackmacgap"]),
+        ])))
+    }
+
+    func testParseWatchIgnoresUnknownFieldsAndBadEntries() {
+        let entries = [
+            #"{"id":"zoom","bundles":["us.zoom.xos"],"icone":"zoom.png"}"#,
+            #"{"name":"Sans identifiant","bundles":["com.example"]}"#,
+            #"{"id":"vide","name":"Sans préfixe","bundles":[]}"#,
+            #"{"id":"zoom","name":"Doublon","bundles":["us.zoom.autre"]}"#,
+            #"{"id":" meet ","name":"  ","bundles":[" com.google.Chrome ",""]}"#,
+        ]
+        let line = #"{"cmd":"watch","futur":true,"apps":["# + entries.joined(separator: ",") + "]}"
+        XCTAssertEqual(CommandParser.parse(line), .success(.watch([
+            // Nom absent ou vide : l'identifiant sert de nom.
+            WatchedApp(id: "zoom", name: "zoom", bundlePrefixes: ["us.zoom.xos"]),
+            WatchedApp(id: "meet", name: "meet", bundlePrefixes: ["com.google.Chrome"]),
+        ])))
+    }
+
+    func testParseWatchEmptyAndInvalid() {
+        // Liste vide : plus aucune app surveillée.
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"watch","apps":[]}"#), .success(.watch([])))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"watch"}"#), .failure(.invalidField(command: "watch", field: "apps")))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"watch","apps":{"id":"teams"}}"#),
+                       .failure(.invalidField(command: "watch", field: "apps")))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"watch","apps":[{"id":3,"bundles":["x"]}]}"#),
+                       .failure(.invalidField(command: "watch", field: "apps")))
+    }
+
+    func testWatchedAppMatching() {
+        let teams = WatchedApp(id: "teams", name: "Teams", bundlePrefixes: ["com.microsoft.teams2", "com.microsoft.teams"])
+        let slack = WatchedApp(id: "slack", name: "Slack", bundlePrefixes: ["com.tinyspeck.slackmacgap"])
+        let microsoft = WatchedApp(id: "ms", name: "Microsoft", bundlePrefixes: ["com.microsoft"])
+        let apps = [microsoft, teams, slack]
+
+        XCTAssertTrue(teams.matches(bundleID: "com.microsoft.teams2.helper.renderer"))
+        XCTAssertTrue(slack.matches(bundleID: "COM.TinySpeck.SlackMacGap.helper"), "comparaison sans casse")
+        XCTAssertFalse(slack.matches(bundleID: "com.tinyspeck"))
+        XCTAssertEqual(WatchedApp.match(bundleID: "com.microsoft.teams2.helper", in: apps)?.id, "teams", "préfixe le plus long")
+        XCTAssertEqual(WatchedApp.match(bundleID: "com.microsoft.edgemac", in: apps)?.id, "ms")
+        XCTAssertEqual(WatchedApp.match(bundleID: "com.tinyspeck.slackmacgap", in: apps)?.id, "slack")
+        XCTAssertNil(WatchedApp.match(bundleID: "us.zoom.xos", in: apps))
+        XCTAssertNil(WatchedApp.match(bundleID: "com.apple.Safari", in: []))
+    }
+
+    func testDefaultWatchListIsTeamsOnly() {
+        XCTAssertEqual(WatchedApp.defaults.map(\.id), ["teams"])
+        XCTAssertEqual(WatchedApp.defaults[0].bundlePrefixes, ["com.microsoft.teams2", "com.microsoft.teams"])
     }
 
     func testParseStartDefaultsAndClamping() {

@@ -64,6 +64,7 @@ if (wanted.has('maquette')) {
 if (wanted.has('reel')) {
   servers.push(scribeServer('reel', path.join(ROOT, 'fixtures/daily-45min.jsonl'), 40));
   servers.push(scribeServer('voix', path.join(UI, 'e2e/fixtures/arret-voix.jsonl'), 10));
+  servers.push(scribeServer('slack', path.join(UI, 'e2e/fixtures/appel-slack.jsonl'), 10));
 }
 if (wanted.has('captures')) {
   servers.push(scribeServer('captures', path.join(ROOT, 'fixtures/daily-45min.jsonl'), 40));

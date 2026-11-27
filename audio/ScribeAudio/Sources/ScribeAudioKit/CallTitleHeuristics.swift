@@ -8,6 +8,8 @@
 // - autres apps : titre de la fenêtre au premier plan, sauf titre générique (nom de l'app, vide).
 //
 // `nil` plutôt qu'un titre faux : le contrat autorise `"title": null`.
+// À VÉRIFIER (spike S1-bis) : titres réels des fenêtres de huddle Slack, de Zoom en français et
+// des onglets Meet ; les exemples des tests sont plausibles mais non relevés sur un Mac.
 // La lecture des fenêtres elles-mêmes est dans `CallWindowTitle` (CallMonitor.swift).
 
 import Foundation

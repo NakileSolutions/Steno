@@ -301,6 +301,8 @@ enum CallWindowTitle {
             let appElement = AXUIElementCreateApplication(pid)
             // Une app figée ne doit pas bloquer le moniteur.
             AXUIElementSetMessagingTimeout(appElement, 1.0)
+            // À VÉRIFIER (spike S1-bis) : AXFocusedWindow renseigné pour une app en arrière-plan,
+            // et égalité des éléments par CFEqual.
             let focused = element(appElement, kAXFocusedWindowAttribute)
             var value: CFTypeRef?
             guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &value) == .success,

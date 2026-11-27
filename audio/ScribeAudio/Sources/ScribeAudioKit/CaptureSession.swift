@@ -232,6 +232,7 @@ final class CaptureSession {
             let me = HAL.processObject(forPID: getpid())
             desired = .systemExcluding(me.map { [$0] } ?? [])
         case .apps:
+            // À VÉRIFIER (spike S1-bis) : un seul tap sur l'union des processus de plusieurs apps.
             desired = tapSource.processes.isEmpty ? nil : .processes(tapSource.processes)
         }
         if !force, desired == tapTarget, (tap != nil) == (desired != nil) { return }

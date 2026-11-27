@@ -1,0 +1,5 @@
+{"type": "call", "active": true, "app": "slack", "title": "Huddle dans #equipe-flotte"}
+{"type": "state", "state": "listening"}
+{"type": "segment", "ts": "2026-11-27T11:15:04+01:00", "t0": 1.0, "t1": 4.2, "channel": "them", "text": "Je vous appelle vite fait : les déverrouillages des vélos cargo plantent sur les vélos cargo.", "private": false}
+{"type": "segment", "ts": "2026-11-27T11:15:09+01:00", "t0": 5.0, "t1": 8.1, "channel": "me", "text": "On peut déverrouiller en deux temps en attendant le correctif.", "private": false}
+{"type": "segment", "ts": "2026-11-27T11:15:13+01:00", "t0": 9.0, "t1": 12.0, "channel": "them", "text": "D'accord, j'ouvre un ticket chez le fournisseur des cadenas aujourd'hui.", "private": false}

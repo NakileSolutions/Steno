@@ -2,7 +2,7 @@
 // simulateur audio qui rejoue fixtures/daily-45min.jsonl (×40) une fois l'écoute démarrée.
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
-import { main, nav, openMeeting, passOnboarding } from './helpers';
+import { go, main, nav, openMeeting, passOnboarding } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -10,6 +10,8 @@ test('réunion complète : écoute manuelle, demandes, compte rendu, corrélatio
   await passOnboarding(page);
 
   // L'appel Teams est signalé, mais rien ne démarre seul.
+  const st = await (await page.request.post('/api/invoke/live_state', { data: {} })).json();
+  expect(st.call).toEqual({ active: true, app: 'teams', app_name: 'Microsoft Teams', title: 'Daily ORION' });
   await nav(page).getByRole('link', { name: 'En direct', exact: true }).click();
   const live = main(page);
   await expect(live.getByText('Appel Teams détecté : Daily ORION')).toBeVisible();
@@ -55,6 +57,7 @@ test('réunion complète : écoute manuelle, demandes, compte rendu, corrélatio
   // Compte rendu.
   await openMeeting(page, /Daily ORION/);
   const detail = page.getByRole('region', { name: 'Détail de la réunion' });
+  await expect(detail.getByTitle('Appel Teams')).toBeVisible();
   const report = detail.locator('article.report');
   await expect(report).toContainText('verrou de créneau', { timeout: 90_000 });
   await expect(report).toContainText('Marie');
@@ -103,4 +106,35 @@ test('réunion complète : écoute manuelle, demandes, compte rendu, corrélatio
   await page.reload();
   await page.getByLabel('Statut').selectOption('done');
   await expect(page.getByLabel(/^Fait : .*APP-1234/)).toBeChecked();
+});
+
+test('réglages : apps de visio enregistrées par le cœur', async ({ page }) => {
+  await go(page, '/settings?section=audio');
+  const apps = page.getByRole('group', { name: 'Apps de visio' });
+  for (const name of ['Microsoft Teams', 'Slack', 'Zoom', 'Webex', 'Discord', 'FaceTime', 'Navigateur (Google Meet…)']) {
+    await expect(apps.getByText(name, { exact: true })).toBeVisible();
+  }
+  await expect(page.getByLabel('Surveiller Navigateur (Google Meet…)')).not.toBeChecked();
+  await expect(apps.getByText(/capte tout le son du navigateur/)).toBeVisible();
+  await page.getByLabel('Surveiller Zoom').uncheck();
+  await apps.getByRole('button', { name: 'Ajouter une app' }).click();
+  const form = apps.getByRole('form', { name: 'Ajouter une app' });
+  await form.getByLabel('Nom').fill('Google Chat');
+  await form.getByLabel('Identifiant de bundle').fill('com.google.chat');
+  await form.getByRole('button', { name: 'Ajouter', exact: true }).click();
+  await page.getByRole('button', { name: 'Enregistrer' }).click();
+  await expect(page.getByText('Réglages enregistrés.')).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByLabel('Surveiller Zoom')).not.toBeChecked();
+  await expect(page.getByLabel('Surveiller Google Chat')).toBeChecked();
+  const s = await (await page.request.post('/api/invoke/get_settings', { data: {} })).json();
+  expect(s.audio.auto_detect_calls).toBe(true);
+  expect(s.audio.call_apps.find((a: { id: string }) => a.id === 'google-chat')).toMatchObject({ name: 'Google Chat', bundles: ['com.google.chat'], enabled: true, browser: false });
+
+  // Remise en l'état.
+  await page.getByLabel('Surveiller Zoom').check();
+  await apps.getByRole('button', { name: 'Supprimer Google Chat' }).click();
+  await page.getByRole('button', { name: 'Enregistrer' }).click();
+  await expect(page.getByText('Réglages enregistrés.')).toBeVisible();
 });

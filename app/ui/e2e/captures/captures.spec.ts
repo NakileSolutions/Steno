@@ -94,4 +94,22 @@ test('captures', async ({ page, browser }) => {
   await expect(page.locator('.rejected')).toBeVisible();
   await page.locator('#wake').blur();
   await shot(page, 'reglages-voix');
+
+  // Réglages → Audio & transcription : section « Apps de visio » (liste par défaut du cœur).
+  await go(page, '/settings?section=audio');
+  await expect(page.getByRole('heading', { name: 'Apps de visio' })).toBeVisible();
+  await expect(page.getByText(/capte tout le son du navigateur/)).toBeVisible();
+  await page.waitForTimeout(300);
+  await shot(page, 'reglages-apps');
+
+  // Panneau de la barre de menu avec un appel Slack détecté (faux backend : même interface, sans `?backend=http`).
+  const ctx2 = await browser.newContext({ viewport: { width: 360, height: 520 }, deviceScaleFactor: 2, locale: 'fr-FR', timezoneId: 'Europe/Paris' });
+  const tray2 = await ctx2.newPage();
+  await tray2.goto('/#/tray');
+  await expect(tray2.getByText('Appel Teams détecté :')).toBeVisible();
+  await tray2.evaluate(() => (window as unknown as { __scribeMock: { call(a: string, t: string): boolean } }).__scribeMock.call('slack', 'Huddle dans #equipe-flotte'));
+  await expect(tray2.getByText('Appel Slack détecté : Huddle dans #equipe-flotte')).toBeVisible();
+  await tray2.waitForTimeout(500);
+  await shot(tray2, 'tray-slack');
+  await ctx2.close();
 });
