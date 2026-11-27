@@ -6,19 +6,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub fn spawn(inner: Arc<Inner>) {
-    // Battement de cœur (la CLI sait ainsi que l'app traite la file de tâches).
+    // Battement de cœur (la CLI sait ainsi que l'app traite la file de tâches). A single
+    // process owns it: see `Db::beat_heartbeat`.
     let i = inner.clone();
     tokio::spawn(async move {
+        let pid = std::process::id();
         loop {
-            let _ = i.db.set_runtime("app_heartbeat", &std::process::id().to_string());
+            let _ = i.db.beat_heartbeat(pid);
             if let Err(e) = i.reload_settings_if_changed() {
                 tracing::warn!("settings reload: {e:#}");
             }
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(5)) => {}
                 _ = i.shutdown.cancelled() => {
-                    let _ = i.db.set_runtime("app_heartbeat", "stopped");
-                    let _ = i.db.with(|c| c.execute("UPDATE runtime SET updated_at='1970-01-01T00:00:00+00:00' WHERE key='app_heartbeat'", []));
+                    let _ = i.db.release_heartbeat(pid);
                     break;
                 }
             }

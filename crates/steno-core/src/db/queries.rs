@@ -150,6 +150,16 @@ fn job_row(r: &Row) -> rusqlite::Result<Job> {
     })
 }
 
+/// `runtime` key of the running core's heartbeat (its pid, rewritten every 5 s).
+const HEARTBEAT: &str = "app_heartbeat";
+
+/// A heartbeat less than 15 s old.
+fn heartbeat_fresh(at: &str) -> bool {
+    chrono::DateTime::parse_from_rfc3339(at)
+        .map(|t| (chrono::Local::now().fixed_offset() - t).num_seconds() < 15)
+        .unwrap_or(false)
+}
+
 /// Transforme une saisie libre en requête FTS5 sûre (préfixes, ET implicite).
 pub fn fts_query(input: &str) -> Option<String> {
     let toks: Vec<String> = input
@@ -1495,18 +1505,47 @@ impl Db {
 
     /// Vrai si l'app a signalé sa présence il y a moins de 15 s.
     pub fn app_is_running(&self) -> Result<bool> {
-        Ok(match self.get_runtime("app_heartbeat")? {
-            Some((_, at)) => chrono::DateTime::parse_from_rfc3339(&at)
-                .map(|t| (chrono::Local::now().fixed_offset() - t).num_seconds() < 15)
-                .unwrap_or(false),
-            None => false,
+        Ok(self.get_runtime(HEARTBEAT)?.is_some_and(|(_, at)| heartbeat_fresh(&at)))
+    }
+
+    /// Writes this process's heartbeat, unless another process owns a fresh one: a second
+    /// core (`steno serve` next to the app) does not take the app's place. It takes over
+    /// once the owner's heartbeat is stale. True if this process owns the heartbeat.
+    pub fn beat_heartbeat(&self, pid: u32) -> Result<bool> {
+        let pid = pid.to_string();
+        self.tx(|c| {
+            let current: Option<(String, String)> = c
+                .query_row("SELECT value, updated_at FROM runtime WHERE key=?1", [HEARTBEAT], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })
+                .optional()?;
+            if current.is_some_and(|(owner, at)| owner != pid && heartbeat_fresh(&at)) {
+                return Ok(false);
+            }
+            c.execute(
+                "INSERT INTO runtime (key, value, updated_at) VALUES (?1,?2,?3) \
+                 ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                params![HEARTBEAT, pid, now_iso()],
+            )?;
+            Ok(true)
         })
+    }
+
+    /// On shutdown: marks the heartbeat stopped, only if this process owns it.
+    pub fn release_heartbeat(&self, pid: u32) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE runtime SET value='stopped', updated_at='1970-01-01T00:00:00+00:00' WHERE key=?1 AND value=?2",
+                params![HEARTBEAT, pid.to_string()],
+            )
+        })?;
+        Ok(())
     }
 
     /// True if another process (not this one) signalled its presence less than 15 s ago.
     pub fn other_process_running(&self) -> Result<bool> {
         let own = std::process::id().to_string();
-        Ok(self.app_is_running()? && self.get_runtime("app_heartbeat")?.is_some_and(|(pid, _)| pid != own))
+        Ok(self.get_runtime(HEARTBEAT)?.is_some_and(|(pid, at)| pid != own && heartbeat_fresh(&at)))
     }
 
     // ---------------------------------------------------------------- recherche
@@ -1766,6 +1805,24 @@ mod tests {
         db.with(|c| c.execute("UPDATE runtime SET updated_at='1970-01-01T00:00:00+00:00' WHERE key='app_heartbeat'", []))
             .unwrap();
         assert!(!db.other_process_running().unwrap(), "stale heartbeat");
+    }
+
+    #[test]
+    fn heartbeat_has_a_single_owner() {
+        let db = Db::open_in_memory().unwrap();
+        let owner = |db: &Db| db.get_runtime("app_heartbeat").unwrap().map(|(v, _)| v);
+        assert!(db.beat_heartbeat(100).unwrap());
+        assert!(db.beat_heartbeat(100).unwrap());
+        assert!(!db.beat_heartbeat(200).unwrap(), "fresh heartbeat of another process");
+        assert_eq!(owner(&db).as_deref(), Some("100"));
+        db.release_heartbeat(200).unwrap();
+        assert_eq!(owner(&db).as_deref(), Some("100"), "only the owner releases it");
+        db.with(|c| c.execute("UPDATE runtime SET updated_at='2020-01-01T00:00:00+00:00' WHERE key='app_heartbeat'", []))
+            .unwrap();
+        assert!(db.beat_heartbeat(200).unwrap(), "stale: taken over");
+        db.release_heartbeat(200).unwrap();
+        assert!(!db.app_is_running().unwrap());
+        assert!(db.beat_heartbeat(100).unwrap());
     }
 
     #[test]

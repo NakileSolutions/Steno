@@ -602,6 +602,14 @@ impl Core {
     // ------------------------------------------------------------------ demandes
 
     /// Demande tapée (ou CLI). `meeting_id` absent : réunion en cours s'il y en a une.
+    /// `Stop` or `Cancel` when the text starts with such a command verb.
+    pub fn control_intent(&self, query: &str) -> Option<Intent> {
+        crate::wake::Detector::new(&self.settings().voice)
+            .detect_aside(query.trim())
+            .filter(|d| d.verb.is_some() && matches!(d.intent, Intent::Stop | Intent::Cancel))
+            .map(|d| d.intent)
+    }
+
     pub fn ask(&self, query: &str, meeting_id: Option<&str>, origin: &str) -> Result<Request> {
         let q = query.trim();
         if q.is_empty() {
@@ -622,6 +630,10 @@ impl Core {
 
     /// Question sur l'historique des réunions.
     pub fn ask_history(&self, query: &str, origin: &str) -> Result<Request> {
+        // « arrête l'écoute », « annule » are commands, not questions about past meetings.
+        if self.control_intent(query).is_some() {
+            return self.ask(query, None, origin);
+        }
         create_request(&self.inner, None, origin, Intent::History, query.trim(), None, &[])
     }
 
@@ -971,23 +983,12 @@ pub(crate) fn create_request(
         r.answer_md = Some(answer);
     };
     match intent {
-        Intent::Cancel => {
-            match inner.db.last_active_request(meeting_id)? {
-                Some(last) => {
-                    cancel_request(inner, &last.id)?;
-                    finish(&mut r, "done", format!("Demande annulée : {}", crate::text::truncate(&last.query, 80)), "Demande annulée.".into());
-                }
-                None => finish(&mut r, "done", "Aucune demande en cours.".into(), "Aucune demande en cours.".into()),
-            }
-        }
-        Intent::Stop => {
-            let live = inner.db.live_meeting()?;
-            match live {
-                Some(_) => {
-                    inner.send_live(LiveCmd::StopRequested);
-                    finish(&mut r, "done", "⏹ Écoute arrêtée.".into(), "Écoute arrêtée. Le compte rendu est en préparation.".into());
-                }
-                None => finish(&mut r, "done", "Aucune écoute en cours.".into(), "Aucune écoute en cours.".into()),
+        // Another process (the app) owns the live session and the running agents: the request
+        // stays queued and a `control` job hands it over (see `jobs::run_control`).
+        Intent::Cancel | Intent::Stop if inner.db.other_process_running()? => {}
+        Intent::Cancel | Intent::Stop => {
+            if let Some((summary, answer)) = run_control(inner, intent, meeting_id)? {
+                finish(&mut r, "done", summary, answer);
             }
         }
         Intent::Note => {
@@ -1040,7 +1041,10 @@ pub(crate) fn create_request(
         }
     }
     inner.emit(CoreEvent::Request(r.clone()));
-    if r.status == "queued" {
+    if r.status == "queued" && matches!(intent, Intent::Cancel | Intent::Stop) {
+        // Not an AI job: never waits behind `agent.max_parallel` (the search it cancels).
+        inner.db.enqueue_job("control", r.meeting_id.as_deref(), &serde_json::json!({ "request_id": r.id }))?;
+    } else if r.status == "queued" {
         inner.db.enqueue_job("request", r.meeting_id.as_deref(), &serde_json::json!({ "request_id": r.id }))?;
         inner.jobs_notify.notify_one();
         inner.emit(CoreEvent::Notify {
@@ -1052,6 +1056,28 @@ pub(crate) fn create_request(
         inner.emit(CoreEvent::Notify { title: "Sténo".into(), body: sum.clone(), route: None });
     }
     Ok(r)
+}
+
+/// Runs « annule » (the last active request) or « arrête l'écoute » in this process.
+/// Returns the request's summary and answer; `None` for any other intent.
+pub(crate) fn run_control(inner: &Inner, intent: Intent, meeting_id: Option<&str>) -> Result<Option<(String, String)>> {
+    Ok(Some(match intent {
+        Intent::Cancel => match inner.db.last_active_request(meeting_id)? {
+            Some(last) => {
+                cancel_request(inner, &last.id)?;
+                (format!("Demande annulée : {}", crate::text::truncate(&last.query, 80)), "Demande annulée.".into())
+            }
+            None => ("Aucune demande en cours.".into(), "Aucune demande en cours.".into()),
+        },
+        Intent::Stop => match inner.db.live_meeting()? {
+            Some(_) => {
+                inner.send_live(LiveCmd::StopRequested);
+                ("⏹ Écoute arrêtée.".into(), "Écoute arrêtée. Le compte rendu est en préparation.".into())
+            }
+            None => ("Aucune écoute en cours.".into(), "Aucune écoute en cours.".into()),
+        },
+        _ => return Ok(None),
+    }))
 }
 
 pub(crate) fn cancel_request(inner: &Inner, id: &str) -> Result<()> {
@@ -1102,6 +1128,35 @@ mod tests {
         wait().await;
         assert!(core.db().live_meeting().unwrap().is_none());
         h.send(LiveCmd::Shutdown);
+    }
+
+    /// `steno ask "annule"` / `"arrête l'écoute"` while the app runs: the CLI queues the
+    /// command and the app runs it, where the agents' cancellation tokens and the live
+    /// session are.
+    #[tokio::test]
+    async fn control_commands_from_another_process_are_forwarded() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("steno.db");
+        let app = Core::new(Db::open(&path).unwrap(), Default::default()).unwrap();
+        let cli = Core::new(Db::open(&path).unwrap(), Default::default()).unwrap();
+        // Without the app, the CLI runs the command itself.
+        let r = cli.ask_history("arrête l'écoute", "cli").unwrap();
+        assert_eq!((r.intent.as_str(), r.status.as_str()), ("stop", "done"));
+        // A search the app is running.
+        let search = create_request(&app.inner, None, "ui", Intent::Search, "Où en est Nova ?", None, &[]).unwrap();
+        let token = CancellationToken::new();
+        app.inner.cancels.lock().unwrap().insert(search.id.clone(), token.clone());
+        app.db().set_runtime("app_heartbeat", "999999999").unwrap();
+        let cancel = cli.ask_history("annule", "cli").unwrap();
+        assert_eq!((cancel.intent.as_str(), cancel.status.as_str()), ("cancel", "queued"), "handed over to the app");
+        assert!(!token.is_cancelled());
+        let job = app.db().claim_job(&["control"]).unwrap().expect("control job");
+        crate::jobs::execute(&app.inner, job).await;
+        assert!(token.is_cancelled(), "the app cancelled its running agent");
+        assert_eq!(app.db().get_request(&search.id).unwrap().unwrap().status, "cancelled");
+        let cancel = app.db().get_request(&cancel.id).unwrap().unwrap();
+        assert_eq!(cancel.status, "done");
+        assert!(cancel.summary.unwrap().contains("Où en est Nova"));
     }
 
     /// `steno settings import` while the app runs: the app picks the new settings up instead
