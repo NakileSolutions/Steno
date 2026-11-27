@@ -108,9 +108,51 @@ final class ProtocolTests: XCTestCase {
         let expected: [ErrorCode: String] = [
             .micDenied: "mic_denied", .systemAudioDenied: "system_audio_denied", .tapFailed: "tap_failed",
             .deviceChanged: "device_changed", .asrFailed: "asr_failed", .modelMissing: "model_missing",
-            .badCommand: "bad_command",
+            .badCommand: "bad_command", .deviceMissing: "device_missing",
         ]
         for (code, raw) in expected { XCTAssertEqual(code.rawValue, raw) }
+    }
+
+    func testDevicesEncoding() throws {
+        let list = AudioDeviceList(
+            inputs: [
+                AudioDeviceInfo(id: "BuiltInMicrophoneDevice", name: "Micro du MacBook Pro", isDefault: true, transport: .builtin),
+                AudioDeviceInfo(id: "AirPodsUID:input", name: "AirPods Pro", isDefault: false, transport: .bluetooth),
+            ],
+            outputs: [AudioDeviceInfo(id: "AirPodsUID", name: "AirPods Pro", isDefault: true, transport: .bluetooth)]
+        )
+        let json = try encode(.devices(list))
+        XCTAssertEqual(json["type"] as? String, "devices")
+        XCTAssertEqual(json.count, 3)
+        let inputs = try XCTUnwrap(json["inputs"] as? [[String: Any]])
+        let outputs = try XCTUnwrap(json["outputs"] as? [[String: Any]])
+        XCTAssertEqual(inputs.count, 2)
+        XCTAssertEqual(outputs.count, 1)
+        XCTAssertEqual(inputs[0]["id"] as? String, "BuiltInMicrophoneDevice")
+        XCTAssertEqual(inputs[0]["name"] as? String, "Micro du MacBook Pro")
+        XCTAssertEqual(inputs[0]["default"] as? Bool, true)
+        XCTAssertEqual(inputs[0]["transport"] as? String, "builtin")
+        XCTAssertEqual(inputs[0].count, 4, "id, name, default, transport")
+        XCTAssertEqual(inputs[1]["default"] as? Bool, false)
+        XCTAssertEqual(inputs[1]["transport"] as? String, "bluetooth")
+        XCTAssertEqual(outputs[0]["id"] as? String, "AirPodsUID")
+        XCTAssertEqual(outputs[0]["default"] as? Bool, true)
+
+        // Listes vides : tableaux vides, pas de champ absent.
+        let empty = try encode(.devices(.empty))
+        XCTAssertEqual((empty["inputs"] as? [Any])?.count, 0)
+        XCTAssertEqual((empty["outputs"] as? [Any])?.count, 0)
+
+        // Tous les transports s'encodent selon le contrat.
+        XCTAssertEqual(AudioTransport.allCases.map(\.rawValue),
+                       ["builtin", "usb", "bluetooth", "virtual", "aggregate", "other"])
+    }
+
+    func testDeviceMissingError() throws {
+        let json = try encode(.error(code: .deviceMissing, message: DeviceMessages.inputMissing("AirPodsUID"), recoverable: true))
+        XCTAssertEqual(json["code"] as? String, "device_missing")
+        XCTAssertEqual(json["message"] as? String, "Micro « AirPodsUID » introuvable : micro par défaut utilisé.")
+        XCTAssertEqual(json["recoverable"] as? Bool, true)
     }
 
     func testNonFiniteNumbersDoNotBreakEncoding() throws {
@@ -231,6 +273,71 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(low.silenceMs, 300)
         guard case let .success(.start(dbl)) = CommandParser.parse(#"{"cmd":"start","silence_ms":800.0}"#) else { return XCTFail() }
         XCTAssertEqual(dbl.silenceMs, 800)
+    }
+
+    // MARK: Périphériques
+
+    func testParseStartInputDevice() {
+        // Absent : nil (le choix mémorisé par set_input s'applique).
+        guard case let .success(.start(absent)) = CommandParser.parse(#"{"cmd":"start"}"#) else { return XCTFail() }
+        XCTAssertNil(absent.inputDevice)
+
+        // null : micro par défaut du système.
+        guard case let .success(.start(null)) = CommandParser.parse(#"{"cmd":"start","input_device":null}"#)
+        else { return XCTFail() }
+        XCTAssertEqual(null.inputDevice, .systemDefault)
+
+        // UID (espaces retirés).
+        let line = #"{"cmd":"start","vocabulary":["Scribe"],"silence_ms":1000,"keep_audio":false,"audio_dir":"/x","apps":["slack"],"input_device":" BuiltInMicrophoneDevice "}"#
+        guard case let .success(.start(opts)) = CommandParser.parse(line) else { return XCTFail() }
+        XCTAssertEqual(opts.inputDevice, .uid("BuiltInMicrophoneDevice"))
+        XCTAssertEqual(opts.inputDevice?.uid, "BuiltInMicrophoneDevice")
+        XCTAssertEqual(opts.apps, ["slack"], "les autres champs restent lus")
+        XCTAssertEqual(opts.vocabulary, ["Scribe"])
+
+        // Chaîne vide : micro par défaut.
+        guard case let .success(.start(empty)) = CommandParser.parse(#"{"cmd":"start","input_device":""}"#)
+        else { return XCTFail() }
+        XCTAssertEqual(empty.inputDevice, .systemDefault)
+        XCTAssertNil(DeviceSelection.systemDefault.uid)
+
+        // Mauvais type.
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"start","input_device":42}"#),
+                       .failure(.invalidField(command: "start", field: "input_device")))
+    }
+
+    func testParseSetInput() {
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"set_input","device":"BuiltInMicrophoneDevice"}"#),
+                       .success(.setInput(.uid("BuiltInMicrophoneDevice"))))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"set_input","device":null}"#),
+                       .success(.setInput(.systemDefault)))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"set_input","device":"AirPodsUID","futur":1}"#),
+                       .success(.setInput(.uid("AirPodsUID"))), "champs inconnus ignorés")
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"set_input"}"#),
+                       .failure(.invalidField(command: "set_input", field: "device")), "device obligatoire")
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"set_input","device":["x"]}"#),
+                       .failure(.invalidField(command: "set_input", field: "device")))
+    }
+
+    func testParseDevices() {
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"devices"}"#), .success(.devices))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"devices","inputs":true}"#), .success(.devices))
+    }
+
+    func testParsePlay() {
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"play","sound":"detect","device":null}"#),
+                       .success(.play(sound: .detect, device: .systemDefault)))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"play","sound":"detect","device":"AirPodsUID"}"#),
+                       .success(.play(sound: .detect, device: .uid("AirPodsUID"))))
+        // Champs absents : son `detect`, sortie par défaut.
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"play"}"#),
+                       .success(.play(sound: .detect, device: .systemDefault)))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"play","sound":"fanfare"}"#),
+                       .failure(.invalidField(command: "play", field: "sound")))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"play","sound":3}"#),
+                       .failure(.invalidField(command: "play", field: "sound")))
+        XCTAssertEqual(CommandParser.parse(#"{"cmd":"play","device":false}"#),
+                       .failure(.invalidField(command: "play", field: "device")))
     }
 
     func testUnknownFieldsAreIgnored() {

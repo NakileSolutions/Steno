@@ -1,5 +1,6 @@
 // Contrôleur du mode protocole : reçoit les commandes, pilote la session de capture,
-// relaie la surveillance des apps de visio (`watch` → `call`) et les permissions.
+// relaie la surveillance des apps de visio (`watch` → `call`), les permissions, les
+// périphériques audio (`devices`, `set_input`) et le signal sonore (`play`).
 
 import CoreAudio
 import Foundation
@@ -10,7 +11,11 @@ actor Controller {
     private let models: SpeechModels
     private let permissions = PermissionsTracker()
     private let monitor = CallMonitor()
+    private let deviceWatcher = AudioDeviceWatcher()
+    private let feedback = FeedbackPlayer()
     private var session: CaptureSession?
+    /// Micro choisi (`start.input_device` ou `set_input`), conservé d'une capture à l'autre.
+    private var inputSelection: DeviceSelection = .systemDefault
     /// `start.apps` de la session en cours (vide = toutes les apps surveillées).
     private var captureRequest: [String] = []
     private var shuttingDown = false
@@ -20,12 +25,18 @@ actor Controller {
         self.models = SpeechModels(backend: backend)
     }
 
-    /// Démarrage : `ready`, `permissions`, surveillance des apps, préchargement des modèles.
+    /// Démarrage : `ready`, `permissions`, `devices`, surveillance des apps et des
+    /// périphériques, préchargement des modèles.
     func boot() async {
         output.send(.ready(version: SidecarInfo.version, asr: models.asrName))
         output.send(.permissions(permissions.snapshot()))
 
         let output = self.output
+        // Périphériques : liste après `ready`, puis à chaque changement (anti-rebond ≈ 300 ms).
+        deviceWatcher.onChange = { list in output.send(.devices(list)) }
+        deviceWatcher.start()
+        output.send(.devices(deviceWatcher.current()))
+
         await models.setRecognizerFailureHandler { error in
             output.send(.error(code: .modelMissing,
                                message: "Modèle de transcription indisponible : \(error). Lancez `make install` (téléchargement des modèles) puis réessayez.",
@@ -71,6 +82,22 @@ actor Controller {
         case let .start(options):
             await start(options)
 
+        case let .setInput(selection):
+            inputSelection = selection
+            if let s = session {
+                Log.info("set_input : micro \(selection.label)")
+                s.setInputDevice(selection.uid)
+            } else {
+                Log.info("set_input hors capture : micro \(selection.label) mémorisé pour le prochain start")
+            }
+
+        case .devices:
+            output.send(.devices(deviceWatcher.current()))
+
+        case let .play(sound, device):
+            // Asynchrone : la boucle de commandes n'attend pas la fin du son.
+            feedback.play(sound, deviceUID: device.uid)
+
         case .stop:
             await stop()
 
@@ -95,17 +122,23 @@ actor Controller {
 
     private func start(_ options: StartOptions) async {
         if session != nil {
-            Log.warn("start reçu alors que la capture tourne déjà : ignoré")
+            Log.warn("start reçu alors que la capture tourne déjà : ignoré (sauf input_device)")
+            if let selection = options.inputDevice, selection != inputSelection {
+                await handle(.setInput(selection))
+            }
             output.send(.state(.listening))
             return
         }
         await models.retryIfFailed()
         await models.preload()
+        // `input_device` absent : on garde le choix mémorisé (`set_input` hors capture).
+        if let selection = options.inputDevice { inputSelection = selection }
         let config = CaptureSession.Config(
             vocabulary: options.vocabulary,
             silenceMs: options.silenceMs,
             keepAudio: options.keepAudio,
-            audioDir: options.audioDir.map { URL(fileURLWithPath: $0, isDirectory: true) }
+            audioDir: options.audioDir.map { URL(fileURLWithPath: $0, isDirectory: true) },
+            inputDevice: inputSelection.uid
         )
         let s = CaptureSession(config: config, output: output, permissions: permissions, models: models)
         session = s
@@ -117,7 +150,7 @@ actor Controller {
             Log.warn("start.apps : app(s) non surveillée(s) ignorée(s) : \(selection.unknown.joined(separator: ", "))")
         }
         await s.start(tapSource: tapSource(for: snapshot))
-        Log.info("capture démarrée (apps \(selection.apps.map(\.id).joined(separator: ", ")), silence \(options.silenceMs) ms, vocabulaire \(options.vocabulary.count) mots, audio \(options.keepAudio ? "conservé" : "non conservé"))")
+        Log.info("capture démarrée (micro \(inputSelection.label), apps \(selection.apps.map(\.id).joined(separator: ", ")), silence \(options.silenceMs) ms, vocabulaire \(options.vocabulary.count) mots, audio \(options.keepAudio ? "conservé" : "non conservé"))")
         output.send(.state(.listening))
     }
 
@@ -148,7 +181,7 @@ actor Controller {
                 return
             }
             do {
-                samples = try await MicRecorder.record(seconds: seconds)
+                samples = try await MicRecorder.record(seconds: seconds, inputDevice: inputSelection.uid)
             } catch {
                 output.send(.error(code: .deviceChanged, message: "Micro indisponible pour le test : \(error)", recoverable: true))
                 return
@@ -211,6 +244,8 @@ actor Controller {
         shuttingDown = true
         Log.info("arrêt (\(reason))")
         monitor.stop()
+        deviceWatcher.stop()
+        feedback.stop()
         if let s = session {
             session = nil
             await runWithTimeout(seconds: 5) { await s.stop() }

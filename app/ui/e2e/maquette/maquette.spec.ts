@@ -473,7 +473,7 @@ test.describe('réglages', () => {
     await page.evaluate(() => (window as unknown as { __scribeMock: { unplug(id: string): void } }).__scribeMock.unplug('AirPodsPro-UID:input'));
     await mic.getByRole('button', { name: 'Rafraîchir' }).click();
     await expect(page.getByText('AirPods Pro — débranché, micro par défaut utilisé')).toBeVisible();
-    await expect(mic.getByRole('radio')).toHaveCount(3);
+    await expect(mic.locator('[data-device="AirPodsPro-UID:input"]')).toHaveCount(0);
 
     await nav(page).getByRole('link', { name: 'En direct', exact: true }).click();
     await main(page).getByRole('button', { name: 'Démarrer l’écoute' }).click();

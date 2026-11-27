@@ -129,15 +129,43 @@ test('captures', async ({ page, browser }) => {
   await page.locator('#wake').blur();
   await shot(page, 'reglages-voix');
 
-  // Réglages → Audio & transcription : section « Apps de visio » (liste par défaut du cœur).
-  // Rechargement complet : les variantes générées plus haut ne sont pas enregistrées.
+  // Réglages → Audio & transcription : carte « Micro » (périphériques du simulateur), puis
+  // « Apps de visio » (liste par défaut du cœur). Rechargement complet : les variantes
+  // générées plus haut ne sont pas enregistrées.
   await go(page, '/settings?section=audio');
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Apps de visio' })).toBeVisible();
+  const mic = page.getByRole('radiogroup', { name: 'Micro' });
+  await expect(mic.getByText('Micro par défaut du système (Micro du MacBook Pro)')).toBeVisible();
+  await mic.getByText('AirPods Pro', { exact: true }).click();
+  await page.getByRole('button', { name: 'Enregistrer' }).click();
   await expect(page.getByText('Modifications non enregistrées')).toHaveCount(0);
+  await page.waitForTimeout(300);
+  await shot(page, 'reglages-audio');
+
+  await expect(page.getByRole('heading', { name: 'Apps de visio' })).toBeVisible();
   await expect(page.getByText(/capte tout le son du navigateur/)).toBeVisible();
+  await page.getByRole('heading', { name: 'Apps de visio' }).evaluate((el) => el.scrollIntoView({ block: 'start' }));
   await page.waitForTimeout(300);
   await shot(page, 'reglages-apps');
+
+  // Réglages → Agent IA : carte « Modèles et réflexion » (agents et modèles du cœur, faux CLI).
+  const cur = await (await page.request.post('/api/invoke/get_settings', { data: {} })).json();
+  cur.agent.tiers = {
+    search: { agent: 'grok', model: 'grok-4.7', effort: 'medium' },
+    summary: { agent: 'claude-code', model: 'opus', effort: 'high' },
+    quick: { agent: '', model: '', effort: '' },
+  };
+  expect((await page.request.post('/api/invoke/save_settings', { data: { settings: cur } })).ok()).toBe(true);
+  await go(page, '/settings?section=agent');
+  await page.reload();
+  const tiers = page.getByRole('group', { name: 'Modèles et réflexion' });
+  const search = tiers.getByRole('group', { name: 'Recherches et corrélation' });
+  await expect(search.getByLabel('Modèle', { exact: true })).toHaveValue('grok-4.7');
+  await expect(tiers.getByRole('group', { name: 'Compte rendu' }).getByLabel('Réflexion')).toHaveValue('high');
+  await page.getByRole('heading', { name: 'Modèles et réflexion' }).evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await page.locator('.sbody').evaluate((el) => el.scrollBy(0, -120));
+  await page.waitForTimeout(400);
+  await shot(page, 'reglages-agent');
 
   // Panneau de la barre de menu avec un appel Slack détecté (faux backend : même interface, sans `?backend=http`).
   const ctx2 = await browser.newContext({ viewport: { width: 360, height: 520 }, deviceScaleFactor: 2, locale: 'fr-FR', timezoneId: 'Europe/Paris' });

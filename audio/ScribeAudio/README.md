@@ -10,7 +10,9 @@ Binaire Swift lancé par le cœur de Scribe. Il ne fait que de l'audio vers du t
   sur le Neural Engine, correction par le vocabulaire ;
 - détection des appels dans les apps de visio surveillées (liste fixée par le cœur, commande
   `watch`) et lecture du titre de l'appel (accessibilité) ;
-- diarisation hors ligne de `them.wav` à la demande.
+- diarisation hors ligne de `them.wav` à la demande ;
+- liste des **périphériques audio** (micros, sorties), choix du micro (au `start` ou pendant la
+  capture) et signal sonore discret de détection sur la sortie choisie.
 
 Il dialogue avec le cœur en **JSON lines** sur stdin/stdout, selon `docs/contracts.md` §2.
 Les journaux vont **uniquement sur stderr**. Aucune donnée ne quitte le Mac (seul le premier
@@ -43,7 +45,9 @@ Variables d'environnement utiles :
 | `SCRIBE_MODELS_DIR=<dossier>` | dossier des modèles (sinon le cache par défaut de FluidAudio) |
 | `SCRIBE_AUDIO_DEBUG=1` | journaux détaillés sur stderr |
 
-Autres commandes : `--version`, `--help`, `--list-audio-processes [--apps teams,slack]`
+Autres commandes : `--version`, `--help`, `--list-devices` (micros et sorties avec leur UID, tels
+que le message `devices` les présente, puis tous les périphériques du HAL avec la raison de leur
+exclusion éventuelle), `--list-audio-processes [--apps teams,slack]`
 (diagnostic des processus audio vus par Core Audio, avec l'app reconnue pour chacun : Teams seul
 par défaut), `--prefetch-models`, et les deux modes spike décrits plus bas. L'option `--apps`
 accepte les identifiants du catalogue intégré : `teams`, `slack`, `zoom`, `meet` (navigateurs).
@@ -76,6 +80,51 @@ surveillé (`com.microsoft.teams2`, `com.microsoft.teams`). Une liste vide ne su
   `watch`). Si aucun processus ne correspond au `start` (app pas encore lancée ou sans audio
   ouvert), le micro démarre quand même, un `error` `tap_failed` récupérable l'explique, et le tap
   est créé dès que les processus apparaissent.
+
+## Périphériques
+
+Code : `AudioDevices.swift` (énumération, filtrage, tri, écouteurs), `FeedbackPlayer.swift`
+(signal sonore), `MicCapture.swift` (choix du micro), `CaptureSession` / `Controller` (commandes).
+
+- **Liste** : `{"type":"devices","inputs":[…],"outputs":[…]}`, chaque entrée avec `id` (UID Core
+  Audio, `kAudioDevicePropertyDeviceUID`), `name`, `default` et `transport`
+  (`builtin | usb | bluetooth | virtual | aggregate | other`, d'après
+  `kAudioDevicePropertyTransportType` : Bluetooth et Bluetooth LE → `bluetooth`, agrégats manuels
+  et automatiques → `aggregate`, PCI, HDMI, DisplayPort, AirPlay, Thunderbolt, Continuity… →
+  `other`). Tri : périphérique par défaut d'abord, puis par nom (sans casse ni accents, nombres
+  dans l'ordre naturel), puis par UID.
+- **Filtrage** : `inputs` ne garde que les périphériques ayant au moins un canal d'entrée, `outputs`
+  au moins un canal de sortie ; sont exclus les entrées dont l'UID ou le nom est vide, les doublons
+  d'UID et les agrégats privés : celui du tap de Scribe (`scribe-tap-…`, nom `Scribe-Tap`) et ceux
+  qu'AVAudioEngine crée dans notre processus (`CADefaultDeviceAggregate…`,
+  `VPAUAggregateAudioDevice…`). Un agrégat créé par l'utilisateur reste proposé.
+- **Émission** : après `ready` (et `permissions`), en réponse à `{"cmd":"devices"}`, et à chaque
+  changement de la liste ou des périphériques par défaut (écouteurs HAL sur
+  `kAudioHardwarePropertyDevices`, `…DefaultInputDevice`, `…DefaultOutputDevice`), après un
+  anti-rebond de 300 ms et seulement si le message change (la création de l'agrégat du tap modifie
+  la liste HAL sans changer `devices`).
+- **Choix du micro** : `start.input_device` (`null` = micro par défaut du système, en suivant ses
+  changements ; champ absent = dernier choix mémorisé, sinon micro par défaut). Le micro choisi est
+  réglé sur l'unité du nœud d'entrée d'AVAudioEngine (`kAudioOutputUnitProperty_CurrentDevice`)
+  **avant** l'activation du voice processing, puis relu après : s'il a été perdu, il est réglé de
+  nouveau (le journal le dit). Si l'UID est introuvable, ou si le micro est débranché pendant la
+  capture, le micro par défaut prend le relais et le sidecar émet, une fois par absence,
+  `{"type":"error","code":"device_missing","message":"Micro « <uid> » introuvable : micro par défaut utilisé.","recoverable":true}`.
+  Dès que le micro réapparaît dans la liste des périphériques, il est repris.
+- **`set_input`** : `{"cmd":"set_input","device":"<uid>"|null}` change de micro pendant la capture en
+  ne redémarrant que le moteur micro (le tap continue). L'horloge `t0/t1` continue ; le court trou
+  est comblé comme lors d'un changement de périphérique (silence dans `me.wav`, horloge du
+  segmenteur avancée) et le rééchantillonneur suit la fréquence du nouveau micro. Hors capture, le
+  choix est mémorisé pour le prochain `start` (y compris pour `wake_test` hors réunion). `device`
+  est obligatoire (`bad_command` sinon).
+- **`play`** : `{"cmd":"play","sound":"detect","device":"<uid>"|null}` joue deux notes douces (mi5
+  puis la5, 55 + 65 ms ≈ 120 ms, crête ≈ −15 dBFS, fondus de 8 ms) sur la sortie demandée (`null` ou
+  sortie introuvable = sortie par défaut). Moteur `AVAudioEngine` séparé, créé à la demande
+  (`AVAudioPlayerNode` + buffer PCM synthétisé), sortie réglée par
+  `kAudioOutputUnitProperty_CurrentDevice` sur `outputNode`, arrêté après 3 s d'inactivité. Le son
+  part de notre processus : il ne passe jamais par l'app d'appel et n'est pas capté par le tap (qui
+  ne vise que les processus des apps de visio, ou tout sauf Scribe en mode global). La commande
+  rend la main immédiatement. `sound` absent = `detect` ; son inconnu = `bad_command`.
 
 ## Intégration dans Scribe.app (`externalBin` Tauri)
 
@@ -152,6 +201,53 @@ Les étapes 1 à 7 visent Teams ; **S1-bis** les refait avec Slack et Zoom.
    `SCRIBE_TAP_MODE=global` (tap global) ; si ça marche, l'audio passe par un processus non repéré
    (étape 3) → noter son bundle dans `docs/spikes.md`.
 
+### S1-ter — Périphériques : à refaire (changement de micro, AirPods)
+
+But : vérifier la liste des périphériques, le choix du micro, le changement de micro pendant
+l'écoute et le repli quand des AirPods sont branchés puis débranchés.
+
+1. `.build/release/scribe-audio --list-devices` sans puis avec les AirPods connectés : noter les UID
+   du micro intégré et des AirPods ; vérifier `transport` (`builtin`, `bluetooth`), le défaut, et
+   qu'aucun agrégat privé n'apparaît dans les deux premières listes. Refaire pendant une capture
+   (`--spike-record` dans un autre terminal) : l'agrégat `Scribe-Tap` et les agrégats
+   d'AVAudioEngine doivent être marqués « agrégat privé » dans la dernière liste (sinon, ajouter leur
+   préfixe à `AudioDeviceCatalog.privateAggregateUIDPrefixes`).
+2. Mode protocole, commandes envoyées par un tube nommé pour pouvoir agir entre deux commandes :
+
+   ```sh
+   mkfifo /tmp/scribe-in
+   .build/release/scribe-audio < /tmp/scribe-in > /tmp/scribe-out.jsonl &
+   exec 3>/tmp/scribe-in            # garde le tube ouvert
+   tail -f /tmp/scribe-out.jsonl    # dans un autre terminal
+   echo '{"cmd":"start","keep_audio":true,"audio_dir":"/tmp/s1-ter","input_device":"BuiltInMicrophoneDevice"}' >&3
+   # parler 20 s, puis :
+   echo '{"cmd":"set_input","device":"<UID des AirPods>"}' >&3
+   # parler 20 s dans les AirPods, puis les ranger dans leur boîtier (débranchement), parler 20 s,
+   # les ressortir, parler 20 s, puis :
+   echo '{"cmd":"set_input","device":null}' >&3
+   echo '{"cmd":"play","sound":"detect","device":null}' >&3
+   echo '{"cmd":"play","sound":"detect","device":"<UID des AirPods>"}' >&3
+   echo '{"cmd":"stop"}' >&3; exec 3>&-
+   ```
+
+   Attendu : `devices` juste après `ready` / `permissions`, puis à chaque connexion / déconnexion des
+   AirPods (un seul message par changement grâce à l'anti-rebond) ; stderr « micro démarré : « AirPods
+   … » » après `set_input` sans redémarrage du tap ; au rangement des AirPods, un `error`
+   `device_missing` (une seule fois) et la capture qui continue sur le micro par défaut ; à leur
+   retour, « micro « … » de nouveau disponible : repris ». Le journal dit si le second réglage du
+   périphérique (après activation du voice processing) a été nécessaire.
+3. Ouvrir `/tmp/s1-ter/me.wav` : la parole des quatre périodes est présente, les trous de
+   changement de micro durent moins d'une seconde et `me.wav` reste aligné sur `them.wav` (même
+   durée à ±0,5 s) ; les segments `me` ont des `t0/t1` continus.
+4. `start` avec un UID inexistant (`"input_device":"inexistant"`) → `device_missing` avec ce texte,
+   capture sur le micro par défaut. `set_input` hors capture puis `start` sans `input_device` → le
+   micro mémorisé est utilisé (journal « capture démarrée (micro « … »…) »).
+5. Signal `play` : bref, discret, entendu sur la sortie demandée (AirPods) ou par défaut ; il ne
+   doit **pas** être entendu par l'autre participant d'un appel Teams, ni apparaître dans
+   `them.wav`. Vérifier aussi qu'il n'est pas atténué par le voice processing du micro.
+6. Pendant un appel avec les AirPods comme micro et sortie : AEC toujours actif (`AEC actif` dans le
+   journal) et son de l'appel non baissé.
+
 ### S1-bis — Slack, Zoom (et Meet) : à refaire
 
 But : vérifier la détection d'appel, le titre et la capture pour chaque app, avec les préfixes de
@@ -218,7 +314,7 @@ But : savoir tout de suite si le MDM bloque une permission.
 ) | .build/release/scribe-audio
 ```
 
-Attendu : `ready`, `permissions`, `call` à chaque début ou fin d'appel Teams ou Slack,
+Attendu : `ready`, `permissions`, `devices`, `call` à chaque début ou fin d'appel Teams ou Slack,
 `state listening`, des `level` (4 par seconde au plus), des
 `segment` (ceux dits pendant l'aparté avec `"private":true`), `state stopped`, puis `diarization`.
 La fin de stdin arrête le sidecar.
@@ -229,7 +325,7 @@ La fin de stdin arrête le sidecar.
 |---|---|
 | `Sources/ScribeAudio/main.swift` | point d'entrée (appelle `ScribeAudioMain.run`) |
 | `ScribeAudioMain.swift` | arguments, thread de lecture de stdin, signaux, boucle de commandes |
-| `Protocol.swift` | messages des deux sens (Codable), apps surveillées (`WatchedApp`), erreurs `bad_command`, horodatage ISO 8601 |
+| `Protocol.swift` | messages des deux sens (Codable), apps surveillées (`WatchedApp`), choix de périphérique (`DeviceSelection`), erreurs `bad_command`, horodatage ISO 8601 |
 | `Output.swift` | sortie stdout sérialisée (une ligne par message), journaux stderr, utilitaires |
 | `Controller.swift` | traitement des commandes, cycle de vie de la capture |
 | `CaptureSession.swift` | micro + tap + deux canaux, recréation du tap (processus apparus ou modifiés), aparté, niveaux |
@@ -237,7 +333,9 @@ La fin de stdin arrête le sidecar.
 | `CallMonitor.swift` | apps surveillées (toutes les 2 s) : processus par app, appel par app avec anti-rebond, lecture des fenêtres (accessibilité) |
 | `CallTitleHeuristics.swift` | heuristiques pures de titre d'appel (Teams, Slack, Zoom, Meet, par défaut) |
 | `ProcessTap.swift` | process tap Core Audio + agrégat privé + IOProc |
-| `MicCapture.swift` | micro `AVAudioEngine` avec AEC, redémarrage sur changement de périphérique |
+| `MicCapture.swift` | micro `AVAudioEngine` avec AEC, choix du micro, repli et reprise, redémarrage sur changement de périphérique |
+| `AudioDevices.swift` | périphériques : lecture HAL, classement du transport, filtrage, tri (fonctions pures), écouteurs avec anti-rebond, réglage du périphérique d'un nœud AVAudioEngine |
+| `FeedbackPlayer.swift` | signal sonore `play` : synthèse (pure) et moteur de lecture séparé |
 | `Resampler.swift` | mixage mono, `AVAudioConverter` vers 16 kHz |
 | `Segmenter.swift` | protocole VAD, VAD énergie, segmenteur d'énoncés |
 | `Transcriber.swift` | protocoles `SpeechRecognizer` / `SpeechBackend`, chargement des modèles |
@@ -248,7 +346,7 @@ La fin de stdin arrête le sidecar.
 | `Permissions.swift` | état micro / audio système / accessibilité |
 | `Levels.swift` | niveaux RMS en dBFS, émis au plus 4 fois par seconde |
 | `CoreAudioUtils.swift` | accès aux propriétés du HAL, écouteurs de propriétés |
-| `Spikes.swift` | modes `--spike-record`, `--spike-transcribe`, diagnostic, préchargement |
+| `Spikes.swift` | modes `--spike-record`, `--spike-transcribe`, diagnostics (`--list-audio-processes`, `--list-devices`), préchargement |
 
 Choix notables :
 
@@ -269,6 +367,10 @@ Choix notables :
   diarisation indisponibles), `asr_failed` (échec du traitement).
 - `stop` attend la transcription des énoncés en cours (au plus 15 s) avant d'émettre
   `state stopped`.
+- Périphériques : `start.input_device` absent ≠ `null` (absent = dernier choix mémorisé). Le choix
+  du micro survit d'une capture à l'autre. `device_missing` n'est émis qu'une fois par absence du
+  micro (pas de limiteur de 30 s, contrairement aux autres erreurs de capture). Le classement du
+  transport recopie les codes `kAudioDeviceTransportType…` pour rester une fonction pure testable.
 
 ## Points À VÉRIFIER sur le Mac
 
@@ -315,6 +417,23 @@ Points incertains, par ordre de priorité :
 15. **Faux positifs de détection** : un navigateur surveillé qui utilise le micro hors Meet
     déclenche un `call` ; Slack peut ouvrir le micro hors huddle (test du micro dans les
     préférences).
+16. **Micro choisi et voice processing** (S1-ter) : `kAudioOutputUnitProperty_CurrentDevice` sur
+    l'`AudioUnit` de `inputNode` réglé avant `setVoiceProcessingEnabled(true)` est-il conservé, ou
+    faut-il le second réglage (après) ? Avec VoiceProcessingIO, la propriété vise-t-elle bien
+    l'entrée (et pas la sortie) ? Le voice processing accepte-t-il un micro autre que celui par
+    défaut (sinon : repli sans AEC, visible dans le journal) ?
+17. **Sortie du signal sonore** : `kAudioOutputUnitProperty_CurrentDevice` sur `outputNode` d'un
+    moteur sans entrée, réglé avant la connexion du mixeur ; mono centré sur les deux canaux ;
+    signal non atténué par le « ducking » du voice processing du micro.
+18. **Agrégats privés visibles** dans `kAudioHardwarePropertyDevices` de notre processus : préfixes
+    réels (`scribe-tap-`, `CADefaultDeviceAggregate`, `VPAUAggregateAudioDevice`) ; à défaut, lire
+    la clé `private` de `kAudioAggregateDevicePropertyComposition`.
+19. **AirPods** : canaux d'entrée visibles dès l'apparition dans la liste (sinon le micro est
+    repris au prochain changement de la liste ou de configuration, pas immédiatement) ; délai de
+    bascule A2DP → HFP lors du passage au micro des AirPods (trou plus long qu'avec un micro filaire).
+20. **Retrait d'un écouteur HAL depuis sa propre file** (`AudioObjectRemovePropertyListenerBlock`
+    appelé sur la file de rappel, dans `MicCapture.stop()` et `AudioDeviceWatcher.stop()`) : pas
+    d'interblocage.
 
 ## À tester en priorité sur un Mac
 
@@ -324,3 +443,5 @@ Points incertains, par ordre de priorité :
 3. Spike S2 sur les enregistrements de S1 (`--spike-transcribe`).
 4. Spike S4 sur le Mac professionnel.
 5. Essai du protocole à la main (ci-dessus), puis débranchement du casque pendant la capture.
+6. Spike S1-ter (périphériques) : `--list-devices`, `set_input` pendant l'écoute, AirPods rangés
+   puis ressortis, `play` sur les AirPods et sur la sortie par défaut.

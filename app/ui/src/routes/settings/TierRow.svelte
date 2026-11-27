@@ -1,11 +1,11 @@
 <script lang="ts">
   // Une ligne de la carte « Modèles et réflexion » : agent, modèle et niveau de réflexion
   // pour un usage (contracts.md §4 `agent.tiers`).
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { api } from '../../lib/api';
   import { defaultAgentLabel, effortLabel, resolveTierAgent, retargetTier, sortAgents, type TIER_ROWS } from '../../lib/agents';
   import { ensureModels, modelLists } from '../../lib/models.svelte';
-  import type { AgentInfo, AgentTier, TestAgentResult } from '../../lib/types';
+  import type { AgentInfo, AgentTier, ModelInfo, TestAgentResult } from '../../lib/types';
   import AgentPicker, { type AgentOption } from '../../lib/components/AgentPicker.svelte';
   import Icon from '../../lib/components/Icon.svelte';
 
@@ -27,6 +27,9 @@
   const known = $derived(models.some((m) => m.id === tier.model));
   const note = $derived(models.find((m) => m.id === tier.model)?.note ?? null);
 
+  /** « grok-4.7 — 2M » : l'identifiant (ce qui est enregistré), puis le nom s'il apporte quelque chose. */
+  const modelLabel = (m: ModelInfo) => (m.name && m.name.toLowerCase() !== m.id.toLowerCase() ? `${m.id} — ${m.name}` : m.id);
+
   let otherOpen = $state(false);
   let otherInput: HTMLInputElement | undefined = $state();
   let testing = $state(false);
@@ -34,7 +37,8 @@
 
   // Liste chargée à la demande (affichage de la ligne, changement d'agent), gardée en cache.
   $effect(() => {
-    if (eff) ensureModels(eff);
+    const e = eff;
+    if (e) untrack(() => ensureModels(e));
   });
 
   const showOther = $derived(otherOpen || (!!tier.model && !known));
@@ -117,7 +121,7 @@
       {#if listed}
         <select id="{id}-model" class="input" value={selectValue} onchange={(e) => onModelSelect(e.currentTarget.value)}>
           <option value="">Par défaut du CLI</option>
-          {#each models as m (m.id)}<option value={m.id}>{m.name || m.id}</option>{/each}
+          {#each models as m (m.id)}<option value={m.id}>{modelLabel(m)}</option>{/each}
           <option value={OTHER}>Autre…</option>
         </select>
         {#if showOther}
@@ -137,7 +141,7 @@
         {#if models.length}
           <span class="chips" role="group" aria-label="Suggestions de modèles">
             {#each models.slice(0, 4) as m (m.id)}
-              <button type="button" class="chip" aria-pressed={tier.model === m.id} onclick={() => (tier.model = tier.model === m.id ? '' : m.id)}>{m.name || m.id}</button>
+              <button type="button" class="chip" aria-pressed={tier.model === m.id} onclick={() => (tier.model = tier.model === m.id ? '' : m.id)} title={modelLabel(m)}>{m.id}</button>
             {/each}
           </span>
         {/if}

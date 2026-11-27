@@ -200,6 +200,36 @@ enum Spikes {
         return 0
     }
 
+    /// Liste les micros et sorties tels que le message `devices` les présente (avec leur UID, à
+    /// passer dans `start.input_device`, `set_input` ou `play`), puis tous les périphériques du
+    /// HAL avec la raison de leur exclusion éventuelle.
+    static func listDevices() -> Int32 {
+        let raw = AudioDevices.rawDevices()
+        let list = AudioDeviceCatalog.build(raw,
+                                            defaultInput: AudioDevices.defaultInputDeviceID(),
+                                            defaultOutput: AudioDevices.defaultOutputDeviceID())
+        for (title, devices) in [("Entrées (micros)", list.inputs), ("Sorties", list.outputs)] {
+            print("== \(title) : \(devices.count) ==")
+            print("défaut  transport  nom                              UID")
+            for d in devices {
+                print([pad(d.isDefault ? "oui" : "", 7), pad(d.transport.rawValue, 10), pad(d.name, 32), d.id]
+                    .joined(separator: " "))
+            }
+            print("")
+        }
+        print("== Tous les périphériques du HAL : \(raw.count) ==")
+        print("objet  transport  entrée sortie  remarque          nom / UID")
+        for d in raw {
+            let note = AudioDeviceCatalog.exclusionReason(d)
+                ?? (d.inputChannels == 0 && d.outputChannels == 0 ? "aucun canal" : "")
+            let transport = "\(AudioDeviceCatalog.fourCCString(d.transportType)) \(AudioDeviceCatalog.classify(transportType: d.transportType).rawValue)"
+            print([pad(String(d.objectID), 6), pad(transport, 10), pad(String(d.inputChannels), 6),
+                   pad(String(d.outputChannels), 7), pad(note, 17), "\(d.name ?? "—") / \(d.uid ?? "—")"]
+                .joined(separator: " "))
+        }
+        return 0
+    }
+
     /// Télécharge et compile les modèles (ASR, VAD, diarisation) : appelé par `make install`.
     static func prefetchModels() async -> Int32 {
         let models = SpeechModels(backend: FluidAudioBackend())

@@ -21,6 +21,8 @@ public enum ScribeAudioMain {
       scribe-audio --list-audio-processes [--apps teams,slack]
                                                      liste les processus audio vus par Core Audio
                                                      et l'app reconnue pour chacun
+      scribe-audio --list-devices                    liste les micros et sorties avec leur UID
+                                                     (valeurs de input_device / set_input / play)
       scribe-audio --prefetch-models                 télécharge et prépare les modèles (make install)
       scribe-audio --version
 
@@ -81,6 +83,9 @@ public enum ScribeAudioMain {
 
         case "--list-audio-processes":
             exit(Spikes.listAudioProcesses(apps: appsOption(Array(args.dropFirst()))))
+
+        case "--list-devices":
+            exit(Spikes.listDevices())
 
         case "--prefetch-models":
             Task {

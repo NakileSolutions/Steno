@@ -2,7 +2,9 @@
 //
 // Possède le micro, le tap des apps de visio, les deux chaînes de traitement, les WAV
 // éventuels et la minuterie des niveaux. Gère la recréation du tap (processus des apps captées
-// modifiés ou apparus, sortie par défaut modifiée, réveil) et le mode aparté.
+// modifiés ou apparus, sortie par défaut modifiée, réveil), le changement de micro en cours de
+// capture (`set_input` : seul le micro redémarre, le trou est comblé par la chaîne « me ») et le
+// mode aparté.
 
 import AppKit
 import CoreAudio
@@ -29,6 +31,8 @@ final class CaptureSession {
         var silenceMs: Int
         var keepAudio: Bool
         var audioDir: URL?
+        /// UID du micro (nil = micro par défaut du système, en suivant ses changements).
+        var inputDevice: String? = nil
     }
 
     enum TapMode {
@@ -136,8 +140,12 @@ final class CaptureSession {
         if micPermission == .denied {
             reportError(.micDenied, "Accès au micro refusé : autorisez Scribe dans Réglages Système › Confidentialité et sécurité › Micro.", recoverable: false)
         } else {
-            let mic = MicCapture(voiceProcessing: true) { [weak self] samples, rate in
+            let mic = MicCapture(voiceProcessing: true, inputDevice: config.inputDevice) { [weak self] samples, rate in
                 self?.handleMicSamples(samples, sampleRate: rate)
+            }
+            mic.onDeviceMissing = { [weak self] uid in
+                // Pas de limiteur : MicCapture ne signale qu'une fois par absence.
+                self?.output.send(.error(code: .deviceMissing, message: DeviceMessages.inputMissing(uid), recoverable: true))
             }
             mic.onPersistentFailure = { [weak self] error in
                 self?.reportError(.deviceChanged, "Micro indisponible après un changement de périphérique (\(error)). Nouvel essai toutes les 5 s.", recoverable: true)
@@ -207,6 +215,19 @@ final class CaptureSession {
         levels.stop()
         await mePipeline.finish()
         await themPipeline.finish()
+    }
+
+    // MARK: Micro
+
+    /// Change de micro sans interrompre la capture (`set_input`). nil = micro par défaut.
+    /// L'horloge `t0/t1` continue : le trou éventuel est comblé par `ChannelPipeline`, et le
+    /// rééchantillonneur s'adapte à la fréquence du nouveau micro.
+    func setInputDevice(_ uid: String?) {
+        guard let mic else {
+            Log.warn("set_input : micro inactif (accès refusé ?), changement ignoré")
+            return
+        }
+        mic.setInputDevice(uid)
     }
 
     // MARK: Apps captées et tap

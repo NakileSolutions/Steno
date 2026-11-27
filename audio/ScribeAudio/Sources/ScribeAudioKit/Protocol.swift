@@ -38,6 +38,8 @@ enum ErrorCode: String, Codable, Equatable {
     case systemAudioDenied = "system_audio_denied"
     case tapFailed = "tap_failed"
     case deviceChanged = "device_changed"
+    /// Micro demandé introuvable (ou débranché) : le micro par défaut est utilisé.
+    case deviceMissing = "device_missing"
     case asrFailed = "asr_failed"
     case modelMissing = "model_missing"
     case badCommand = "bad_command"
@@ -112,6 +114,25 @@ struct WatchedApp: Equatable {
     }
 }
 
+/// Choix d'un périphérique dans une commande (`start.input_device`, `set_input.device`,
+/// `play.device`) : `null` = périphérique par défaut du système.
+enum DeviceSelection: Equatable {
+    case systemDefault
+    /// UID Core Audio (`kAudioDevicePropertyDeviceUID`).
+    case uid(String)
+
+    /// UID demandé, nil pour le périphérique par défaut.
+    var uid: String? {
+        if case let .uid(value) = self { return value }
+        return nil
+    }
+
+    /// Libellé pour les journaux.
+    var label: String {
+        uid.map { "« \($0) »" } ?? "périphérique par défaut"
+    }
+}
+
 struct DiarizationTurn: Equatable, Encodable {
     var t0: Double
     var t1: Double
@@ -127,6 +148,8 @@ enum OutgoingMessage: Equatable {
     case call(active: Bool, app: String, title: String?)
     case segment(SegmentPayload)
     case level(me: Double, them: Double)
+    /// Micros et sorties disponibles.
+    case devices(AudioDeviceList)
     case state(CaptureState)
     case wakeTest(text: String)
     case diarization(meetingId: String, turns: [DiarizationTurn])
@@ -144,6 +167,7 @@ extension OutgoingMessage: Encodable {
         case ts, t0, t1, channel, text
         case isPrivate = "private"
         case me, them
+        case inputs, outputs
         case state
         case meetingId = "meeting_id"
         case turns
@@ -189,6 +213,11 @@ extension OutgoingMessage: Encodable {
             try c.encode(JSONNumber.round(me, decimals: 1), forKey: .me)
             try c.encode(JSONNumber.round(them, decimals: 1), forKey: .them)
 
+        case let .devices(list):
+            try c.encode("devices", forKey: .type)
+            try c.encode(list.inputs, forKey: .inputs)
+            try c.encode(list.outputs, forKey: .outputs)
+
         case let .state(state):
             try c.encode("state", forKey: .type)
             try c.encode(state, forKey: .state)
@@ -230,6 +259,9 @@ struct StartOptions: Equatable {
     /// Identifiants des apps dont le son est capté (canal `them`) ; vide = toutes les apps
     /// surveillées.
     var apps: [String] = []
+    /// Micro demandé : nil = champ absent (le choix mémorisé par `set_input` s'applique, sinon
+    /// le micro par défaut) ; `.systemDefault` = `"input_device": null`.
+    var inputDevice: DeviceSelection?
 
     /// Bornes raisonnables pour `silence_ms` (le plan vise 0,8 à 1,2 s).
     static let silenceRange = 300...3000
@@ -239,6 +271,12 @@ enum Command: Equatable {
     /// Liste des apps de visio à surveiller (remplace la précédente).
     case watch([WatchedApp])
     case start(StartOptions)
+    /// Change de micro pendant la capture (mémorisé pour le prochain `start` hors capture).
+    case setInput(DeviceSelection)
+    /// Demande la liste des périphériques (réponse : `devices`).
+    case devices
+    /// Joue un signal discret sur une sortie.
+    case play(sound: FeedbackSound, device: DeviceSelection)
     case stop
     case aside(on: Bool)
     case wakeTest(seconds: Double)
@@ -298,7 +336,26 @@ enum CommandParser {
                 opts.keepAudio = p.keepAudio ?? false
                 if let dir = p.audioDir, !dir.isEmpty { opts.audioDir = dir }
                 opts.apps = uniqueTrimmed(p.apps ?? [])
+                opts.inputDevice = p.inputDevice
                 return .success(.start(opts))
+
+            case "set_input":
+                let p = try decoder.decode(SetInputPayload.self, from: data)
+                // `device` est obligatoire (null pour le micro par défaut) : une commande sans
+                // ce champ est ambiguë.
+                guard let device = p.device else { return .failure(.invalidField(command: cmd, field: "device")) }
+                return .success(.setInput(device))
+
+            case "devices":
+                return .success(.devices)
+
+            case "play":
+                let p = try decoder.decode(PlayPayload.self, from: data)
+                let name = (p.sound ?? FeedbackSound.detect.rawValue).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let sound = FeedbackSound(rawValue: name) else {
+                    return .failure(.invalidField(command: cmd, field: "sound"))
+                }
+                return .success(.play(sound: sound, device: p.device ?? .systemDefault))
 
             case "watch":
                 let p = try decoder.decode(WatchPayload.self, from: data)
@@ -389,6 +446,17 @@ enum CommandParser {
         let cmd: String?
     }
 
+    /// Champ de périphérique : absent → nil ; `null` ou chaîne vide → `.systemDefault` ;
+    /// chaîne → `.uid` ; autre type → erreur de décodage (`bad_command` sur ce champ).
+    fileprivate static func decodeSelection<K: CodingKey>(_ c: KeyedDecodingContainer<K>, forKey key: K) throws
+        -> DeviceSelection?
+    {
+        guard c.contains(key) else { return nil }
+        if try c.decodeNil(forKey: key) { return .systemDefault }
+        let uid = try c.decode(String.self, forKey: key).trimmingCharacters(in: .whitespacesAndNewlines)
+        return uid.isEmpty ? .systemDefault : .uid(uid)
+    }
+
     private struct StartPayload: Decodable {
         let vocabulary: [String]?
         // Double : accepte 1000 comme 1000.0.
@@ -396,6 +464,8 @@ enum CommandParser {
         let keepAudio: Bool?
         let audioDir: String?
         let apps: [String]?
+        /// nil = absent (≠ `null`, qui demande le micro par défaut).
+        let inputDevice: DeviceSelection?
 
         enum CodingKeys: String, CodingKey {
             case vocabulary
@@ -403,6 +473,45 @@ enum CommandParser {
             case keepAudio = "keep_audio"
             case audioDir = "audio_dir"
             case apps
+            case inputDevice = "input_device"
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            vocabulary = try c.decodeIfPresent([String].self, forKey: .vocabulary)
+            silenceMs = try c.decodeIfPresent(Double.self, forKey: .silenceMs)
+            keepAudio = try c.decodeIfPresent(Bool.self, forKey: .keepAudio)
+            audioDir = try c.decodeIfPresent(String.self, forKey: .audioDir)
+            apps = try c.decodeIfPresent([String].self, forKey: .apps)
+            inputDevice = try CommandParser.decodeSelection(c, forKey: .inputDevice)
+        }
+    }
+
+    private struct SetInputPayload: Decodable {
+        let device: DeviceSelection?
+
+        enum CodingKeys: String, CodingKey {
+            case device
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            device = try CommandParser.decodeSelection(c, forKey: .device)
+        }
+    }
+
+    private struct PlayPayload: Decodable {
+        let sound: String?
+        let device: DeviceSelection?
+
+        enum CodingKeys: String, CodingKey {
+            case sound, device
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            sound = try c.decodeIfPresent(String.self, forKey: .sound)
+            device = try CommandParser.decodeSelection(c, forKey: .device)
         }
     }
 

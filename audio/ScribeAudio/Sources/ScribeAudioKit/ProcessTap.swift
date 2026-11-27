@@ -141,8 +141,9 @@ final class ProcessTap {
         }
 
         let description: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Scribe-Tap",
-            kAudioAggregateDeviceUIDKey: "scribe-tap-\(UUID().uuidString)",
+            // Nom et préfixe d'UID connus d'`AudioDeviceCatalog`, qui exclut cet agrégat de `devices`.
+            kAudioAggregateDeviceNameKey: AudioDeviceCatalog.scribeTapName,
+            kAudioAggregateDeviceUIDKey: "\(AudioDeviceCatalog.scribeTapUIDPrefix)\(UUID().uuidString)",
             kAudioAggregateDeviceMainSubDeviceKey: outputUID,
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceIsStackedKey: false,
