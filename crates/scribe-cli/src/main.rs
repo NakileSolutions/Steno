@@ -359,7 +359,7 @@ fn log_event(ev: &CoreEvent) {
         CoreEvent::Request(r) => println!("» demande {} [{}] {} : {}", &r.id[..8], r.intent, r.status, r.summary.clone().unwrap_or(r.query.clone())),
         CoreEvent::Report { meeting_id, version } => println!("» compte rendu v{version} : {meeting_id}"),
         CoreEvent::Notify { title, body, .. } => println!("🔔 {title} — {body}"),
-        CoreEvent::CommandDetected => println!("🔔 commande vocale détectée"),
+        CoreEvent::CommandDetected { .. } => println!("🔔 commande vocale détectée"),
         CoreEvent::Live(_) | CoreEvent::MeetingsChanged => {}
     }
 }

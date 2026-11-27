@@ -65,6 +65,8 @@ struct Session {
     end_at: Option<Instant>,
     /// Appels en cours (app, titre), du plus ancien au plus récent.
     calls: Vec<(String, Option<String>)>,
+    /// Micro demandé au sidecar (UID, `None` = défaut du système).
+    input_device: Option<String>,
     next_confidential: bool,
     wake_waiters: Vec<oneshot::Sender<Result<String>>>,
     diarize_waiters: HashMap<String, oneshot::Sender<Result<Vec<Turn>>>>,
@@ -94,6 +96,7 @@ pub fn spawn(inner: Arc<Inner>) -> LiveHandle {
         aside_flush_at: None,
         end_at: None,
         calls: vec![],
+        input_device: None,
         next_confidential: false,
         wake_waiters: vec![],
         diarize_waiters: HashMap::new(),
@@ -160,6 +163,7 @@ impl Session {
                     s.last_error = None;
                 });
                 self.send_watch();
+                self.input_device = self.inner.settings().audio.input_device;
                 // Reprise d'une capture interrompue.
                 if self.capturing {
                     self.t_offset = self.t_max;
@@ -205,7 +209,28 @@ impl Session {
             keep_audio: true,
             audio_dir: dir.display().to_string(),
             apps,
+            input_device: s.audio.input_device.clone(),
         });
+    }
+
+    /// Commande vocale détectée : signal discret joué par le sidecar sur la sortie choisie
+    /// (jamais dans le son de l'appel) ; sans sidecar, l'app peut le jouer elle-même.
+    fn signal_command(&self) {
+        let s = self.inner.settings();
+        let mut played = false;
+        if s.voice.feedback != "none" && self.sidecar.is_some() {
+            let device = match (s.voice.feedback.as_str(), &s.voice.feedback_device) {
+                (_, Some(d)) => Some(Some(d.clone())),
+                // « Casque uniquement » sans sortie choisie : la sortie par défaut si c'est un casque.
+                ("headset", None) => headset_default(&self.inner.audio_devices.lock().unwrap()).map(Some),
+                _ => Some(None),
+            };
+            if let Some(device) = device {
+                self.send(SidecarCommand::Play { sound: "detect".into(), device });
+            }
+            played = true;
+        }
+        self.inner.emit(CoreEvent::CommandDetected { played });
     }
 
     /// Envoie au sidecar la liste des apps de visio à surveiller.
@@ -373,6 +398,12 @@ impl Session {
             LiveCmd::SettingsChanged => {
                 self.detector = Detector::new(&self.inner.settings().voice);
                 self.send_watch();
+                // Changement de micro : appliqué tout de suite, même pendant l'écoute.
+                let wanted = self.inner.settings().audio.input_device;
+                if wanted != self.input_device {
+                    self.input_device = wanted.clone();
+                    self.send(SidecarCommand::SetInput { device: wanted });
+                }
                 // Une app désactivée ne compte plus comme appel en cours.
                 let s = self.inner.settings();
                 self.calls.retain(|(app, _)| s.audio.call_app(app).map(|a| a.enabled).unwrap_or(false));
@@ -416,6 +447,9 @@ impl Session {
                 if let Err(e) = self.on_segment(ts, t0, t1, &channel, &text, private) {
                     tracing::error!("segment non enregistré : {e:#}");
                 }
+            }
+            SidecarEvent::Devices { inputs, outputs } => {
+                *self.inner.audio_devices.lock().unwrap() = crate::sidecar::AudioDevices { inputs, outputs };
             }
             SidecarEvent::Level { me, them } => {
                 self.levels = Levels { me, them };
@@ -469,6 +503,13 @@ impl Session {
                         s.sidecar = "error".into();
                     }
                 });
+                if code == "device_missing" {
+                    self.inner.emit(CoreEvent::Notify {
+                        title: "🎙 Micro introuvable".into(),
+                        body: message.clone(),
+                        route: Some("/settings/audio".into()),
+                    });
+                }
                 if !recoverable && matches!(code.as_str(), "mic_denied" | "system_audio_denied") {
                     self.inner.emit(CoreEvent::Notify {
                         title: "⚠️ Permission manquante".into(),
@@ -609,7 +650,7 @@ impl Session {
         }
         let Some(d) = a.detection else { return };
         let Some(m) = &self.meeting else { return };
-        self.inner.emit(CoreEvent::CommandDetected);
+        self.signal_command();
         if let Err(e) = create_request(&self.inner, Some(&m.id), "voice", d.intent, &d.query, d.verb.as_deref(), &a.segment_ids) {
             tracing::warn!("commande vocale non créée : {e:#}");
         }
@@ -625,7 +666,7 @@ impl Session {
         self.aside_buf.clear();
         let Some(m) = &self.meeting else { return };
         if let Some(d) = self.detector.detect_aside(&text) {
-            self.inner.emit(CoreEvent::CommandDetected);
+            self.signal_command();
             if let Err(e) = create_request(&self.inner, Some(&m.id), "hotkey", d.intent, &d.query, d.verb.as_deref(), &ids) {
                 tracing::warn!("demande en aparté non créée : {e:#}");
             }
@@ -650,6 +691,14 @@ impl Session {
             self.start_sidecar();
         }
     }
+}
+
+/// Sortie par défaut si c'est un casque ou des écouteurs (Bluetooth, USB).
+pub fn headset_default(d: &crate::sidecar::AudioDevices) -> Option<String> {
+    d.outputs
+        .iter()
+        .find(|o| o.default && matches!(o.transport.as_str(), "bluetooth" | "usb"))
+        .map(|o| o.id.clone())
 }
 
 /// Apps surveillées (activées) au format du protocole.
@@ -727,6 +776,16 @@ pub async fn diarize(inner: &Inner, meeting_id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn casque_par_defaut() {
+        use crate::sidecar::{AudioDevice, AudioDevices};
+        let dev = |id: &str, default: bool, transport: &str| AudioDevice { id: id.into(), name: id.into(), default, transport: transport.into() };
+        let mut d = AudioDevices { inputs: vec![], outputs: vec![dev("hp", true, "builtin"), dev("airpods", false, "bluetooth")] };
+        assert_eq!(headset_default(&d), None, "haut-parleurs par défaut : pas de casque");
+        d.outputs = vec![dev("hp", false, "builtin"), dev("airpods", true, "bluetooth")];
+        assert_eq!(headset_default(&d).as_deref(), Some("airpods"));
+    }
 
     #[test]
     fn attribution_des_intervenants() {

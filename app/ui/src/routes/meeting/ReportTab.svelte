@@ -7,6 +7,8 @@
   import { isEmptyBody, splitReport } from '../../lib/report';
   import Markdown from '../../lib/components/Markdown.svelte';
   import Icon from '../../lib/components/Icon.svelte';
+  import AgentLogo from '../../lib/components/AgentLogo.svelte';
+  import { agentName } from '../../lib/agents';
 
   let { detail, reload }: { detail: MeetingDetail; reload: () => Promise<void> } = $props();
 
@@ -126,7 +128,7 @@
       <button class="btn sm icon ghost" onclick={exportMd} title="Exporter en markdown (copie + fichier .md)" aria-label="Exporter en markdown"><Icon name="download" size={15} /></button>
     </div>
 
-    <p class="faint small gen"><Icon name="ask" size={12} /><span class="ellipsis">Généré {report.provider ? `par ${report.provider}` : ''} à <span class="tnum">{time(report.generated_at)}</span>{report.model ? ` · ${report.model}` : ''}</span></p>
+    <p class="faint small gen">{#if report.provider}<AgentLogo id={report.provider} name={agentName(report.provider)} size={14} />{:else}<Icon name="ask" size={12} />{/if}<span class="ellipsis">Généré {report.provider ? `par ${agentName(report.provider)}` : ''} à <span class="tnum">{time(report.generated_at)}</span>{report.model ? ` · ${report.model}` : ''}</span></p>
 
     <article class="report" class:stale={!!pending}>
       {#if brief}

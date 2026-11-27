@@ -152,6 +152,8 @@ pub struct VoiceSettings {
     pub variants: Vec<String>,
     pub verbs: BTreeMap<String, Vec<String>>,
     pub feedback: String,
+    /// UID de la sortie où jouer le signal de détection (`None` = sortie par défaut).
+    pub feedback_device: Option<String>,
 }
 
 pub fn default_verbs() -> BTreeMap<String, Vec<String>> {
@@ -178,6 +180,7 @@ impl Default for VoiceSettings {
             variants: vec![],
             verbs: default_verbs(),
             feedback: "system".into(),
+            feedback_device: None,
         }
     }
 }
@@ -281,6 +284,10 @@ pub struct AudioSettings {
     /// (notification seulement : l'écoute ne démarre jamais toute seule).
     #[serde(alias = "auto_detect_teams")]
     pub auto_detect_calls: bool,
+    /// UID du micro choisi (`None` = micro par défaut du système).
+    pub input_device: Option<String>,
+    /// Nom du micro au moment du choix (affiché s'il est débranché).
+    pub input_device_name: Option<String>,
     /// Apps de visio surveillées.
     pub call_apps: Vec<CallApp>,
     pub silence_ms: u32,
@@ -301,6 +308,8 @@ impl Default for AudioSettings {
     fn default() -> Self {
         AudioSettings {
             auto_detect_calls: true,
+            input_device: None,
+            input_device_name: None,
             call_apps: default_call_apps(),
             silence_ms: 1000,
             vocabulary: vec![],

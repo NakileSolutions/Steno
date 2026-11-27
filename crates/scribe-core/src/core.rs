@@ -38,6 +38,8 @@ pub struct Inner {
     agent_override: Option<Arc<dyn AgentAdapter>>,
     pub live_state: Mutex<LiveState>,
     pub live: Mutex<Option<LiveHandle>>,
+    /// Dernière liste de périphériques reçue du sidecar.
+    pub audio_devices: Mutex<crate::sidecar::AudioDevices>,
     pub sidecar_spec: Option<SidecarSpec>,
     pub shutdown: CancellationToken,
 }
@@ -281,6 +283,7 @@ impl Core {
                 agent_override: opts.agent_override,
                 live_state: Mutex::new(LiveState::default()),
                 live: Mutex::new(None),
+                audio_devices: Mutex::new(Default::default()),
                 sidecar_spec: opts.sidecar,
                 shutdown: CancellationToken::new(),
             }),
@@ -374,6 +377,11 @@ impl Core {
             self.inner.send_live(LiveCmd::NextConfidential(on));
         }
         Ok(())
+    }
+
+    /// Micros et sorties disponibles (dernière liste reçue du sidecar).
+    pub fn audio_devices(&self) -> crate::sidecar::AudioDevices {
+        self.inner.audio_devices.lock().unwrap().clone()
     }
 
     /// Enregistre un énoncé de test du mot d'appel (micro, N secondes).

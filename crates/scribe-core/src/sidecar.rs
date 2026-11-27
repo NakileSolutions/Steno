@@ -60,6 +60,13 @@ pub enum SidecarEvent {
         me: f64,
         them: f64,
     },
+    /// Micros et sorties disponibles.
+    Devices {
+        #[serde(default)]
+        inputs: Vec<AudioDevice>,
+        #[serde(default)]
+        outputs: Vec<AudioDevice>,
+    },
     State {
         state: String,
     },
@@ -85,6 +92,23 @@ pub enum SidecarEvent {
     Unknown,
 }
 
+/// Périphérique audio (micro ou sortie).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct AudioDevice {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub default: bool,
+    #[serde(default)]
+    pub transport: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct AudioDevices {
+    pub inputs: Vec<AudioDevice>,
+    pub outputs: Vec<AudioDevice>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WatchApp {
     pub id: String,
@@ -106,7 +130,16 @@ pub enum SidecarCommand {
         /// Apps dont le son est capté (vide = toutes les apps surveillées).
         #[serde(default)]
         apps: Vec<String>,
+        /// UID du micro (`None` = micro par défaut du système).
+        #[serde(default)]
+        input_device: Option<String>,
     },
+    /// Change de micro (pendant la capture ou pour le prochain `start`).
+    SetInput { device: Option<String> },
+    /// Demande la liste des périphériques.
+    Devices,
+    /// Joue le signal de détection sur une sortie (`None` = sortie par défaut).
+    Play { sound: String, device: Option<String> },
     Stop,
     Aside { on: bool },
     WakeTest { seconds: u32 },

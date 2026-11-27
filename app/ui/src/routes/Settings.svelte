@@ -16,6 +16,7 @@
   import PrivacySection from './settings/PrivacySection.svelte';
   import ProfileSection from './settings/ProfileSection.svelte';
   import ImportSection from './settings/ImportSection.svelte';
+  import { version } from '../../package.json';
 
   let settings = $state<Settings | null>(null);
   let saved = $state('');
@@ -103,6 +104,7 @@
           {#each [0, 1, 2] as k (k)}<div class="sk-row"><span class="skeleton" style="width: 30%"></span><span class="skeleton" style="width: {60 - k * 12}%"></span></div>{/each}
         </div>
       {/if}
+      <p class="credit">Scribe {version} · Développé par Nakile Solutions</p>
     </div>
   </div>
 </div>
@@ -118,6 +120,7 @@
   .udot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
   .sbody { flex: 1; min-height: 0; }
   .inner { max-width: 880px; padding: 4px 40px 64px; }
+  .credit { margin-top: 40px; text-align: center; font-size: 11.5px; color: var(--text-3); letter-spacing: 0.01em; }
   .skel { margin-top: 20px; padding: 20px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 22px; }
   .sk-row { display: grid; grid-template-columns: 200px 1fr; gap: 24px; }
   .sk-row .skeleton + .skeleton { margin-top: 0; }

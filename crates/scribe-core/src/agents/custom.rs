@@ -21,6 +21,7 @@ fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
+#[cfg(test)]
 pub(crate) fn render(template: &str, prompt_file: &Path, run_dir: &Path, model: Option<&str>) -> String {
     render_full(template, prompt_file, run_dir, model, None)
 }

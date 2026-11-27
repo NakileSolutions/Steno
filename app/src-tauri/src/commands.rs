@@ -203,6 +203,11 @@ pub struct TestAgentResult {
 }
 
 #[tauri::command]
+pub fn list_audio_devices(st: State<'_, AppState>) -> scribe_core::sidecar::AudioDevices {
+    st.core.audio_devices()
+}
+
+#[tauri::command]
 pub async fn list_models(st: State<'_, AppState>, provider: String) -> R<Vec<scribe_core::agents::ModelInfo>> {
     st.core.list_models(&provider).await.map_err(er)
 }

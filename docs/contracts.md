@@ -81,6 +81,7 @@ inconnus (compatibilité ascendante).
 {"type":"teams_call","active":true,"title":"Daily ORION"}
 {"type":"segment","ts":"2026-11-26T10:41:12+01:00","t0":668.2,"t1":672.9,"channel":"me","text":"Scribe, cherche…","private":false}
 {"type":"level","me":-32.5,"them":-24.1}
+{"type":"devices","inputs":[{"id":"BuiltInMicrophoneDevice","name":"Micro du MacBook Pro","default":true,"transport":"builtin"}],"outputs":[{"id":"AirPodsUID","name":"AirPods Pro","default":true,"transport":"bluetooth"}]}
 {"type":"state","state":"listening"}
 {"type":"wake_test","text":"scribe cherche quelque chose"}
 {"type":"diarization","meeting_id":"…","turns":[{"t0":12.0,"t1":18.5,"speaker":"S1"}]}
@@ -98,14 +99,23 @@ inconnus (compatibilité ascendante).
   peuvent être actifs en même temps.
 - `teams_call` : **ancien format**, toujours accepté par le cœur ; équivaut à
   `{"type":"call","app":"teams",…}`.
-- Codes d'erreur : `mic_denied`, `system_audio_denied`, `tap_failed`, `device_changed`,
+- `devices` : micros (`inputs`) et sorties (`outputs`) disponibles. `id` = UID Core Audio
+  (stable d'un branchement à l'autre), `default` = périphérique par défaut du système,
+  `transport` = `builtin | usb | bluetooth | virtual | aggregate | other`. Émis après `ready`,
+  à chaque branchement / débranchement, et en réponse à `{"cmd":"devices"}`.
+- Code `device_missing` (récupérable) : le micro demandé est absent ; le sidecar utilise le
+  micro par défaut et le dit dans `message`.
+- Codes d'erreur : `mic_denied`, `system_audio_denied`, `tap_failed`, `device_changed`, `device_missing`,
   `asr_failed`, `model_missing`, `bad_command`.
 
 ### Cœur → sidecar
 
 ```json
 {"cmd":"watch","apps":[{"id":"teams","name":"Microsoft Teams","bundles":["com.microsoft.teams2","com.microsoft.teams"]},{"id":"slack","name":"Slack","bundles":["com.tinyspeck.slackmacgap"]}]}
-{"cmd":"start","vocabulary":["Scribe","Atlas"],"silence_ms":1000,"keep_audio":false,"audio_dir":"/…/Caches/Scribe/<meeting_id>","apps":["slack"]}
+{"cmd":"start","vocabulary":["Scribe","Atlas"],"silence_ms":1000,"keep_audio":false,"audio_dir":"/…/Caches/Scribe/<meeting_id>","apps":["slack"],"input_device":null}
+{"cmd":"set_input","device":"BuiltInMicrophoneDevice"}
+{"cmd":"devices"}
+{"cmd":"play","sound":"detect","device":null}
 {"cmd":"stop"}
 {"cmd":"aside","on":true}
 {"cmd":"wake_test","seconds":8}
@@ -121,6 +131,11 @@ inconnus (compatibilité ascendante).
 - `start.apps` : identifiants des apps dont le son est capté (canal `them`) — l'app de
   l'appel en cours si le cœur en connaît une, sinon toutes les apps surveillées. Absent ou
   vide = toutes les apps surveillées.
+- `start.input_device` / `set_input.device` : UID du micro à utiliser (`null` = micro par
+  défaut du système, en suivant ses changements). `set_input` change de micro pendant la
+  capture sans l'interrompre (au plus un court trou, horloge `t0/t1` conservée).
+- `play` : joue le signal discret de détection d'une commande (`sound` : `detect`) sur la sortie
+  `device` (`null` = sortie par défaut). Jamais injecté dans le son de l'app d'appel.
 - `start.keep_audio` : si `true` (diarisation ou rétention > 0), le sidecar écrit
   `them.wav` (et `me.wav`) dans `audio_dir` ; sinon aucun fichier audio n'est écrit.
 - `diarize` : le sidecar lit `them.wav` et répond par `diarization` (ou `error`).
@@ -226,10 +241,13 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
       "cancel": ["annule"],
       "stop": ["arrête l'écoute", "arrête d'écouter", "arrête la transcription", "termine la réunion", "fin de la réunion"]
     },
-    "feedback": "system"
+    "feedback": "system",
+    "feedback_device": null
   },
   "audio": {
     "auto_detect_calls": true,
+    "input_device": null,
+    "input_device_name": null,
     "call_apps": [
       { "id": "teams", "name": "Microsoft Teams", "bundles": ["com.microsoft.teams2", "com.microsoft.teams"], "enabled": true, "browser": false },
       { "id": "slack", "name": "Slack", "bundles": ["com.tinyspeck.slackmacgap"], "enabled": true, "browser": false },
@@ -259,7 +277,11 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
   défaut du CLI ; texte libre accepté) et `effort` (niveau de réflexion, vide = défaut du CLI ;
   valeurs proposées par l'agent, voir `AgentInfo.efforts`). `agent.models` est l'ancien format
   (modèle par niveau pour l'agent par défaut), encore lu si `tiers.*.model` est vide.
-- `voice.feedback` : `none | system | headset`.
+- `voice.feedback` : `none | system | headset`. `voice.feedback_device` : UID de la sortie où
+  jouer le signal (`null` = sortie par défaut ; `headset` sans périphérique choisi = sortie par
+  défaut si c'est un casque, sinon rien).
+- `audio.input_device` : UID du micro choisi (`null` = micro par défaut du système) ;
+  `audio.input_device_name` : son nom au moment du choix (affiché s'il est débranché).
 - `audio.auto_detect_calls` (ancien nom accepté : `auto_detect_teams`) : proposer
   (notification) de démarrer l'écoute quand un appel commence dans une app surveillée.
 - `audio.call_apps` : apps de visio surveillées. L'utilisateur peut en ajouter (identifiant
@@ -324,6 +346,8 @@ type AgentInfo = { id: string; name: string; support: "supported" | "experimenta
   efforts: string[];        /* niveaux de réflexion acceptés par le CLI (ex. low…max) ; vide = non réglable */
   lists_models: boolean };  /* true : `list_models` interroge le CLI ; false : suggestions + saisie libre */
 type ModelInfo = { id: string; name: string; note: string | null };
+type AudioDevice = { id: string; name: string; default: boolean;
+  transport: "builtin" | "usb" | "bluetooth" | "virtual" | "aggregate" | "other" };
 type Connector = { id: number; provider: string; name: string; status: string; detected_at: string;
   use_live: boolean; use_correlation: boolean; write_blockable: boolean };
 type Repo = { id: number; label: string; path: string; use_live: boolean; use_correlation: boolean;
@@ -372,6 +396,7 @@ type Settings = /* section 4 */;
 | `export_settings` | — | `string` (TOML) |
 | `import_settings` | `toml: string` | `Settings` |
 | `detect_agents` | — | `AgentInfo[]` |
+| `list_audio_devices` | — | `{ inputs: AudioDevice[]; outputs: AudioDevice[] }` (dernière liste reçue du sidecar ; vide sans sidecar) |
 | `list_models` | `provider: string` | `ModelInfo[]` (modèles proposés par le CLI ; la saisie libre reste possible) |
 | `test_agent` | `provider: string`, `model?: string`, `effort?: string` | `{ ok: boolean, message: string, duration_ms: number }` |
 | `list_connectors` | — | `Connector[]` |

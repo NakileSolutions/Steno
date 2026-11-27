@@ -387,6 +387,110 @@ test.describe('réglages', () => {
     await apps.getByRole('button', { name: 'Supprimer Google Chat' }).click();
     await expect(apps.getByText('Google Chat', { exact: true })).toHaveCount(0);
   });
+
+  test('agent IA : modèle et réflexion par usage, enregistrés', async ({ page }) => {
+    await open(page, '/settings?section=agent');
+    // Mention de l'auteur, discrète, en bas des Réglages.
+    await expect(page.getByText('Scribe 0.1.0 · Développé par Nakile Solutions')).toBeVisible();
+    await expect(page.getByText('Modèle par niveau')).toHaveCount(0);
+
+    const defaults = page.getByRole('radiogroup', { name: 'Agent par défaut' });
+    for (const n of ['Claude Code', 'Codex', 'Antigravity', 'Grok Build']) await expect(defaults.getByText(n, { exact: true })).toBeVisible();
+    await expect(defaults.locator('[data-agent="claude-code"] .alogo svg')).toBeVisible();
+
+    const card = page.getByRole('group', { name: 'Modèles et réflexion' });
+    const rows = card.locator('[data-tier]');
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0)).toHaveAttribute('aria-label', 'Recherches et corrélation');
+    await expect(rows.nth(1)).toHaveAttribute('aria-label', 'Compte rendu');
+    await expect(rows.nth(2)).toHaveAttribute('aria-label', 'Notes et récapitulatifs');
+    await expect(card.getByText(/Les recherches consomment le plus/)).toBeVisible();
+
+    const pickAgent = async (row: ReturnType<Page['getByRole']>, name: string) => {
+      await row.getByRole('button', { name: /^Agent : / }).click();
+      await page.getByRole('listbox', { name: 'Agent' }).getByRole('option', { name, exact: true }).click();
+      await expect(row.getByRole('button', { name: `Agent : ${name}` })).toBeVisible();
+    };
+
+    // Compte rendu : Claude Code / opus / Élevée (Claude ne liste pas ses modèles : saisie libre et alias).
+    const summary = card.getByRole('group', { name: 'Compte rendu' });
+    await expect(summary.getByRole('button', { name: 'Agent : Agent par défaut (Claude Code)' })).toBeVisible();
+    await pickAgent(summary, 'Claude Code');
+    await summary.getByRole('button', { name: 'opus', exact: true }).click();
+    await expect(summary.getByLabel('Modèle', { exact: true })).toHaveValue('opus');
+    await expect(summary.getByText('alias : dernière version')).toBeVisible();
+    await summary.getByLabel('Réflexion').selectOption({ label: 'Élevée' });
+    await summary.getByRole('button', { name: 'Tester' }).click();
+    await expect(summary.getByRole('status')).toContainText('modèle opus, réflexion élevée');
+    await expect(summary.getByRole('status')).toContainText('(1.2 s)');
+
+    // Recherches : Grok / grok-4.7 / Moyenne (Grok liste ses modèles : liste déroulante).
+    const search = card.getByRole('group', { name: 'Recherches et corrélation' });
+    await pickAgent(search, 'Grok Build');
+    const model = search.getByLabel('Modèle', { exact: true });
+    await expect(model.locator('option', { hasText: 'grok-4.7' })).toHaveCount(1);
+    await model.selectOption('grok-4.7');
+    await search.getByLabel('Réflexion').selectOption({ label: 'Moyenne' });
+    await expect(search.getByLabel('Réflexion').locator('option')).toHaveText(['Défaut', 'Basse', 'Moyenne', 'Élevée', 'Très élevée']);
+
+    // Notes : Codex avec un modèle libre.
+    const quick = card.getByRole('group', { name: 'Notes et récapitulatifs' });
+    await pickAgent(quick, 'Codex');
+    await quick.getByLabel('Modèle', { exact: true }).fill('gpt-maison-rapide');
+
+    await page.getByRole('button', { name: 'Enregistrer' }).click();
+    await expect(page.getByText('Réglages enregistrés.')).toBeVisible();
+    await page.reload();
+
+    await expect(summary.getByRole('button', { name: 'Agent : Claude Code' })).toBeVisible();
+    await expect(summary.getByLabel('Modèle', { exact: true })).toHaveValue('opus');
+    await expect(summary.getByLabel('Réflexion')).toHaveValue('high');
+    await expect(search.getByRole('button', { name: 'Agent : Grok Build' })).toBeVisible();
+    await expect(search.getByLabel('Modèle', { exact: true })).toHaveValue('grok-4.7');
+    await expect(search.getByLabel('Réflexion')).toHaveValue('medium');
+    await expect(quick.getByRole('button', { name: 'Agent : Codex' })).toBeVisible();
+    await expect(quick.getByLabel('Modèle', { exact: true })).toHaveValue('gpt-maison-rapide');
+    await expect(page.getByText('Modifications non enregistrées')).toHaveCount(0);
+  });
+
+  test('agent IA : changer d’agent remet à vide ce qui n’existe plus', async ({ page }) => {
+    await open(page, '/settings?section=agent');
+    const card = page.getByRole('group', { name: 'Modèles et réflexion' });
+    const pickAgent = async (row: ReturnType<Page['getByRole']>, name: string) => {
+      await row.getByRole('button', { name: /^Agent : / }).click();
+      await page.getByRole('listbox', { name: 'Agent' }).getByRole('option', { name, exact: true }).click();
+      await expect(row.getByRole('button', { name: `Agent : ${name}` })).toBeVisible();
+    };
+    const search = card.getByRole('group', { name: 'Recherches et corrélation' });
+
+    // Antigravity : modèle de sa liste et réflexion « Maximale ».
+    await pickAgent(search, 'Antigravity');
+    const model = search.getByLabel('Modèle', { exact: true });
+    await expect(model.locator('option', { hasText: 'gemini-3.5-flash' })).toHaveCount(1);
+    await model.selectOption('gemini-3.5-flash');
+    await search.getByLabel('Réflexion').selectOption({ label: 'Maximale' });
+
+    // Grok : le modèle d'Antigravity et « max » n'existent pas, remis à vide.
+    await pickAgent(search, 'Grok Build');
+    await expect(search.getByLabel('Modèle', { exact: true })).toHaveValue('');
+    await expect(search.getByLabel('Réflexion')).toHaveValue('');
+
+    // « Autre… » : saisie libre, gardée au changement d'agent ; l'effort commun aussi.
+    await search.getByLabel('Modèle', { exact: true }).selectOption({ label: 'Autre…' });
+    await search.getByLabel('Autre modèle').fill('grok-5-preview');
+    await search.getByLabel('Réflexion').selectOption({ label: 'Élevée' });
+    await pickAgent(search, 'Claude Code');
+    await expect(search.getByLabel('Modèle', { exact: true })).toHaveValue('grok-5-preview');
+    await expect(search.getByLabel('Réflexion')).toHaveValue('high');
+
+    // Agent sans niveaux de réflexion : contrôle désactivé ; agent non installé sélectionnable mais marqué.
+    await search.getByRole('button', { name: /^Agent : / }).click();
+    await expect(page.getByRole('option', { name: /Gemini CLI/ })).toContainText('non installé');
+    await page.getByRole('option', { name: /Gemini CLI/ }).click();
+    await expect(search.getByLabel('Réflexion')).toBeDisabled();
+    await expect(search.getByLabel('Réflexion')).toHaveValue('');
+    await expect(search.getByText('Non réglable pour cet agent.')).toBeVisible();
+  });
 });
 
 test.describe('apps de visio', () => {
@@ -441,6 +545,10 @@ test('assistant de premier lancement', async ({ page }) => {
   await expect(page.getByText('Accessibilité')).toBeVisible();
   await page.getByRole('button', { name: 'Suivant' }).click();
   await expect(page.getByRole('heading', { name: 'Agent IA' })).toBeVisible();
+  const agents = page.getByRole('radiogroup', { name: 'Agent IA' });
+  for (const n of ['Claude Code', 'Codex', 'Antigravity', 'Grok Build']) await expect(agents.getByText(n, { exact: true })).toBeVisible();
+  await expect(agents.locator('.alogo svg')).toHaveCount(4);
+  await expect(page.getByRole('link', { name: 'Choisir les modèles plus tard dans Réglages' })).toBeVisible();
   await page.getByRole('button', { name: 'Tester l’agent' }).click();
   await expect(page.getByText(/a répondu « OK »/)).toBeVisible();
   await page.getByRole('button', { name: 'Suivant' }).click();

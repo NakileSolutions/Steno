@@ -454,3 +454,33 @@ async fn agent_modele_et_reflexion_par_usage() {
     assert!(c.db().actions(&m.id).unwrap().iter().any(|a| a.owner.as_deref() == Some("Marie")));
     c.shutdown();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn peripheriques_audio_et_signal() {
+    let c = core("peripheriques", Some(cat_sidecar()));
+    let mut rx = c.subscribe();
+    // Le simulateur annonce ses périphériques après `ready`.
+    wait_until("liste des périphériques", 20, || !c.audio_devices().inputs.is_empty()).await;
+    let d = c.audio_devices();
+    assert_eq!(d.inputs.len(), 3);
+    assert!(d.inputs.iter().any(|i| i.default && i.transport == "builtin"));
+    assert!(d.outputs.iter().any(|o| o.transport == "bluetooth"));
+    // Micro choisi + signal sur une sortie donnée : réglages acceptés et conservés.
+    let mut s = c.settings();
+    s.audio.input_device = Some("AirPodsPro-UID:input".into());
+    s.audio.input_device_name = Some("AirPods Pro".into());
+    s.voice.feedback_device = Some("AirPodsPro-UID:output".into());
+    let s = c.save_settings(s).unwrap();
+    assert_eq!(s.audio.input_device.as_deref(), Some("AirPodsPro-UID:input"));
+    // Commande vocale pendant l'écoute → le sidecar joue le signal (pas l'app).
+    let id = replay_fixture(&c).await;
+    let mut played = None;
+    while let Ok(ev) = rx.try_recv() {
+        if let scribe_core::events::CoreEvent::CommandDetected { played: p } = ev {
+            played = Some(p);
+        }
+    }
+    assert_eq!(played, Some(true));
+    assert!(!c.db().requests(&id).unwrap().is_empty());
+    c.shutdown();
+}

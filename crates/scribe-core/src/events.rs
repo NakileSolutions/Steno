@@ -55,8 +55,9 @@ pub enum CoreEvent {
     MeetingsChanged,
     /// Notification système à afficher (titre, corps, route à ouvrir au clic).
     Notify { title: String, body: String, route: Option<String> },
-    /// Retour sonore : une commande vocale vient d'être détectée.
-    CommandDetected,
+    /// Une commande vocale vient d'être détectée. `played` : le sidecar a déjà joué le signal
+    /// (sinon l'app peut le jouer elle-même).
+    CommandDetected { played: bool },
 }
 
 impl CoreEvent {
@@ -71,7 +72,7 @@ impl CoreEvent {
                 ("scribe://report", serde_json::json!({ "meeting_id": meeting_id, "version": version }))
             }
             CoreEvent::MeetingsChanged => ("scribe://meetings", serde_json::Value::Null),
-            CoreEvent::Notify { .. } | CoreEvent::CommandDetected => return None,
+            CoreEvent::Notify { .. } | CoreEvent::CommandDetected { .. } => return None,
         })
     }
 }

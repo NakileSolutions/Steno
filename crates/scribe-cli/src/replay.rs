@@ -15,6 +15,20 @@ fn emit(v: &Value) {
     let _ = out.flush();
 }
 
+/// Périphériques simulés (micro intégré, AirPods, interface USB).
+fn fake_devices() -> Value {
+    json!({"type": "devices",
+        "inputs": [
+            {"id": "BuiltInMicrophoneDevice", "name": "Micro du MacBook Pro", "default": true, "transport": "builtin"},
+            {"id": "AirPodsPro-UID:input", "name": "AirPods Pro", "default": false, "transport": "bluetooth"},
+            {"id": "ScarlettSolo-UID", "name": "Scarlett Solo USB", "default": false, "transport": "usb"}
+        ],
+        "outputs": [
+            {"id": "AirPodsPro-UID:output", "name": "AirPods Pro", "default": true, "transport": "bluetooth"},
+            {"id": "BuiltInSpeakerDevice", "name": "Haut-parleurs du MacBook Pro", "default": false, "transport": "builtin"}
+        ]})
+}
+
 /// `speed` : facteur d'accélération (0 = aussi vite que possible).
 pub fn run(file: &Path, speed: f64, exit_at_end: bool) -> Result<()> {
     let text = std::fs::read_to_string(file).with_context(|| format!("lecture de {}", file.display()))?;
@@ -36,6 +50,7 @@ pub fn run(file: &Path, speed: f64, exit_at_end: bool) -> Result<()> {
 
     emit(&json!({"type": "ready", "version": env!("CARGO_PKG_VERSION"), "asr": "replay"}));
     emit(&json!({"type": "permissions", "microphone": "granted", "system_audio": "granted", "accessibility": "granted"}));
+    emit(&fake_devices());
 
     // Comme le vrai sidecar : l'appel Teams est annoncé tout de suite, mais rien n'est capté
     // avant la commande `start` ; `stop` met la capture en pause (reprise au `start` suivant).
@@ -53,7 +68,8 @@ pub fn run(file: &Path, speed: f64, exit_at_end: bool) -> Result<()> {
             }
             "aside" => *aside = c.get("on").and_then(|x| x.as_bool()).unwrap_or(false),
             // Liste des apps surveillées : le rejeu annonce les appels du fichier tels quels.
-            "watch" => {}
+            "watch" | "set_input" | "play" => {}
+            "devices" => emit(&fake_devices()),
             "wake_test" => emit(&json!({"type": "wake_test", "text": "Scribe, cherche quelque chose."})),
             "diarize" => emit(&json!({"type": "error", "code": "diarize_failed",
                                       "message": "diarisation indisponible en simulation", "recoverable": true})),

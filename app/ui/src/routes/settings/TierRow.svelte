@@ -147,7 +147,7 @@
       {:else if !listed && eff}
         <span class="sub tiny faint">Saisie libre : ce CLI ne liste pas ses modèles.</span>
       {/if}
-      {#if list?.error}<span class="sub tiny err">{list.error}</span>{/if}
+      {#if list?.error}<span class="sub tiny faint lerr" title={list.error}><Icon name="warn" size={11} />{list.error}</span>{/if}
     </div>
 
     <div class="ctl">
@@ -175,7 +175,7 @@
   .tic { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; flex: none; background: var(--accent-soft); color: var(--accent-text); }
   .ttl { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .ttl strong { font-weight: 500; color: var(--text); }
-  .tgrid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.25fr) minmax(0, 0.8fr); gap: 12px; padding-left: 40px; align-items: start; }
+  .tgrid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.2fr) minmax(0, 0.7fr); gap: 12px; padding-left: 40px; align-items: start; }
   .ctl { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
   .clabel { display: flex; align-items: center; gap: 6px; height: 16px; }
   .refresh {
@@ -209,7 +209,8 @@
   .chip[aria-pressed='true'] { background: var(--accent-soft); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-line); }
   .chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
   .sub { line-height: 1.4; }
-  .err { color: var(--err); }
+  .lerr { display: flex; gap: 5px; align-items: flex-start; }
+  .lerr :global(.icon) { margin-top: 1px; color: var(--warn); flex: none; }
   select:disabled { opacity: 0.55; }
   .result { color: var(--err); display: flex; align-items: flex-start; gap: 6px; padding-left: 40px; line-height: 1.45; }
   .result :global(.icon) { margin-top: 2px; }

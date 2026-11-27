@@ -77,7 +77,8 @@ fn forward_events(app: tauri::AppHandle, core: Core) {
                 CoreEvent::Notify { title, body, .. } => {
                     let _ = app.notification().builder().title(title).body(body).show();
                 }
-                CoreEvent::CommandDetected => play_feedback(&core),
+                // Le sidecar joue le signal sur la sortie choisie ; sinon, repli sur le son système.
+                CoreEvent::CommandDetected { played: false } => play_feedback(&core),
                 _ => {}
             }
             if let Some((name, mut payload)) = ev.to_wire() {
@@ -175,6 +176,7 @@ pub fn run() {
             commands::export_settings,
             commands::import_settings,
             commands::detect_agents,
+            commands::list_audio_devices,
             commands::list_models,
             commands::test_agent,
             commands::list_connectors,

@@ -9,6 +9,8 @@
   import { toast, toastError } from '../lib/ui.svelte';
   import Logo from '../lib/Logo.svelte';
   import Icon from '../lib/components/Icon.svelte';
+  import AgentLogo from '../lib/components/AgentLogo.svelte';
+  import { sortAgents } from '../lib/agents';
   import WakeTest from './settings/WakeTest.svelte';
 
   const STEPS = [
@@ -144,6 +146,21 @@
     }
   }
 
+  // Claude Code et Codex toujours proposés ; Antigravity, Grok et les autres s'ils sont
+  // détectés (ou déjà choisis). Ordre : agents mis en avant d'abord.
+  const ALWAYS = ['claude-code', 'codex'];
+  const obAgents = $derived(sortAgents(agents).filter((a) => ALWAYS.includes(a.id) || a.installed || a.id === settings?.agent.provider));
+
+  async function modelsLater(e: MouseEvent) {
+    e.preventDefault();
+    try {
+      await persist();
+    } catch {
+      // Rien de bloquant : on ouvre quand même les Réglages.
+    }
+    navigate('/settings?section=agent');
+  }
+
   const blockable = $derived(connectors.filter((c) => c.write_blockable));
   const hiddenCount = $derived(connectors.length - blockable.length);
   const STATUS_ICON: Record<string, string> = { ok: 'check', warn: 'warn', error: 'x' };
@@ -196,9 +213,10 @@
           <h1>Agent IA</h1>
           <p class="lead">Choisissez le CLI d’agent déjà connecté à votre abonnement. Le Scribe ne l’appelle que sur demande et en fin de réunion.</p>
           <div class="choices" role="radiogroup" aria-label="Agent IA">
-            {#each agents as a (a.id)}
+            {#each obAgents as a (a.id)}
               <label class="choice" class:sel={settings.agent.provider === a.id} class:off={!a.installed}>
                 <input type="radio" name="ob-agent" value={a.id} bind:group={settings.agent.provider} disabled={!a.installed} />
+                <AgentLogo id={a.id} name={a.name} size={20} />
                 <span class="grow"><strong>{a.name}</strong> <span class="faint small">{a.installed ? (a.version ?? 'installé') : (a.error ?? 'non installé')}</span></span>
                 <span class="badge {a.support === 'supported' ? 'ok' : a.support === 'experimental' ? 'warn' : ''}">{a.support === 'supported' ? 'Supporté' : a.support === 'experimental' ? 'Expérimental' : 'Générique'}</span>
               </label>
@@ -208,6 +226,7 @@
             <button class="btn" onclick={testAgent} disabled={testing}>{testing ? 'Test en cours…' : 'Tester l’agent'}</button>
             {#if testResult}<span class="small res" class:okc={testResult.ok} class:errc={!testResult.ok}><Icon name={testResult.ok ? 'check' : 'x'} size={13} stroke={2} />{testResult.message}</span>{/if}
           </div>
+          <p class="small faint later"><Icon name="info" size={13} /><span>Modèle et niveau de réflexion se règlent pour les recherches, le compte rendu et les notes. <a href="#/settings?section=agent" onclick={modelsLater}>Choisir les modèles plus tard dans Réglages</a></span></p>
 
         {:else if STEPS[step].id === 'repos'}
           <h1>Dépôts lisibles</h1>
@@ -351,6 +370,9 @@
   .errc { color: var(--err); }
   .warnc { color: var(--warn); }
   .strict { gap: 10px; }
+  .later { display: flex; align-items: flex-start; gap: 7px; line-height: 1.5; }
+  .later :global(.icon) { margin-top: 3px; flex: none; }
+  .later a { color: var(--accent-text); font-weight: 500; }
   .inner > :global(.btn) { align-self: flex-start; }
   .nav { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); gap: 8px; }
   .nextbtn { min-width: 112px; gap: 4px; }
