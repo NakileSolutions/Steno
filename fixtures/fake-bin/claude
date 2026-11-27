@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""Faux CLI « claude » pour les tests : imite `claude -p --output-format stream-json`,
+`claude --version` et `claude mcp list`, et appelle réellement le crochet PreToolUse
+déclaré dans le fichier `--settings` (pour tester la politique lecture seule de bout en bout).
+Variable FAKE_CLAUDE_LOG : fichier où journaliser les arguments reçus."""
+import json
+import os
+import re
+import subprocess
+import sys
+import uuid
+
+args = sys.argv[1:]
+if os.environ.get("FAKE_CLAUDE_LOG"):
+    with open(os.environ["FAKE_CLAUDE_LOG"], "a") as f:
+        f.write(json.dumps(args) + "\n")
+
+if "--version" in args or "-v" in args:
+    print("9.9.9 (Claude Code factice)")
+    sys.exit(0)
+if args[:2] == ["mcp", "list"]:
+    print("Checking MCP server health…\n")
+    print("claude.ai Atlassian: https://mcp.atlassian.com/v1/sse - ✓ Connected")
+    print("slack: https://mcp.slack.com/sse - ✓ Connected")
+    print("datadog: npx datadog-mcp - ✗ Failed to connect")
+    sys.exit(0)
+
+
+def opt(name):
+    if name in args:
+        i = args.index(name)
+        return args[i + 1] if i + 1 < len(args) else ""
+    return None
+
+
+prompt = sys.stdin.read()
+session = opt("--resume") or opt("--session-id") or str(uuid.uuid4())
+settings = {}
+if opt("--settings"):
+    try:
+        settings = json.load(open(opt("--settings")))
+    except Exception:
+        pass
+tools_flag = opt("--tools")
+no_tools = tools_flag == ""
+
+
+def out(obj):
+    print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+out({"type": "system", "subtype": "init", "session_id": session, "model": "modele-factice", "cwd": os.getcwd()})
+n = [0]
+
+
+def tool(name, inp):
+    n[0] += 1
+    tid = f"toolu_{n[0]}"
+    out({"type": "assistant", "session_id": session,
+         "message": {"content": [{"type": "tool_use", "id": tid, "name": name, "input": inp}]}})
+    if no_tools:
+        out({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": tid, "is_error": True,
+             "content": "No such tool available"}]}})
+        return False
+    for h in settings.get("hooks", {}).get("PreToolUse", []):
+        for hk in h.get("hooks", []):
+            r = subprocess.run(hk["command"], shell=True, input=json.dumps(
+                {"hook_event_name": "PreToolUse", "tool_name": name, "tool_input": inp, "cwd": os.getcwd()}),
+                capture_output=True, text=True)
+            if r.returncode == 2:
+                out({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": tid,
+                     "is_error": True, "content": r.stderr.strip()}]}})
+                return False
+    out({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": tid, "content": "ok"}]}})
+    return True
+
+
+def finish(text):
+    out({"type": "assistant", "session_id": session, "message": {"content": [{"type": "text", "text": text}]}})
+    out({"type": "result", "subtype": "success", "is_error": False, "result": text, "session_id": session})
+    sys.exit(0)
+
+
+if "Compte rendu à rédiger" in prompt:
+    title = re.search(r"Titre : (.*)", prompt).group(1)
+    date = re.search(r"Date : (.*)", prompt).group(1)
+    lines = re.findall(r"^\[[0-9:]+\] (.*?) : (.*)$", prompt, re.M)
+    decisions = sorted({re.sub(r".*on décide de ", "", t).split(",")[0].rstrip(".") for _, t in lines if "décide" in t})
+    actions = []
+    if "corrige le APP-1234" in prompt:
+        actions.append({"owner": "Marie", "text": "Corriger le APP-1234 (verrou de créneau)", "due": "vendredi"})
+    if "page Confluence" in prompt:
+        actions.append({"owner": "Moi", "text": "Mettre à jour la page Confluence sur l'export Brindille", "due": "jeudi"})
+    md = f"# {title} — {date}\n\n## En bref\nDaily d'équipe : verrou de créneau, export Brindille, erreurs ms-booking.\n\n"
+    md += "## Décisions\n" + "".join(f"- {d}\n" for d in decisions) + "\n"
+    md += "## Actions — qui / quoi / échéance\n" + "".join(f"- **{a['owner']}** — {a['text']} — {a['due']}\n" for a in actions)
+    md += "\n## Questions ouvertes\n- Format du fichier d'export Brindille (APP-1302)\n\n"
+    md += "## Points techniques évoqués\n- Verrou de créneau non relâché quand la saga échoue (ms-booking, APP-1234)\n- Erreurs 500 cette nuit\n\n"
+    md += "## Recherches faites pendant la réunion\n- Erreurs Datadog sur ms-booking\n\n## Mes notes\n- Marie relance le support Brindille\n"
+    data = {"decisions": decisions, "actions": actions, "speakers": {"Eux-1": "Marie"}}
+    finish(md + "\n```json\n" + json.dumps(data, ensure_ascii=False) + "\n```\n")
+
+if "Corrélation après la réunion" in prompt:
+    tool("Grep", {"pattern": "SlotLock"})
+    tool("mcp__claude_ai_Atlassian__getJiraIssue", {"issueIdOrKey": "APP-1234"})
+    tool("mcp__claude_ai_Atlassian__addCommentToJiraIssue", {"issueIdOrKey": "APP-1234", "body": "x"})
+    md = ("## Liens avec le code et les outils\n\n⚠️ La décision « garder le verrou » est cohérente avec `SlotLock.kt:42`.\n\n"
+          "- **APP-1234** : verrou non relâché (vérifié)\n")
+    refs = {"refs": [{"kind": "jira", "ref": "APP-1234", "title": "Verrou de créneau", "url": None, "verified": True, "note": None},
+                     {"kind": "code", "ref": "src/SlotLock.kt:42", "title": None, "url": None, "verified": False, "note": "supposé"}]}
+    finish(md + "\n```json\n" + json.dumps(refs) + "\n```")
+
+if "Test de sécurité" in prompt or "Poste" in prompt:
+    tool("mcp__slack__slack_send_message", {"channel": "général", "text": "test Scribe"})
+    tool("mcp__claude_ai_Atlassian__createJiraIssue", {"summary": "test Scribe"})
+    finish("TL;DR: refusé — je ne publie rien à l'extérieur.")
+
+if "Demande en direct" in prompt and "(recap)" not in prompt:
+    tool("mcp__claude_ai_Atlassian__searchJiraIssuesUsingJql", {"jql": "text ~ \"créneau\""})
+    tool("Bash", {"command": "rg -n SlotLock"})
+    tool("Bash", {"command": "git push"})
+    tool("mcp__slack__slack_send_message", {"text": "fuite"})
+    finish("TL;DR: Le verrou de créneau est géré dans `src/SlotLock.kt:42` ; le ticket APP-1234 en parle.\n\n"
+           "## Jira\n- APP-1234 — Verrou de créneau non relâché (vérifié)\n\n## Code\n- `src/SlotLock.kt:42` (vérifié)\n")
+
+if "(recap)" in prompt:
+    finish("TL;DR: On a parlé du verrou de créneau et de l'export Brindille.\n- Décision : garder le verrou")
+
+if "historique" in prompt:
+    finish("TL;DR: D'après la Daily ORION du 26/11, on garde le verrou de créneau jusqu'à la v2.")
+
+finish("TL;DR: OK, le Scribe est prêt.")

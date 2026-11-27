@@ -1,0 +1,14 @@
+/target
+node_modules/
+/app/ui/dist/
+/app/src-tauri/gen/
+/app/src-tauri/binaries/
+.DS_Store
+*.db
+*.db-wal
+*.db-shm
+/audio/ScribeAudio/.build/
+/app/ui/screenshots/
+/.dev-home/
+/app/ui/test-results/
+/app/ui/playwright-report/

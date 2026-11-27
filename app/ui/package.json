@@ -1,0 +1,37 @@
+{
+  "name": "scribe-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && tsc -p tsconfig.e2e.json",
+    "test": "npm run test:unit && npm run test:e2e:maquette",
+    "test:unit": "vitest run",
+    "test:e2e": "vite build && cargo build -p scribe-cli --manifest-path ../../Cargo.toml && playwright test --project=maquette --project=reel",
+    "test:e2e:maquette": "vite build && playwright test --project=maquette",
+    "test:e2e:reel": "vite build && cargo build -p scribe-cli --manifest-path ../../Cargo.toml && playwright test --project=reel",
+    "captures": "vite build && cargo build -p scribe-cli --manifest-path ../../Cargo.toml && playwright test --project=captures"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.9.0",
+    "@tauri-apps/plugin-opener": "^2.5.0",
+    "dompurify": "^3.3.0",
+    "marked": "^17.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.2",
+    "@tauri-apps/cli": "^2.12.6",
+    "@tsconfig/svelte": "^5.0.6",
+    "@types/node": "^22.20.7",
+    "jsdom": "^31.0.1",
+    "svelte": "^5.59.2",
+    "svelte-check": "^4.3.0",
+    "typescript": "~5.9.3",
+    "vite": "^8.0.0",
+    "vitest": "^5.1.2"
+  }
+}
