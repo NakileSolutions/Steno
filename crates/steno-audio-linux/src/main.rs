@@ -29,6 +29,8 @@ mod controller;
 #[cfg(target_os = "linux")]
 mod devices;
 #[cfg(target_os = "linux")]
+mod ical;
+#[cfg(target_os = "linux")]
 mod log;
 #[cfg(target_os = "linux")]
 mod models;
