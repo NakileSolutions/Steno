@@ -11,6 +11,7 @@ Sommaire :
 5. API de l'app : commandes Tauri et événements
 6. Fichiers d'exemple (`fixtures/`)
 7. Backend HTTP (`steno serve`) : tests e2e et développement sans Tauri
+8. App de bureau : actions en ligne de commande
 
 > **Règle produit** : l'écoute ne démarre **jamais** automatiquement et ne s'arrête **jamais**
 > automatiquement. Un appel détecté (Teams, Slack, Zoom…) donne au plus une notification qui propose de
@@ -21,8 +22,9 @@ Sommaire :
 
 ## 1. Schéma SQLite
 
-Fichier : `~/Library/Application Support/Steno/steno.db` (variable d'environnement
-`STENO_HOME` pour changer le dossier, utilisée par les tests et sous Linux).
+Fichier : `~/Library/Application Support/Steno/steno.db` sur macOS,
+`~/.local/share/Steno/steno.db` sous Linux (variable d'environnement `STENO_HOME` pour changer le
+dossier, utilisée par les tests).
 Pragmas à chaque ouverture : `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`.
 Permissions du fichier : `0600`. Migrations : `crates/steno-core/src/db/migrations/NNN_*.sql`,
 appliquées par `rusqlite_migration` (`user_version`). Une sauvegarde `VACUUM INTO` est faite
@@ -148,6 +150,38 @@ inconnus (compatibilité ascendante).
   capture sans l'interrompre (au plus un court trou, horloge `t0/t1` conservée).
 - `play` : joue le signal discret de détection d'une commande (`sound` : `detect`) sur la sortie
   `device` (`null` = sortie par défaut). Jamais injecté dans le son de l'app d'appel.
+
+#### Sidecar Linux (`crates/steno-audio-linux`)
+
+Même protocole ; ce qui diffère :
+
+- **`watch`** : chaque entrée de `bundles` est un préfixe (sans casse) comparé au nom de
+  l'exécutable du processus audio (`application.process.binary`, `/proc/<pid>/comm`, `exe`), à
+  son identifiant Flatpak (`.flatpak-info`) ou Snap (cgroup), puis aux ancêtres du processus ;
+  en dernier recours au nom d'application annoncé au serveur son (jamais pour un navigateur).
+- **Appel** : une app est en appel quand l'un de ses processus enregistre un vrai micro (un
+  flux qui enregistre le moniteur d'une sortie ne compte pas).
+- **Capture `them`** : moniteur de chacun des flux de lecture de l'app (sink inputs), mélangés ;
+  les flux qui apparaissent pendant la capture sont ajoutés aussitôt.
+- **Identifiants de périphériques** : noms des nœuds PulseAudio (`alsa_input.usb-…`).
+  `transport` d'après `device.bus` / `device.api` (`usb`, `bluetooth`), `builtin` pour les
+  cartes internes, `virtual` pour les sorties nulles, filtres et annulations d'écho,
+  `aggregate` pour une sortie combinée, `other` (HDMI…).
+- **`permissions`** : pas d'autorisation système. `microphone` et `system_audio` valent
+  `granted` dès que le serveur son répond (`unknown` sinon) ; `accessibility` vaut `granted` si
+  X11 est joignable (titres des fenêtres), `unknown` sinon ; `calendar` vaut `granted` si une
+  source de calendrier existe (Evolution Data Server ou `calendars.txt`), `unknown` sinon.
+  `request_permission` réémet simplement `permissions`. `mic_denied` et
+  `system_audio_denied` ne sont jamais émis.
+- **`calendar_events`** : cache local d'Evolution Data Server
+  (`~/.cache/evolution/calendar/*/cache.db`, `~/.local/share/evolution/calendar/*/calendar.ics`)
+  et fichiers ou adresses `.ics` listés dans `<dossier des données>/calendars.txt` ; récurrences,
+  exceptions et annulations développées ; `me` d'après les comptes en ligne de GNOME ou
+  `STENO_EMAIL`.
+- **`retranscribe`** : Canary 180M Flash, langues `fr`, `en`, `es`, `de` ; autre langue →
+  `model_missing` récupérable (le direct est gardé).
+- Annulation d'écho WebRTC sur le micro (sauf `room`), référence = son capté de l'app ; active
+  seulement quand la sortie par défaut n'est pas un casque (`STENO_AEC=0|1` pour forcer).
 - `start.keep_audio` : si `true` (diarisation ou rétention > 0), le sidecar écrit
   `them.wav` (et `me.wav`) dans `audio_dir` ; sinon aucun fichier audio n'est écrit.
 - `diarize` : le sidecar lit `them.wav` et répond par `diarization` (ou `error`).
@@ -310,7 +344,10 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
 - `audio.auto_detect_calls` (ancien nom accepté : `auto_detect_teams`) : proposer
   (notification) de démarrer l'écoute quand un appel commence dans une app surveillée.
 - `audio.call_apps` : apps de visio surveillées. L'utilisateur peut en ajouter (identifiant
-  libre en minuscules, nom, préfixes de bundle). `browser: true` signale qu'on capte **tout**
+  libre en minuscules, nom, préfixes de bundle). Valeurs par défaut propres à la plateforme :
+  sous Linux, noms d'exécutables et identifiants Flatpak (`teams-for-linux`, `slack`,
+  `com.slack.Slack`, `zoom`, `us.zoom.Zoom`, `webex`, `discord`, `chrome`, `firefox`…), sans
+  FaceTime ; des réglages importés d'un Mac reçoivent ces valeurs en plus des leurs. `browser: true` signale qu'on capte **tout**
   le son du navigateur (autres onglets compris) : désactivé par défaut, avec avertissement.
   `audio.end_grace_s` : obsolète, ignoré.
 - `correlation.mode` : `off | on_demand | auto`.
@@ -412,14 +449,14 @@ type Settings = /* section 4 */;
 | `regenerate_report` | `id` | `null` |
 | `get_meeting_context` | `id` | `MeetingContext` `{meeting_id, text, template, files: ContextFile[], report_at}` (sans le texte des documents ; `report_at` : heure UTC de départ de la rédaction si elle attend encore) |
 | `set_meeting_context` | `id, text, template?` | `MeetingContext` (`template` : identifiant d'un format, `null` = format par défaut des réglages) |
-| `add_context_file` | `id, name, data` (contenu en base64, 20 Mo max) | `ContextFile` `{id, meeting_id, name, kind, size, chars, truncated, added_at}` : texte extrait à l'ajout (PDF, xlsx/xls/ods, csv, docx/doc/rtf/odt/html via `textutil`, md/txt/json…), 60 000 caractères gardés |
+| `add_context_file` | `id, name, data` (contenu en base64, 20 Mo max) | `ContextFile` `{id, meeting_id, name, kind, size, chars, truncated, added_at}` : texte extrait à l'ajout (PDF, xlsx/xls/ods, csv, docx/odt/rtf/html lus en Rust — `textutil` d'abord sur macOS —, doc via `antiword` ou `catdoc` sous Linux, md/txt/json…), 60 000 caractères gardés |
 | `delete_context_file` | `fileId` | `null` (comme toute modification du contexte : repousse d'au moins 30 s une rédaction en attente) |
 | `report_now` | `id` | `null` : la rédaction part sans attendre la fin du délai de contexte |
 | `get_update_status` | — | `UpdateStatus` `{current, latest, available, url, notes, published_at, checked_at, state, message, source_dir, can_install, log_path}` ; `state` : `idle \| checking \| installing \| installed \| error` |
 | `check_update` | — | `UpdateStatus` après lecture de la dernière version publiée (API GitHub publique, sans authentification) |
 | `install_update` | — | `null` : lance en arrière-plan la mise à jour des sources (tag `v<version>`, avance rapide sur `main` ou tag détaché) puis `make install` ; refusé pendant une réunion, si les sources ont des modifications ou sont sur une autre branche. Avancement par `steno://update` |
 | `restart_app` | — | (app uniquement) redémarre Sténo après une mise à jour ; refusé pendant une réunion |
-| `upcoming` | `days?` (défaut 7) | `Upcoming` `{planned: Meeting[], events: UpcomingEvent[], calendar}` : réunions prévues (statut `planned`, `started_at` = heure prévue) et événements du calendrier macOS (`{id, title, start, end, all_day, location, url, notes, calendar, attendees: [{name, email, status, organizer, me}], meeting_id}`) ; `calendar` : `granted \| denied \| unknown \| unavailable` |
+| `upcoming` | `days?` (défaut 7) | `Upcoming` `{planned: Meeting[], events: UpcomingEvent[], calendar}` : réunions prévues (statut `planned`, `started_at` = heure prévue) et événements du calendrier (macOS, ou sidecar Linux : `{id, title, start, end, all_day, location, url, notes, calendar, attendees: [{name, email, status, organizer, me}], meeting_id}`) ; `calendar` : `granted \| denied \| unknown \| unavailable` (sous Linux, `unavailable` tant que le sidecar n'annonce pas `granted`) |
 | `plan_meeting` | `title, scheduledAt` (ISO 8601), `eventId?` | `Meeting` prévue ; depuis un événement : invités (sauf soi et les refus) en participants, description de l'invitation en contexte. Démarrer l'écoute entre 30 min avant et 30 min après l'heure prévue reprend cette réunion |
 | `start_planned` | `id, inPerson?` | `Meeting` : démarre l'écoute de la réunion prévue, même en avance |
 | `get_participants` | `id` | `Participant[]` `{name, email, source}` (`calendar \| manual`) |
@@ -462,9 +499,9 @@ type Settings = /* section 4 */;
 | `doctor` | — | `DoctorItem[]` |
 | `delete_all_data` | — | `null` |
 | `log_ui_error` | `message` | `null` (consigné dans logs/steno.log) |
-| `get_permissions` | — | `{ microphone, system_audio, accessibility: "granted" \| "denied" \| "unknown", available: boolean }` (redemande l'état au sidecar ; `available` = sidecar lancé) |
+| `get_permissions` | — | `{ microphone, system_audio, accessibility, calendar: "granted" \| "denied" \| "unknown", available: boolean, platform, sound_server, session, global_shortcuts, app_command }` (redemande l'état au sidecar ; `available` = sidecar lancé ; champs système, facultatifs : `platform` `macos \| linux`, `sound_server` (« pipewire … », « pulseaudio 16.1 »…), `session` `x11 \| wayland`, `global_shortcuts` (raccourcis globaux enregistrés), `app_command` (commande de l'app pour les raccourcis du bureau, clé runtime `app_shortcuts`)) |
 | `request_permission` | `kind: "microphone" \| "system_audio" \| "accessibility"` | `null` (invite macOS affichée par le sidecar ; sans effet si déjà répondu) |
-| `open_permission_settings` | `kind` | `null` (ouvre la page des Réglages Système du droit ; adresses fixes) |
+| `open_permission_settings` | `kind` | `null` (ouvre la page des Réglages Système du droit ; adresses fixes. Linux : réglages du son — `gnome-control-center sound`, sinon `pavucontrol` — pour `microphone` et `system_audio`, erreur pour les autres) |
 | `complete_onboarding` | — | `null` (assistant terminé ou passé : il ne se rouvre plus) |
 | `pause_meeting` | — | `null` (écoute en pause : la réunion continue, rien n'est transcrit ; `LiveState.state = "paused"`) |
 | `resume_meeting` | — | `null` (reprise de l'écoute) |
@@ -513,3 +550,14 @@ l'interface sur la même origine. Ouvrir `http://127.0.0.1:4180/?backend=http`.
 
 Le répartiteur (`steno_core::api::dispatch`) couvre exactement les commandes du §5 ; un test
 vérifie que chaque commande listée ici est connue.
+
+---
+
+## 8. App de bureau : actions en ligne de commande
+
+`steno-app --toggle` (démarrer / arrêter l'écoute), `--aside` (aparté, en bascule), `--note`
+(note rapide), `--show` (ouvrir la fenêtre). Une seconde instance transmet l'action à l'app déjà
+lancée (`tauri-plugin-single-instance`) puis se termine ; si l'app ne tourne pas, elle démarre et
+exécute l'action. Sert aux raccourcis personnalisés du bureau sous Wayland, où les raccourcis
+globaux de Tauri ne fonctionnent pas, et aux actions du raccourci de bureau
+(`packaging/linux/steno.desktop`).

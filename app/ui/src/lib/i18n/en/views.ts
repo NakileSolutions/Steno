@@ -80,17 +80,16 @@ const en: Record<string, string> = {
     'Sténo isn’t listening yet: nothing is transcribed until you decide.',
   'Attention : tout le son du navigateur sera capté, y compris les autres onglets.':
     'Note: all browser audio will be captured, including other tabs.',
-  'Sans app de visio : seul le micro du Mac est écouté': 'No call app: only the Mac’s microphone is used',
+  'Sans app de visio : seul le micro de l’ordinateur est écouté': 'No call app: only the computer’s microphone is used',
   'Plutôt une réunion en présentiel': 'In-person meeting instead',
   'Sténo n’écoute pas': 'Sténo isn’t listening',
   'L’écoute démarre et s’arrête uniquement sur votre demande.': 'Listening starts and stops only when you ask.',
   'Titre de la réunion (facultatif)': 'Meeting title (optional)',
   'Titre de la réunion': 'Meeting title',
-  'Sans app de visio : seul le micro du Mac est écouté ; les intervenants sont identifiés à la fin':
-    'No call app: only the Mac’s microphone is used; speakers are identified at the end',
+  'Sans app de visio : seul le micro de l’ordinateur est écouté ; les intervenants sont identifiés à la fin': 'No call app: only the computer’s microphone is used; speakers are identified at the end',
   'Réunion en présentiel': 'In-person meeting',
   'Pour arrêter ensuite : le bouton « Arrêter l’écoute », le raccourci, le menu de la barre d’état, ou à la voix.':
-    'To stop later: the “Stop listening” button, the shortcut, the menu bar menu, or your voice.',
+    'To stop later: the “Stop listening” button, the shortcut, the status icon menu, or your voice.',
   'Voir les réunions passées': 'See past meetings',
   '{n} demande en cours': '{n} request in progress',
   '{n} demandes en cours': '{n} requests in progress',
@@ -220,7 +219,7 @@ const en: Record<string, string> = {
   'Sténo est prêt.': 'Sténo is ready.',
   'Premier lancement': 'First launch',
   'Progression': 'Progress',
-  'Tout reste sur ce Mac. Vous pourrez tout modifier dans les Réglages.': 'Everything stays on this Mac. You can change it all later in Settings.',
+  'Tout reste sur cet ordinateur. Vous pourrez tout modifier dans les Réglages.': 'Everything stays on this computer. You can change it all later in Settings.',
   'Étape {n} sur {total}': 'Step {n} of {total}',
   'Sténo a besoin du micro et de l’audio du système (pour entendre l’app de l’appel : Teams, Slack, Zoom…) ; l’accessibilité lui permet de lire le titre de l’appel. Il n’écoute que lorsque vous démarrez l’écoute.':
     'Sténo needs the microphone and system audio (to hear the call app: Teams, Slack, Zoom…); Accessibility lets it read the call title. It only listens when you start listening.',
@@ -375,7 +374,7 @@ const en: Record<string, string> = {
   'Dictée à Sténo': 'Dictated to Sténo',
   'Note de {time}': 'Note from {time}',
   'Supprimer la note': 'Delete note',
-  'Ajouter une note…  (⌘↩ pour enregistrer)': 'Add a note…  (⌘↩ to save)',
+  'Ajouter une note…  ({k} pour enregistrer)': 'Add a note…  ({k} to save)',
   'Nouvelle note': 'New note',
   'Ajouter': 'Add',
   'Calendrier': 'Calendar',
@@ -392,5 +391,9 @@ const en: Record<string, string> = {
   'Préparation': 'Preparation',
   'Participants': 'Participants',
   'En présentiel': 'In person',
+  // Linux : serveur son, raccourcis du bureau.
+  'Son et raccourcis': 'Sound and shortcuts',
+  'Sténo capte votre micro et le son de l’app de l’appel (Teams, Slack, Zoom…) par le serveur son, sans autorisation à accorder. Il n’écoute que lorsque vous démarrez l’écoute.': 'Sténo records your microphone and the call app’s audio (Teams, Slack, Zoom…) through the sound server, with nothing to allow. It only listens when you start listening.',
+  'Vous retrouverez ces informations dans Réglages → Son et raccourcis.': 'You’ll find this again in Settings → Sound and shortcuts.',
 };
 export default en;

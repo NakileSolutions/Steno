@@ -5,6 +5,7 @@
   import { confirmDialog, toastError } from '../../lib/ui.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import { t } from '../../lib/i18n.svelte';
+  import { modKey } from '../../lib/platform';
 
   let { detail }: { detail: MeetingDetail } = $props();
   const m = $derived(detail.meeting);
@@ -78,7 +79,7 @@
       class="input"
       rows="2"
       bind:value={draft}
-      placeholder={t('Ajouter une note…  (⌘↩ pour enregistrer)')}
+      placeholder={t('Ajouter une note…  ({k} pour enregistrer)', { k: `${modKey}↩` })}
       aria-label={t('Nouvelle note')}
       onkeydown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}
     ></textarea>

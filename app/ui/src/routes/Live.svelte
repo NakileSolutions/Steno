@@ -420,7 +420,7 @@
           </div>
         </div>
         <button class="btn primary go" onclick={() => start()} disabled={busy}><Icon name="play" size={15} stroke={2} />{t('Démarrer l’écoute')}</button>
-        <button class="btn room" onclick={() => start(true)} disabled={busy} title={t('Sans app de visio : seul le micro du Mac est écouté')}><Icon name="user" size={15} />{t('Plutôt une réunion en présentiel')}</button>
+        <button class="btn room" onclick={() => start(true)} disabled={busy} title={t('Sans app de visio : seul le micro de l’ordinateur est écouté')}><Icon name="user" size={15} />{t('Plutôt une réunion en présentiel')}</button>
       {:else}
         <span class="hic"><Logo size={56} tile /></span>
         <h2>{t('Sténo n’écoute pas')}</h2>
@@ -429,7 +429,7 @@
           <input class="input lg" bind:value={newTitle} placeholder={t('Titre de la réunion (facultatif)')} aria-label={t('Titre de la réunion')} />
           <button class="btn primary go" disabled={busy}><Icon name="play" size={15} stroke={2} />{t('Démarrer l’écoute')}</button>
         </form>
-        <button class="btn room" onclick={() => start(true)} disabled={busy} title={t('Sans app de visio : seul le micro du Mac est écouté ; les intervenants sont identifiés à la fin')}>
+        <button class="btn room" onclick={() => start(true)} disabled={busy} title={t('Sans app de visio : seul le micro de l’ordinateur est écouté ; les intervenants sont identifiés à la fin')}>
           <Icon name="user" size={15} />{t('Réunion en présentiel')}
         </button>
       {/if}

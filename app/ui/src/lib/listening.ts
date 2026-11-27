@@ -4,6 +4,7 @@
 import type { CallApp, LiveCall, LiveState, Settings, VoiceVerbs } from './types';
 import { normalizeAgentSettings } from './agents';
 import { t, tk } from './i18n.svelte';
+import { platform as currentPlatform, type Platform } from './platform';
 
 export const DEFAULT_STOP_VERB = 'arrête l’écoute';
 
@@ -14,8 +15,8 @@ export function isListening(s: Pick<LiveState, 'state'>): boolean {
 
 // ---------- Apps de visio (contracts.md §4 `audio.call_apps`) ----------
 
-/** Liste par défaut des apps de visio surveillées (copie de contracts.md §4). */
-export const DEFAULT_CALL_APPS: readonly CallApp[] = [
+/** Apps de visio par défaut sur macOS : préfixes de bundle (copie de contracts.md §4). */
+export const MACOS_CALL_APPS: readonly CallApp[] = [
   { id: 'teams', name: 'Microsoft Teams', bundles: ['com.microsoft.teams2', 'com.microsoft.teams'], enabled: true, browser: false },
   { id: 'slack', name: 'Slack', bundles: ['com.tinyspeck.slackmacgap'], enabled: true, browser: false },
   { id: 'zoom', name: 'Zoom', bundles: ['us.zoom.xos', 'us.zoom.CptHost'], enabled: true, browser: false },
@@ -28,6 +29,34 @@ export const DEFAULT_CALL_APPS: readonly CallApp[] = [
     enabled: false, browser: true,
   },
 ];
+
+/**
+ * Apps de visio par défaut sous Linux (copie de `linux_call_apps` dans le cœur) : nom de
+ * l'exécutable du processus audio, identifiant Flatpak ou Snap (préfixe, sans casse).
+ */
+export const LINUX_CALL_APPS: readonly CallApp[] = [
+  { id: 'teams', name: 'Microsoft Teams', bundles: ['teams-for-linux', 'com.github.IsmaelMartinez.teams_for_linux', 'teams'], enabled: true, browser: false },
+  { id: 'slack', name: 'Slack', bundles: ['slack', 'com.slack.Slack'], enabled: true, browser: false },
+  { id: 'zoom', name: 'Zoom', bundles: ['zoom', 'us.zoom.Zoom'], enabled: true, browser: false },
+  { id: 'webex', name: 'Webex', bundles: ['webex', 'CiscoCollabHost', 'com.cisco.webex'], enabled: true, browser: false },
+  { id: 'discord', name: 'Discord', bundles: ['discord', 'Discord', 'com.discordapp.Discord', 'vesktop', 'dev.vencord.Vesktop'], enabled: true, browser: false },
+  {
+    id: 'browser', name: tk('Navigateur (Google Meet…)'),
+    bundles: [
+      'chrome', 'google-chrome', 'chromium', 'com.google.Chrome', 'org.chromium.Chromium', 'firefox', 'org.mozilla.firefox',
+      'msedge', 'microsoft-edge', 'com.microsoft.Edge', 'brave', 'com.brave.Browser', 'vivaldi', 'opera',
+    ],
+    enabled: false, browser: true,
+  },
+];
+
+/** Apps de visio par défaut du système. */
+export function callAppsFor(p: Platform): readonly CallApp[] {
+  return p === 'linux' ? LINUX_CALL_APPS : MACOS_CALL_APPS;
+}
+
+/** Liste par défaut des apps de visio surveillées, pour le système courant. */
+export const DEFAULT_CALL_APPS: readonly CallApp[] = callAppsFor(currentPlatform);
 
 export const defaultCallApps = (): CallApp[] => DEFAULT_CALL_APPS.map((a) => ({ ...a, bundles: [...a.bundles] }));
 
@@ -94,7 +123,7 @@ export function callOffer(s: Pick<LiveState, 'state' | 'call'>, apps?: Apps): Ca
 }
 
 /** Puce d'une réunion : nom court de l'app de l'appel, `null` sans appel. */
-/** `call_app` d'une réunion en présentiel (micro du Mac seul). */
+/** `call_app` d'une réunion en présentiel (micro de l'ordinateur seul). */
 export const ROOM = 'room';
 
 export function meetingCallChip(callApp: string | null | undefined, apps?: Apps): string | null {
@@ -128,8 +157,12 @@ export function parseBundles(text: string): string[] {
   return [...new Set(text.split(/[\s,;]+/).map((b) => b.trim()).filter(Boolean))];
 }
 
-/** Identifiant de bundle plausible : « com.example.app ». */
-export function isValidBundle(b: string): boolean {
+/**
+ * Identifiant plausible. macOS : bundle « com.example.app ». Linux : nom d'exécutable
+ * (« zoom », « teams-for-linux ») ou identifiant Flatpak (« us.zoom.Zoom »).
+ */
+export function isValidBundle(b: string, p: Platform = currentPlatform): boolean {
+  if (p === 'linux') return /^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(b);
   return /^[A-Za-z0-9][A-Za-z0-9-]*(\.[A-Za-z0-9][A-Za-z0-9-]*)+$/.test(b);
 }
 
@@ -209,17 +242,57 @@ const KEY_GLYPH: Record<string, string> = {
 };
 const ORDER = ['⌃', '⌥', '⇧', '⌘'];
 
-/** « Ctrl+Alt+S » → « ⌃⌥S » (notation macOS, modificateurs dans l'ordre d'Apple). */
-export function formatShortcut(accel: string | null | undefined): string {
+/** Libellés Linux (et autres systèmes hors Mac) des touches, dans l'ordre usuel. */
+const KEY_NAME: Record<string, string> = {
+  ctrl: 'Ctrl',
+  control: 'Ctrl',
+  cmdorctrl: 'Ctrl',
+  commandorcontrol: 'Ctrl',
+  alt: 'Alt',
+  option: 'Alt',
+  opt: 'Alt',
+  shift: 'Maj',
+  cmd: 'Super',
+  command: 'Super',
+  meta: 'Super',
+  super: 'Super',
+  space: 'Espace',
+  enter: 'Entrée',
+  return: 'Entrée',
+  escape: 'Échap',
+  esc: 'Échap',
+};
+const NAME_ORDER = ['Ctrl', 'Alt', 'Maj', 'Super'];
+/** Noms de touches traduits à l'affichage. */
+const TRANSLATED_KEYS = [tk('Maj'), tk('Super'), tk('Espace'), tk('Entrée'), tk('Échap')];
+
+/**
+ * « Ctrl+Alt+S » → « ⌃⌥S » sur Mac (notation macOS, modificateurs dans l'ordre d'Apple),
+ * « Ctrl+Alt+S » sous Linux (noms traduits : « Maj », « Espace »…).
+ */
+export function formatShortcut(accel: string | null | undefined, p: Platform = currentPlatform): string {
   if (!accel?.trim()) return '';
-  const parts = accel.split('+').map((p) => p.trim()).filter(Boolean);
+  const parts = accel.split('+').map((x) => x.trim()).filter(Boolean);
+  if (p === 'linux') {
+    const mods: string[] = [];
+    let key = '';
+    for (const x of parts) {
+      const n = KEY_NAME[x.toLowerCase()];
+      if (n && NAME_ORDER.includes(n)) {
+        if (!mods.includes(n)) mods.push(n);
+      } else key = n ?? (x.length === 1 ? x.toUpperCase() : x);
+    }
+    mods.sort((a, b) => NAME_ORDER.indexOf(a) - NAME_ORDER.indexOf(b));
+    const label = (k: string) => (TRANSLATED_KEYS.includes(k) ? t(k) : k);
+    return [...mods, key].filter(Boolean).map(label).join('+');
+  }
   const mods: string[] = [];
   let key = '';
-  for (const p of parts) {
-    const g = KEY_GLYPH[p.toLowerCase()];
+  for (const x of parts) {
+    const g = KEY_GLYPH[x.toLowerCase()];
     if (g && ORDER.includes(g)) {
       if (!mods.includes(g)) mods.push(g);
-    } else key = g ?? (p.length === 1 ? p.toUpperCase() : p);
+    } else key = g ?? (x.length === 1 ? x.toUpperCase() : x);
   }
   mods.sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
   const space = key === 'Espace';

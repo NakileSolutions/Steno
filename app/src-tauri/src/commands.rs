@@ -292,7 +292,8 @@ pub async fn save_export(app: AppHandle, st: State<'_, AppState>, id: String, fo
     let (tx, rx) = tokio::sync::oneshot::channel();
     let title = steno_core::i18n::tr(st.core.settings().lang(), "Enregistrer l'export", "Save export");
     let mut dialog = app.dialog().file().set_title(title).set_file_name(name);
-    // Ouvert sur Téléchargements par défaut (macOS retient ensuite le dernier dossier choisi).
+    // Ouvert sur Téléchargements par défaut (dossier XDG sous Linux ; macOS retient ensuite le
+    // dernier dossier choisi).
     if let Some(dl) = dirs::download_dir().filter(|d| d.is_dir()) {
         dialog = dialog.set_directory(dl);
     }
@@ -511,7 +512,7 @@ pub fn delete_all_data(st: State<'_, AppState>) -> R<()> {
     st.core.delete_all_data().map_err(er)
 }
 
-// ------------------------------------------------------------------ permissions macOS
+// ------------------------------------------------------------------ permissions (macOS) et état du son (Linux)
 
 #[tauri::command]
 pub fn get_permissions(st: State<'_, AppState>) -> R<steno_core::permissions::Permissions> {

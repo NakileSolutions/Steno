@@ -1,6 +1,11 @@
-//! Icône de la barre d'état macOS (en haut à droite, à côté de l'heure) et son menu natif :
-//! démarrer / arrêter l'écoute, réunion confidentielle, demande rapide, ouvrir l'app, réglages.
-//! Le menu suit l'état en direct (libellés mis à jour à chaque événement `Live`).
+//! Icône de la barre d'état (macOS : en haut à droite, à côté de l'heure ; Linux : zone
+//! d'indicateurs, via libayatana-appindicator) et son menu natif : démarrer / arrêter l'écoute,
+//! réunion en présentiel, pause, aparté, micro coupé, réunion confidentielle, demande rapide,
+//! ouvrir l'app, réglages. Le menu suit l'état en direct (libellés mis à jour à chaque événement
+//! `Live`).
+//!
+//! Sous Linux, le clic sur l'icône n'est pas remonté à l'app (seul le menu s'ouvre) : tout ce
+//! que propose le panneau rapide (`#/tray`) doit donc aussi être dans le menu.
 
 use steno_core::events::LiveState;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -13,10 +18,18 @@ pub struct TrayItems {
     toggle: MenuItem<Wry>,
     /// « Démarrer une réunion en présentiel » (masqué pendant l'écoute).
     room: MenuItem<Wry>,
+    /// « Mettre l'écoute en pause » / « Reprendre l'écoute ».
+    pause: MenuItem<Wry>,
+    /// Aparté (rien de ce que vous dites n'entre dans le compte rendu).
+    aside: CheckMenuItem<Wry>,
     confidential: CheckMenuItem<Wry>,
     mute: CheckMenuItem<Wry>,
     /// « Dernières réponses » : les 5 dernières demandes terminées.
     answers: Submenu<Wry>,
+    /// Dernier état affiché : le menu n'est réécrit que s'il change (l'état en direct arrive
+    /// jusqu'à 4 fois par seconde avec les niveaux ; sous Linux, chaque modification du menu
+    /// repasse par D-Bus).
+    shown: std::sync::Mutex<String>,
 }
 
 /// Nombre de réponses listées dans le menu.
@@ -99,6 +112,25 @@ pub fn labels_in(st: &LiveState, shortcut: &str, lang: &str) -> (String, String)
     }
 }
 
+/// Libellé de l'élément pause / reprise selon l'état.
+pub fn pause_label(st: &LiveState, lang: &str) -> String {
+    if st.state == "paused" {
+        l(lang, "Reprendre l'écoute", "Resume listening")
+    } else {
+        l(lang, "Mettre l'écoute en pause", "Pause listening")
+    }
+}
+
+/// Raccourci affiché à côté de « Démarrer l'écoute » : rien sous Wayland, où les raccourcis
+/// globaux de l'app ne fonctionnent pas.
+fn toggle_hint(core: &steno_core::Core) -> String {
+    if steno_core::permissions::session_type().as_deref() == Some("wayland") {
+        String::new()
+    } else {
+        core.settings().audio.shortcuts.toggle
+    }
+}
+
 /// « Appel Teams détecté », « Appel Slack détecté », « Appel détecté dans le navigateur ».
 fn call_label(st: &LiveState, lang: &str) -> String {
     let en = lang == "en";
@@ -115,11 +147,15 @@ fn call_label(st: &LiveState, lang: &str) -> String {
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let core = app.state::<crate::AppState>().core.clone();
-    let shortcut = core.settings().audio.shortcuts.toggle;
+    let shortcut = toggle_hint(&core);
     let lang = core.settings().lang();
-    let (status_txt, toggle_txt) = labels_in(&core.live_state(), &shortcut, lang);
+    let st = core.live_state();
+    let (status_txt, toggle_txt) = labels_in(&st, &shortcut, lang);
     let status = MenuItem::with_id(app, "status", status_txt, false, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle", toggle_txt, true, None::<&str>)?;
+    let listening = st.meeting.is_some();
+    let pause = MenuItem::with_id(app, "pause", pause_label(&st, lang), listening, None::<&str>)?;
+    let aside = CheckMenuItem::with_id(app, "aside", l(lang, "Aparté (hors compte rendu)", "Aside (left out of the summary)"), listening, st.aside, None::<&str>)?;
     let confidential = CheckMenuItem::with_id(app, "confidential", l(lang, "Réunion confidentielle (aucune IA)", "Confidential meeting (no AI)"), true, false, None::<&str>)?;
     let room = MenuItem::with_id(app, "room", l(lang, "Démarrer une réunion en présentiel", "Start an in-person meeting"), true, None::<&str>)?;
     let mute = CheckMenuItem::with_id(app, "mute", l(lang, "Couper mon micro dans Sténo", "Mute my mic in Sténo"), false, false, None::<&str>)?;
@@ -132,17 +168,50 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let sep = || PredefinedMenuItem::separator(app);
     let menu = Menu::with_items(
         app,
-        &[&status, &sep()?, &toggle, &room, &mute, &confidential, &sep()?, &answers, &quick, &live, &open, &settings, &sep()?, &quit],
+        &[
+            &status,
+            &sep()?,
+            &toggle,
+            &room,
+            &pause,
+            &aside,
+            &mute,
+            &confidential,
+            &sep()?,
+            &answers,
+            &quick,
+            &live,
+            &open,
+            &settings,
+            &sep()?,
+            &quit,
+        ],
     )?;
-    app.manage(TrayItems { status, toggle, room, confidential: confidential.clone(), mute: mute.clone(), answers });
+    app.manage(TrayItems {
+        status,
+        toggle,
+        room,
+        pause,
+        aside: aside.clone(),
+        confidential: confidential.clone(),
+        mute: mute.clone(),
+        answers,
+        shown: std::sync::Mutex::new(String::new()),
+    });
     refresh_answers(app);
 
+    // macOS : icône « modèle » (noire, recolorée par le système). Linux : la barre du haut de
+    // GNOME est sombre, en thème clair comme en thème sombre : icône blanche.
+    #[cfg(target_os = "macos")]
+    let icon = include_bytes!("../icons/tray@2x.png").as_slice();
+    #[cfg(not(target_os = "macos"))]
+    let icon = include_bytes!("../icons/tray-light@2x.png").as_slice();
     TrayIconBuilder::with_id("steno")
-        .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray@2x.png"))?)
+        .icon(tauri::image::Image::from_bytes(icon)?)
         .icon_as_template(true)
         .tooltip("Sténo")
         .menu(&menu)
-        // Convention macOS : un clic sur l'icône ouvre le menu.
+        // Convention macOS : un clic sur l'icône ouvre le menu (sous Linux, c'est toujours le cas).
         .show_menu_on_left_click(true)
         .on_menu_event(move |app, ev| {
             let core = app.state::<crate::AppState>().core.clone();
@@ -165,6 +234,16 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                             tracing::warn!("{e:#}");
                         }
                     });
+                }
+                "pause" => {
+                    let paused = core.live_state().state == "paused";
+                    if let Err(e) = core.pause_meeting(!paused) {
+                        tracing::warn!("{e:#}");
+                    }
+                }
+                "aside" => {
+                    let checked = app.state::<TrayItems>().aside.is_checked().unwrap_or(false);
+                    core.set_aside(checked);
                 }
                 "confidential" => {
                     let checked = app.state::<TrayItems>().confidential.is_checked().unwrap_or(false);
@@ -204,10 +283,23 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 /// Met à jour le menu et l'icône selon l'état en direct.
 pub fn refresh(app: &AppHandle, st: &LiveState) {
     let core = app.state::<crate::AppState>().core.clone();
-    let (status, toggle) = labels_in(st, &core.settings().audio.shortcuts.toggle, core.settings().lang());
+    let lang = core.settings().lang();
+    let (status, toggle) = labels_in(st, &toggle_hint(&core), lang);
+    let listening = st.meeting.is_some();
+    let confidential = st.meeting.as_ref().map(|m| m.confidential);
+    let key = format!("{status}|{toggle}|{}|{listening}|{}|{}|{confidential:?}", st.state, st.aside, st.mic_muted);
     if let Some(items) = app.try_state::<TrayItems>() {
+        let mut shown = items.shown.lock().unwrap();
+        if *shown == key {
+            return;
+        }
+        *shown = key;
         let _ = items.status.set_text(status.clone());
         let _ = items.toggle.set_text(toggle);
+        let _ = items.pause.set_text(pause_label(st, lang));
+        let _ = items.pause.set_enabled(st.meeting.is_some());
+        let _ = items.aside.set_enabled(st.meeting.is_some());
+        let _ = items.aside.set_checked(st.aside);
         if let Some(m) = &st.meeting {
             let _ = items.confidential.set_checked(m.confidential);
         }
@@ -287,6 +379,9 @@ mod tests {
         let (s, t) = labels(&st, "");
         assert_eq!(s, "● Écoute en cours — Daily");
         assert_eq!(t, "Arrêter l'écoute");
+        assert_eq!(pause_label(&st, "fr"), "Mettre l'écoute en pause");
+        st.state = "paused".into();
+        assert_eq!(pause_label(&st, "en"), "Resume listening");
     }
 }
 

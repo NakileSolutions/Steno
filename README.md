@@ -2,49 +2,52 @@
 
 # Sténo
 
-**Assistant de réunion 100 % local pour Mac.** Sténo transcrit vos appels (Teams, Slack,
+**Assistant de réunion 100 % local pour Mac et Linux (Debian, Ubuntu).** Sténo transcrit vos appels (Teams, Slack,
 Zoom, Webex, Discord, FaceTime, Google Meet…) et vos réunions en présentiel, rédige le compte
 rendu et répond à vos questions à la voix en cherchant dans votre code, Jira, Confluence ou
 Datadog. Il utilise l'agent IA que vous avez déjà (Claude Code, Codex, Gemini CLI, OpenCode…),
-avec votre abonnement. Aucun audio ne sort du Mac, et **Sténo ne publie jamais rien** : il
+avec votre abonnement. Aucun audio ne sort de votre ordinateur, et **Sténo ne publie jamais rien** : il
 lit, vous publiez.
 
-> *English: Sténo is a local-first meeting assistant for macOS. Live transcription runs on
-> device (Parakeet / Canary on the Neural Engine and GPU); summaries and voice-driven searches
-> use the AI coding agent CLI you already have. Audio never leaves your Mac. The UI and the
-> summaries are available in English and French. MIT licensed.*
+> *English: Sténo is a local-first meeting assistant for macOS and Linux (Debian, Ubuntu).
+> Live transcription runs on device (Parakeet / Canary on the Neural Engine and GPU on a Mac,
+> on the CPU with ONNX Runtime on Linux); summaries and voice-driven searches use the AI coding
+> agent CLI you already have. Audio never leaves your computer. The UI and the summaries are
+> available in English and French. MIT licensed.*
 
 ![Compte rendu](docs/screenshots/detail-compte-rendu-clair.png)
 
 ## Fonctionnalités
 
 - **Écoute manuelle** : rien n'est enregistré sans votre action. Quand un appel commence dans
-  une app de visio, Sténo le propose ; vous démarrez depuis la barre de menu, ⌃⌥S ou la
-  fenêtre. Arrêt en un clic, au raccourci ou à la voix (« *OK Sténo, arrête l'écoute* »).
-- **Transcription en direct** sur le Mac, avec votre voix (« Moi », micro) séparée de celle des
+  une app de visio, Sténo le propose ; vous démarrez depuis la barre de menu, ⌃⌥S (Ctrl+Alt+S
+  sous Linux) ou la fenêtre. Arrêt en un clic, au raccourci ou à la voix (« *OK Sténo, arrête l'écoute* »).
+- **Transcription en direct** sur votre ordinateur, avec votre voix (« Moi », micro) séparée de celle des
   autres (son de l'app de l'appel). Pause, micro coupé dans Sténo, suppression d'une phrase,
   filtre des phrases inventées sur du bruit.
-- **Réunions en présentiel** : tout passe par le micro du Mac, les intervenants sont distingués
+- **Réunions en présentiel** : tout passe par le micro de l'ordinateur, les intervenants sont distingués
   en fin de réunion.
 - **Retranscription de fin de réunion** avec un modèle plus précis et la langue imposée
   (français par défaut) : fini le mélange français/anglais du direct.
 - **Intervenants** : identification en fin de réunion (« Intervenant 1, 2… »), renommables.
 - **Commandes vocales** : « *OK Sténo, cherche les erreurs Datadog sur ms-booking depuis
-  hier* », reconnues même en pleine phrase, ou en aparté (⌃⌥Espace maintenu). Réponse courte
-  en notification, réponse complète et sourcée dans l'app. Avec Claude Code, l'agent peut
-  s'appuyer sur **vos skills** (Jira, Datadog, code…), toujours en lecture seule.
+  hier* », reconnues même en pleine phrase, ou en aparté (⌃⌥Espace maintenu ; sous Linux,
+  Ctrl+Alt+Espace en bascule). Réponse courte en notification, réponse complète et sourcée
+  dans l'app. Avec Claude Code, l'agent peut s'appuyer sur **vos skills** (Jira, Datadog,
+  code…), toujours en lecture seule.
 - **Compte rendu** : décisions, actions qui / quoi / échéance, questions ouvertes, points
   techniques, vos notes. Les apartés n'y figurent jamais.
 - **Contexte et documents** : texte libre et documents joints (PDF, Excel, CSV, Word,
   Markdown…) pour orienter le compte rendu ; une section « ⚠️ Changements importants » signale
   ce qui contredit le contexte. Un délai après la réunion laisse le temps de les ajouter.
 - **Préparation des réunions** : réunions à venir (prévues dans Sténo ou lues dans le
-  calendrier macOS), participants invités pour nommer les intervenants, et préparation
+  calendrier : Calendrier de macOS ; sous Linux, GNOME Agenda / Evolution, comptes en ligne
+  Google ou Microsoft 365, ou fichiers et adresses `.ics`), participants invités pour nommer les intervenants, et préparation
   guidée par l'IA (quelques questions, puis un contexte rédigé). Démarrer l'écoute à l'heure
   prévue reprend la réunion préparée.
 - **Formats de sortie** : standard, daily, point client, atelier, arbitrage, mail de synthèse,
-  message Slack/Teams, et vos propres formats enregistrés sur le Mac, écrits à la main ou
-  déduits d'un compte rendu que vous aimez. Une réunion récurrente reprend le format choisi
+  message Slack/Teams, et vos propres formats enregistrés sur l'ordinateur, écrits à la main
+  ou déduits d'un compte rendu que vous aimez. Une réunion récurrente reprend le format choisi
   la dernière fois.
 - **Corrélation** (désactivée, à la demande ou automatique) : le compte rendu est croisé avec
   vos dépôts et connecteurs.
@@ -55,18 +58,31 @@ lit, vous publiez.
 - **Sténo dans votre agent** : un skill et le serveur MCP installés en un clic dans Claude
   Code, Codex… (« *refais le compte rendu d'hier au format client* », « *quelles sont mes
   actions ouvertes ?* »).
-- Interface et comptes rendus en **français ou en anglais** (automatique selon macOS) ;
+- Interface et comptes rendus en **français ou en anglais** (automatique selon le système) ;
   thème clair, sombre ou automatique.
 
 ## Prérequis
 
+**macOS**
 - macOS 14.2 ou plus récent (Apple Silicon recommandé).
 - Xcode (ou les Command Line Tools avec Swift 5.10+).
+
+**Linux** (Ubuntu 22.04+, Debian 12+, x86_64 ou arm64)
+- Bureau avec PipeWire (et `pipewire-pulse`, présent par défaut sur Ubuntu et Debian récents)
+  ou PulseAudio.
+- Les paquets de compilation : `make deps` les installe (`sudo apt install …`, liste dans le
+  Makefile : `build-essential`, `meson`, `clang`, `libwebkit2gtk-4.1-dev`, `libpulse-dev`…).
+- Un processeur récent à 4 cœurs suffit : la transcription tourne sur le CPU (environ dix fois
+  plus vite que le temps réel).
+
+**Partout**
 - Rust stable (`rustup`) et Node 22 (pour compiler l'interface).
 - Au moins un CLI d'agent installé et connecté : `claude`, `codex`, `gemini`, `opencode`…
 - Environ 2 Go d'espace disque pour les modèles audio.
 
 ## Installation
+
+### macOS
 
 ```bash
 git clone https://github.com/NakileSolutions/Steno.git steno && cd steno
@@ -83,9 +99,50 @@ système…) soient conservées d'une mise à jour à l'autre. Pour l'installer 
 `make install APP_DIR=~/Applications`.
 
 Au premier lancement, l'assistant vous guide : permissions macOS (micro, audio du système,
-accessibilité facultative), choix et test de l'agent, dépôts lisibles, connecteurs, mot
+accessibilité facultative) ou, sous Linux, vérification du son et des raccourcis, choix et test de l'agent, dépôts lisibles, connecteurs, mot
 d'appel et test vocal. Équivalent en ligne de commande : `steno init`. Diagnostic à tout
 moment : `steno doctor`.
+
+### Linux (Debian, Ubuntu)
+
+```bash
+git clone https://github.com/NakileSolutions/Steno.git steno && cd steno
+make deps        # paquets de compilation (une fois, demande sudo)
+make install     # compile le sidecar audio, l'interface et l'app, installe dans ~/.local
+                 # (app, raccourci de bureau « Sténo », CLI ~/.local/bin/steno),
+                 # télécharge les modèles audio (≈ 700 Mo)
+```
+
+Lancez « Sténo » depuis les applications. Rien n'est installé hors de votre dossier personnel
+(`~/.local/lib/steno`, `~/.local/share/applications`, `~/.local/bin`) ; les données vont dans
+`~/.local/share/Steno` et les modèles dans `~/.local/share/Steno/models`. Il n'y a pas
+d'autorisation système à accorder : le micro et le son des apps de visio passent par le serveur
+son de votre session.
+
+Paquet Debian à la place : `make deb` produit `target/release/bundle/deb/steno_<version>_*.deb`
+(`sudo apt install ./target/release/bundle/deb/*.deb`) ; les modèles sont alors téléchargés au
+premier lancement.
+
+Particularités de Linux :
+- **Apps de visio** : client Teams non officiel (Teams for Linux), Slack, Zoom, Webex, Discord
+  (paquets .deb, Snap ou Flatpak) ; Teams et Meet dans un navigateur via l'entrée
+  « Navigateur ». Sténo capte le son de l'app de l'appel seule, pas celui des autres apps.
+- **Raccourcis globaux** : ils fonctionnent sous X11. Sous Wayland (session par défaut
+  d'Ubuntu), créez-les dans Paramètres › Clavier › Raccourcis personnalisés avec les commandes
+  que Sténo affiche (`steno-app --toggle`, `--aside`, `--note`). Le menu de l'icône et le
+  raccourci de bureau proposent aussi ces actions.
+- **Barre d'état** : sous GNOME, l'icône de Sténo demande l'extension « AppIndicator »
+  (installée par défaut sur Ubuntu).
+- **Titre de l'appel** : lu sur les fenêtres X11 (les apps Electron passent souvent par
+  XWayland) ; sinon la réunion prend le titre du calendrier ou un titre daté.
+- **Calendrier** : celui de GNOME Agenda / Evolution (comptes en ligne compris) est lu
+  automatiquement. Autres calendriers : une adresse ou un fichier `.ics` par ligne dans
+  `~/.local/share/Steno/calendars.txt` (par exemple l'« adresse secrète au format iCal » d'un
+  agenda Google, ou un calendrier Outlook publié).
+- **Haut-parleurs** : l'annulation d'écho (WebRTC) retire la voix des participants de votre
+  micro quand le son sort par des haut-parleurs ; elle se désactive d'elle-même avec un casque.
+
+### Après l'installation
 
 **Mises à jour** : Sténo vérifie sur GitHub si une nouvelle version est publiée et la signale
 dans la barre latérale. « Installer » (Réglages → Mises à jour) met vos sources à jour sur la
@@ -96,10 +153,10 @@ version publiée puis relance `make install` ; il ne reste qu'à redémarrer. L'
 
 | Où | Quoi |
 |---|---|
-| Barre de menu | Démarrer / arrêter l'écoute, réunion en présentiel, pause, micro coupé, dernières réponses, ouvrir Sténo |
+| Barre de menu (barre d'état sous Linux) | Démarrer / arrêter l'écoute, réunion en présentiel, pause, micro coupé, dernières réponses, ouvrir Sténo |
 | Fenêtre | Réunions (compte rendu, transcription, demandes, notes, contexte), En direct, Recherche, Décisions & actions, Réglages |
 | Voix | « *OK Sténo, cherche / vérifie / note / résume / annule…* », « *OK Sténo, arrête l'écoute* » (mot d'appel et verbes réglables) |
-| Raccourcis | ⌃⌥S démarrer/arrêter · ⌃⌥Espace aparté (maintenir) · ⌃⌥N note rapide |
+| Raccourcis | ⌃⌥S démarrer/arrêter · ⌃⌥Espace aparté (maintenir) · ⌃⌥N note rapide (Linux : Ctrl+Alt+…, ou `steno-app --toggle / --aside / --note` liés dans les réglages du bureau) |
 | CLI | `steno ask "qu'a-t-on décidé sur l'export ?"` · `steno export <id>` · `steno doctor` · `steno mcp` · `steno skill install` |
 
 Donner à votre agent l'accès aux réunions, en lecture seule : `steno skill install` (ou
@@ -108,10 +165,10 @@ Réglages → Agent → « Sténo dans votre agent »). Le skill est copié dans
 
 ## Confidentialité
 
-- **L'audio ne quitte jamais le Mac.** La transcription tourne en local. Les fichiers audio
+- **L'audio ne quitte jamais votre ordinateur.** La transcription tourne en local. Les fichiers audio
   temporaires sont supprimés après le compte rendu (rétention réglable, 0 jour par défaut).
-- **Tout est stocké localement** : base `~/Library/Application Support/Steno/steno.db`
-  (droits 600), sauvegardes quotidiennes locales. Pas de serveur Sténo, pas de télémétrie,
+- **Tout est stocké localement** : base `~/Library/Application Support/Steno/steno.db` sur
+  macOS, `~/.local/share/Steno/steno.db` sous Linux (droits 600), sauvegardes quotidiennes locales. Pas de serveur Sténo, pas de télémétrie,
   pas de compte.
 - **Seul du texte est envoyé, et seulement à l'agent IA que vous avez choisi** : à votre
   demande, en fin de réunion pour le compte rendu, et pour la corrélation si vous l'activez.
@@ -133,6 +190,10 @@ Détails et signalement des failles : [`SECURITY.md`](SECURITY.md).
 audio/StenoAudio/   sidecar Swift : capture Core Audio (process tap de l'app de l'appel,
                      micro HAL), VAD Silero, ASR Parakeet v3 et Canary (FluidAudio),
                      diarisation → JSON lines
+crates/steno-audio-linux/
+                     sidecar Rust pour Linux, même protocole : capture PulseAudio / PipeWire
+                     (flux de l'app de l'appel, micro), annulation d'écho WebRTC, VAD Silero,
+                     ASR Parakeet v3 et Canary (sherpa-onnx), diarisation, calendrier EDS
 crates/steno-core/  Rust : SQLite (WAL + FTS5), file de tâches, mot d'appel, anti-écho,
                      adaptateurs d'agent, politique lecture seule, compte rendu, contexte
 crates/steno-cli/   CLI `steno` : ask, doctor, init, export, mcp, serve, replay, simulate
@@ -146,7 +207,7 @@ docs/                contrats entre composants, adaptateurs d'agent, spikes
 ## Développement
 
 ```bash
-make test        # Rust (unitaires, acceptation, perf), Swift, Vitest, Playwright
+make test        # Rust (unitaires, acceptation, perf), Swift (macOS), Vitest, Playwright
 make serve       # interface + vrai cœur dans le navigateur : http://127.0.0.1:4180/?backend=http
 make simulate    # rejoue la réunion d'exemple dans tout le pipeline (faux agent)
 make dev         # app avec rechargement à chaud, sidecar simulé, faux agent

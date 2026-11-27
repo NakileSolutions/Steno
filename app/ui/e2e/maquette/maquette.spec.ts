@@ -829,3 +829,53 @@ test('phase 3 : prévoir une réunion à la main', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Détail de la réunion' }).getByRole('heading', { name: 'Atelier tarifs' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Liste des réunions' }).locator('.mitem.planned', { hasText: 'Atelier tarifs' })).toBeVisible();
 });
+
+// Linux (`?platform=linux` force la plateforme ; le faux backend renvoie alors un état Linux :
+// serveur son, session Wayland, commande de l'app).
+test.describe('Linux', () => {
+  test('assistant : son et raccourcis du bureau, sans permissions macOS', async ({ page }) => {
+    await page.goto('/?platform=linux#/onboarding');
+    await expect(page.getByRole('heading', { name: 'Son et raccourcis' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Permissions macOS' })).toHaveCount(0);
+    const perms = page.locator('.perms');
+    await expect(perms.getByText('PulseAudio (on PipeWire 1.0.5)')).toBeVisible();
+    await expect(perms.getByText('Audio des apps', { exact: true })).toBeVisible();
+    await expect(perms.getByText('Accessibilité', { exact: true })).toHaveCount(0);
+    await expect(perms.getByRole('button', { name: 'Ouvrir les Réglages Système' })).toHaveCount(0);
+    await expect(perms.getByRole('button', { name: 'Réglages du son' }).first()).toBeVisible();
+    // Wayland : commandes à lier dans les raccourcis personnalisés de GNOME.
+    await expect(page.getByText(/Session Wayland/)).toBeVisible();
+    await expect(page.getByText('/usr/bin/steno-app --toggle')).toBeVisible();
+    await expect(page.getByText('/usr/bin/steno-app --aside')).toBeVisible();
+    await expect(page.getByText('/usr/bin/steno-app --note')).toBeVisible();
+    await page.getByRole('button', { name: 'Suivant' }).click();
+    await expect(page.getByRole('heading', { name: 'Agent IA' })).toBeVisible();
+  });
+
+  test('réglages : apps de visio par programme, sans FaceTime ; section Son et raccourcis', async ({ page }) => {
+    await page.goto('/?platform=linux#/settings?section=audio');
+    const apps = page.getByRole('group', { name: 'Apps de visio' });
+    await expect(apps.getByText(/teams-for-linux/)).toBeVisible();
+    await expect(apps.getByText('FaceTime')).toHaveCount(0);
+    await apps.getByRole('button', { name: 'Ajouter une app' }).click();
+    await apps.getByLabel('Nom').fill('Jitsi');
+    await apps.getByLabel('Programme ou identifiant Flatpak').fill('jitsi-meet, org.jitsi.jitsi-meet');
+    await apps.getByRole('button', { name: 'Ajouter', exact: true }).click();
+    await expect(apps.getByText('jitsi-meet · org.jitsi.jitsi-meet')).toBeVisible();
+    await expect(page.getByText('/usr/bin/steno-app --toggle')).toBeVisible();
+
+    await page.goto('/?platform=linux#/settings?section=permissions');
+    await expect(page.getByRole('heading', { name: 'Son et raccourcis' })).toBeVisible();
+    await expect(page.getByText('/usr/bin/steno-app --show')).toBeVisible();
+  });
+});
+
+test.describe('Linux : panneau de la barre d’état', () => {
+  test.use({ viewport: { width: 360, height: 520 } });
+
+  test('raccourci en Ctrl+Alt', async ({ page }) => {
+    await page.goto('/?platform=linux#/tray');
+    await page.getByRole('button', { name: 'Démarrer l’écoute' }).click();
+    await expect(page.getByText('Pour arrêter : bouton, Ctrl+Alt+S, ou dites « Sténo, arrête l’écoute »')).toBeVisible();
+  });
+});

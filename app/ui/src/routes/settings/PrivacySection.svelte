@@ -28,7 +28,7 @@
   async function wipe() {
     if (!(await confirmDialog({
       title: t('Tout supprimer ?'),
-      message: t('Toutes les réunions, transcriptions, comptes rendus, demandes, notes et dépôts enregistrés seront effacés de ce Mac. Cette action est irréversible.'),
+      message: t('Toutes les réunions, transcriptions, comptes rendus, demandes, notes et dépôts enregistrés seront effacés de cet ordinateur. Cette action est irréversible.'),
       confirm: t('Continuer'),
       danger: true,
     }))) return;
@@ -89,7 +89,7 @@
 <div class="field danger-zone">
   <div class="field-label">{t('Tout supprimer')}</div>
   <div class="field-body">
-    <p class="muted small">{t('Efface toutes les données de Sténo sur ce Mac. Les réglages sont conservés.')}</p>
+    <p class="muted small">{t('Efface toutes les données de Sténo sur cet ordinateur. Les réglages sont conservés.')}</p>
     <div><button class="btn danger" onclick={wipe}><Icon name="trash" size={14} />{t('Tout supprimer…')}</button></div>
   </div>
 </div>

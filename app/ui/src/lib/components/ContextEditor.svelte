@@ -171,7 +171,7 @@
     <div class="newtpl">
       <input class="input" bind:value={newName} placeholder={t('Nom du format (ex. Note COMEX)')} aria-label={t('Nom du format')} />
       <textarea class="input" rows="3" bind:value={newInstr} placeholder={t('Consignes : structure, ton, longueur… Ex. « Trois puces au plus, ton exécutif, chiffres en gras ».')} aria-label={t('Consignes du format')}></textarea>
-      <p class="faint small">{t('Enregistré sur ce Mac et réutilisable pour les prochaines réunions (Réglages → Comptes rendus).')}</p>
+      <p class="faint small">{t('Enregistré sur cet ordinateur et réutilisable pour les prochaines réunions (Réglages → Comptes rendus).')}</p>
       <div class="row end">
         <button class="btn sm ghost" onclick={() => (creating = false)}>{t('Annuler')}</button>
         <button class="btn sm primary" onclick={createTemplate} disabled={!newName.trim() || !newInstr.trim()}>{t('Enregistrer et utiliser')}</button>

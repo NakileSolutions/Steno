@@ -39,6 +39,7 @@ Règles produit ajoutées après le plan initial (appliquées partout) :
 | `app/src-tauri` | app Tauri 2 : barre d'état, fenêtres, raccourcis globaux, notifications, les 49 commandes | ~800 lignes |
 | `app/ui` | Svelte 5 + Vite + TS, faux backend, backend HTTP, tests Vitest et Playwright | ~7 500 lignes |
 | `audio/StenoAudio` | sidecar Swift : process tap Teams, micro avec annulation d'écho, FluidAudio, diarisation, spikes | ~3 700 lignes + 500 de tests |
+| `crates/steno-audio-linux` | sidecar Rust pour Linux, même protocole : PulseAudio / PipeWire, AEC WebRTC, sherpa-onnx (Parakeet, Canary, Silero, pyannote), calendrier EDS / .ics | ~5 000 lignes, tests compris |
 | `agent/` | `INSTRUCTIONS.md`, procédures (`playbooks/`), `policy.toml` | |
 | `fixtures/` | daily synthétique de 45 min, attendus, faux `claude` | |
 | `docs/` | contrats, adaptateurs, spikes, captures, ce document | |
@@ -75,6 +76,16 @@ Points clés :
   4. l'audio est supprimé selon la rétention.
 
 ## 4. Ce qui est fait et vérifié
+
+**Portage Linux (Debian / Ubuntu)** : sidecar `crates/steno-audio-linux` (voir son README pour
+les essais réalisés : appel simulé sur PulseAudio, annulation d'écho, débranchement du micro,
+redémarrage du serveur son, chaîne complète avec `steno serve`), cœur et app adaptés
+(`call_apps` par plateforme, extraction des documents sans `textutil`, diagnostic, actions
+`steno-app --toggle/--aside/--note/--show` pour les raccourcis sous Wayland, menu de la barre
+d'état complet), `make deps`, `make install` (dans `~/.local`), `make deb`. Reste à valider sur
+un vrai bureau : vrais clients Teams for Linux / Slack / Zoom, PipeWire natif, icône
+AppIndicator de GNOME, clic sur les notifications.
+
 
 | Domaine | État | Preuve |
 |---|---|---|

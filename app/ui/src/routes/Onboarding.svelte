@@ -14,9 +14,12 @@
   import WakeTest from './settings/WakeTest.svelte';
   import Permissions from '../lib/components/Permissions.svelte';
   import { t, tk, tn } from '../lib/i18n.svelte';
+  import { isLinux } from '../lib/platform';
+  import DesktopShortcuts from '../lib/components/DesktopShortcuts.svelte';
 
   const STEPS = [
-    { id: 'permissions', label: tk('Permissions macOS'), icon: 'shield' },
+    // Linux : pas de droits à accorder ; l'étape montre le son et les raccourcis du bureau.
+    { id: 'permissions', label: isLinux ? tk('Son et raccourcis') : tk('Permissions macOS'), icon: 'shield' },
     { id: 'agent', label: tk('Agent IA'), icon: 'agent' },
     { id: 'repos', label: tk('Dépôts'), icon: 'folder' },
     { id: 'connectors', label: tk('Connecteurs'), icon: 'plug' },
@@ -182,7 +185,7 @@
         </li>
       {/each}
     </ol>
-    <p class="tiny note">{t('Tout reste sur ce Mac. Vous pourrez tout modifier dans les Réglages.')}</p>
+    <p class="tiny note">{t('Tout reste sur cet ordinateur. Vous pourrez tout modifier dans les Réglages.')}</p>
   </aside>
 
   <main class="pane scroll">
@@ -191,7 +194,13 @@
         {#key step}<span class="illus" aria-hidden="true"><Icon name={STEPS[step].icon} size={24} stroke={1.6} /></span>{/key}
         <p class="label">{t('Étape {n} sur {total}', { n: step + 1, total: STEPS.length })}</p>
 
-        {#if STEPS[step].id === 'permissions'}
+        {#if STEPS[step].id === 'permissions' && isLinux}
+          <h1>{t('Son et raccourcis')}</h1>
+          <p class="lead">{t('Sténo capte votre micro et le son de l’app de l’appel (Teams, Slack, Zoom…) par le serveur son, sans autorisation à accorder. Il n’écoute que lorsque vous démarrez l’écoute.')}</p>
+          <Permissions />
+          <DesktopShortcuts shortcuts={settings.audio.shortcuts} />
+          <p class="small faint">{t('Vous retrouverez ces informations dans Réglages → Son et raccourcis.')}</p>
+        {:else if STEPS[step].id === 'permissions'}
           <h1>{t('Permissions macOS')}</h1>
           <p class="lead">{t('Sténo a besoin du micro et de l’audio du système (pour entendre l’app de l’appel : Teams, Slack, Zoom…) ; l’accessibilité lui permet de lire le titre de l’appel. Il n’écoute que lorsque vous démarrez l’écoute.')}</p>
           <Permissions />

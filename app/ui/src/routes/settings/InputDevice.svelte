@@ -59,7 +59,7 @@
     </label>
   {/each}
   {#if empty}
-    <p class="mrow faint small">{error || t('Liste disponible dans l’app sur Mac.')}</p>
+    <p class="mrow faint small">{error || t('Liste disponible dans l’app de bureau.')}</p>
   {/if}
   <div class="mrow foot">
     <span class="grow tiny faint">{t('Appliqué dès l’enregistrement, même pendant l’écoute, sans couper la transcription.')}</span>

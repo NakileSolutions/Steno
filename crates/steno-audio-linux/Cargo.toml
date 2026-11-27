@@ -1,0 +1,43 @@
+[package]
+name = "steno-audio-linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Sténo — sidecar audio Linux (PulseAudio / PipeWire, Parakeet via sherpa-onnx)"
+
+[[bin]]
+name = "steno-audio"
+path = "src/main.rs"
+
+[features]
+default = ["aec"]
+# Annulation d'écho (WebRTC AEC3) sur le micro, avec le son de l'app d'appel comme référence.
+aec = ["dep:webrtc-audio-processing"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+regex = { workspace = true }
+unicode-normalization = { workspace = true }
+dirs = { workspace = true }
+anyhow = { workspace = true }
+crossbeam-channel = "0.5"
+libc = "0.2"
+
+# Capture, modèles et fenêtres : Linux seulement (sur macOS, c'est le sidecar Swift qui sert ;
+# ce crate y compile en binaire vide pour que `cargo test --workspace` reste vert).
+[target.'cfg(target_os = "linux")'.dependencies]
+libpulse-binding = "2.30"
+sherpa-onnx = "2.0.3"
+webrtc-audio-processing = { version = "2.1", features = ["bundled"], optional = true }
+x11rb = { version = "0.13", default-features = false }
+ureq = { version = "2.12", default-features = false, features = ["tls", "native-certs", "proxy-from-env"] }
+bzip2 = "0.5"
+tar = "0.4"
+chrono-tz = "0.10"
+rusqlite = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,6 +1,7 @@
 // Sections de navigation et des réglages. Libellés en français (marqués `tk`) : à traduire
 // à l'affichage avec `t(label)`.
 import { tk } from './i18n.svelte';
+import { isLinux } from './platform';
 
 export const SETTINGS_SECTIONS = [
   { id: 'agent', label: tk('Agent IA'), icon: 'agent' },
@@ -10,7 +11,8 @@ export const SETTINGS_SECTIONS = [
   { id: 'reports', label: tk('Comptes rendus'), icon: 'note' },
   { id: 'voice', label: tk('Voix'), icon: 'mic' },
   { id: 'audio', label: tk('Audio & transcription'), icon: 'wave' },
-  { id: 'permissions', label: tk('Permissions macOS'), icon: 'lock' },
+  // Linux : pas de droits à accorder ; serveur son, capture et raccourcis du bureau.
+  { id: 'permissions', label: isLinux ? tk('Son et raccourcis') : tk('Permissions macOS'), icon: 'lock' },
   { id: 'privacy', label: tk('Confidentialité'), icon: 'shield' },
   { id: 'updates', label: tk('Mises à jour'), icon: 'download' },
   { id: 'profile', label: tk('Profil'), icon: 'user' },
