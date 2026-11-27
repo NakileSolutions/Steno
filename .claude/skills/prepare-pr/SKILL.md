@@ -25,7 +25,7 @@ description: Checks to run before opening or updating a pull request on Sténo �
    - new UI text → French source + English translation in `app/ui/src/lib/i18n/en/`;
    - API command added or changed → `api-command` skill;
    - schema or setting changed → `migration` skill;
-   - user-visible behavior changed → `README.md`; interface changed → `docs/contracts.md`.
+   - user-visible behavior changed → `README.md` and `README.fr.md`; interface changed → `docs/contracts.md`.
 6. **Signed commits**: `git log --show-signature origin/main..` (`main` rejects unsigned commits).
 7. **PR**: `gh pr create` with an English, user-facing title and a description with
    *What*, *Why*, *How it was tested* (commands run, manual checks on macOS or Linux), and *Watch out
