@@ -16,7 +16,7 @@ export function isListening(s: Pick<LiveState, 'state'>): boolean {
 export const DEFAULT_CALL_APPS: readonly CallApp[] = [
   { id: 'teams', name: 'Microsoft Teams', bundles: ['com.microsoft.teams2', 'com.microsoft.teams'], enabled: true, browser: false },
   { id: 'slack', name: 'Slack', bundles: ['com.tinyspeck.slackmacgap'], enabled: true, browser: false },
-  { id: 'zoom', name: 'Zoom', bundles: ['us.zoom.xos'], enabled: true, browser: false },
+  { id: 'zoom', name: 'Zoom', bundles: ['us.zoom.xos', 'us.zoom.CptHost'], enabled: true, browser: false },
   { id: 'webex', name: 'Webex', bundles: ['Cisco-Systems.Spark', 'com.cisco.webexmeetingsapp', 'com.webex.meetingmanager'], enabled: true, browser: false },
   { id: 'discord', name: 'Discord', bundles: ['com.hnc.Discord'], enabled: true, browser: false },
   { id: 'facetime', name: 'FaceTime', bundles: ['com.apple.FaceTime'], enabled: true, browser: false },

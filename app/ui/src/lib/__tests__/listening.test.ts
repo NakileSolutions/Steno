@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_CALL_APPS, callAppId, callAppShortName, callLabel, callOffer, defaultCallApps, formatShortcut,
@@ -88,6 +90,12 @@ describe('apps de visio par défaut', () => {
     expect(DEFAULT_CALL_APPS.find((a) => a.browser)?.id).toBe('browser');
     expect(isBuiltinCallApp('zoom')).toBe(true);
     expect(isBuiltinCallApp('google-chat')).toBe(false);
+  });
+  it('sont identiques à docs/contracts.md §4', () => {
+    const md = fs.readFileSync(path.resolve(__dirname, '../../../../../docs/contracts.md'), 'utf8');
+    const m = md.match(/"call_apps": (\[[\s\S]*?\n\s*\])/);
+    expect(m).not.toBeNull();
+    expect(JSON.parse(m![1])).toEqual(DEFAULT_CALL_APPS);
   });
   it('defaultCallApps renvoie une copie modifiable', () => {
     const a = defaultCallApps();

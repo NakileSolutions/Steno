@@ -20,8 +20,9 @@ async function shot(page: Page, name: string) {
 }
 
 test('captures', async ({ page, browser }) => {
-  fs.rmSync(OUT, { recursive: true, force: true });
+  // On remplace les captures produites ici ; les comparaisons « avant-apres-* » sont conservées.
   fs.mkdirSync(OUT, { recursive: true });
+  for (const f of fs.readdirSync(OUT)) if (/-(clair|sombre)\.png$/.test(f) && !f.startsWith('avant-apres-')) fs.rmSync(path.join(OUT, f));
 
   // Assistant de premier lancement.
   await go(page, '/onboarding');
