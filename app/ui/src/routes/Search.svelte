@@ -37,7 +37,7 @@
   onMount(() => {
     if (query) run();
     input?.focus();
-    return onEvent('scribe://request', (r) => {
+    return onEvent('steno://request', (r) => {
       if (aiReq && r.id === aiReq.id) aiReq = r;
     });
   });
@@ -75,7 +75,7 @@
         />
         <kbd>/</kbd>
       </label>
-      <button type="button" class="btn aibtn" onclick={askAi} disabled={!query.trim()} title="Poser la question à l’agent IA, qui lit l’historique via le serveur MCP Scribe">
+      <button type="button" class="btn aibtn" onclick={askAi} disabled={!query.trim()} title="Poser la question à l’agent IA, qui lit l’historique via le serveur MCP Sténo">
         <Icon name="ask" size={15} />Demander à l’IA
       </button>
     </form>

@@ -161,7 +161,7 @@
           {#if s.state !== 'processing'}<span class="tnum tb-time">{elapsed}</span>{/if}
         </a>
       {:else if offer}
-        <a class="tb-live offer" href={href('/live')} title="{offer.label}. Le Scribe n’écoute pas encore.">
+        <a class="tb-live offer" href={href('/live')} title="{offer.label}. Sténo n’écoute pas encore.">
           <Icon name="phone" size={12} />
           <span class="ellipsis">{offer.heading}</span>
         </a>
@@ -189,7 +189,7 @@
     {#if isTauri}<div class="drag" data-tauri-drag-region></div>{/if}
     <div class="brand">
       <span class="logo"><Logo size={20} /></span>
-      <span class="name">Scribe</span>
+      <span class="name">Sténo</span>
       {#if peeking}
         <button class="collapse" onclick={pin} title="Épingler la barre latérale ({modKey}\)" aria-label="Épingler la barre latérale" aria-expanded="false" aria-controls="sidebar">
           <Icon name="pin" size={15} />
@@ -216,7 +216,7 @@
         </span>
       </a>
     {:else if offer}
-      <a class="live-card offer" href={href('/live')} title="{offer.label}. Le Scribe n’écoute pas encore.">
+      <a class="live-card offer" href={href('/live')} title="{offer.label}. Sténo n’écoute pas encore.">
         <span class="lc-ic"><Icon name="phone" size={14} /></span>
         <span class="grow">
           <span class="lc-state">{offer.heading}</span>

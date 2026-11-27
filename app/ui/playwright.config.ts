@@ -1,6 +1,6 @@
 // Tests de bout en bout.
 //  - « maquette » : `vite preview` + faux backend en mémoire (mock.ts) ;
-//  - « reel »     : `scribe serve` (cœur réel, base neuve, faux CLI `claude`, simulateur audio) ;
+//  - « reel »     : `steno serve` (cœur réel, base neuve, faux CLI `claude`, simulateur audio) ;
 //  - « captures » : comme « reel », produit les captures de docs/screenshots (hors `npm test`).
 import { chromium, defineConfig, devices } from '@playwright/test';
 import fs from 'node:fs';
@@ -11,7 +11,7 @@ import { PORTS } from './e2e/ports';
 
 const UI = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(UI, '../..');
-const SCRIBE = path.join(ROOT, 'target/debug/scribe');
+const STENO = path.join(ROOT, 'target/debug/steno');
 const FAKE_BIN = path.join(ROOT, 'fixtures/fake-bin');
 
 
@@ -27,22 +27,22 @@ function selectedProjects(): Set<string> {
 }
 const wanted = selectedProjects();
 
-// Dossier SCRIBE_HOME neuf par serveur, créé une seule fois (les workers héritent de l'environnement).
+// Dossier STENO_HOME neuf par serveur, créé une seule fois (les workers héritent de l'environnement).
 function freshHome(key: string): string {
-  const v = `SCRIBE_E2E_HOME_${key.toUpperCase()}`;
-  if (!process.env[v]) process.env[v] = fs.mkdtempSync(path.join(os.tmpdir(), `scribe-e2e-${key}-`));
+  const v = `STENO_E2E_HOME_${key.toUpperCase()}`;
+  if (!process.env[v]) process.env[v] = fs.mkdtempSync(path.join(os.tmpdir(), `steno-e2e-${key}-`));
   return process.env[v]!;
 }
 
-function scribeServer(key: keyof typeof PORTS, fixture: string, speed: number) {
+function stenoServer(key: keyof typeof PORTS, fixture: string, speed: number) {
   const env: Record<string, string> = {
     ...(process.env as Record<string, string>),
-    SCRIBE_HOME: freshHome(key),
+    STENO_HOME: freshHome(key),
     PATH: `${FAKE_BIN}${path.delimiter}${process.env.PATH ?? ''}`,
-    SCRIBE_SIDECAR: `${SCRIBE} replay ${fixture} --speed ${speed}`,
+    STENO_SIDECAR: `${STENO} replay ${fixture} --speed ${speed}`,
   };
   return {
-    command: `"${SCRIBE}" serve --port ${PORTS[key]} --ui "${path.join(UI, 'dist')}"`,
+    command: `"${STENO}" serve --port ${PORTS[key]} --ui "${path.join(UI, 'dist')}"`,
     url: `http://127.0.0.1:${PORTS[key]}/`,
     env,
     reuseExistingServer: false,
@@ -62,12 +62,12 @@ if (wanted.has('maquette')) {
   });
 }
 if (wanted.has('reel')) {
-  servers.push(scribeServer('reel', path.join(ROOT, 'fixtures/daily-45min.jsonl'), 40));
-  servers.push(scribeServer('voix', path.join(UI, 'e2e/fixtures/arret-voix.jsonl'), 10));
-  servers.push(scribeServer('slack', path.join(UI, 'e2e/fixtures/appel-slack.jsonl'), 10));
+  servers.push(stenoServer('reel', path.join(ROOT, 'fixtures/daily-45min.jsonl'), 40));
+  servers.push(stenoServer('voix', path.join(UI, 'e2e/fixtures/arret-voix.jsonl'), 10));
+  servers.push(stenoServer('slack', path.join(UI, 'e2e/fixtures/appel-slack.jsonl'), 10));
 }
 if (wanted.has('captures')) {
-  servers.push(scribeServer('captures', path.join(ROOT, 'fixtures/daily-45min.jsonl'), 40));
+  servers.push(stenoServer('captures', path.join(ROOT, 'fixtures/daily-45min.jsonl'), 40));
 }
 
 // Chromium préinstallé (environnement d'intégration) si celui de Playwright est absent ;

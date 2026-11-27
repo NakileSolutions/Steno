@@ -16,7 +16,7 @@ import { detectWake, fold } from './wake';
 import { effortLabel, normalizeAgentSettings } from './agents';
 
 // Réglages simulés conservés dans l'onglet (rechargement de la page) ; jamais requis.
-const SETTINGS_KEY = 'scribe-mock-settings';
+const SETTINGS_KEY = 'steno-mock-settings';
 function loadSettings(): Settings {
   try {
     const raw = sessionStorage.getItem(SETTINGS_KEY);
@@ -96,7 +96,7 @@ export function createMockBackend(): Backend {
     live.pending_requests = allRequests().filter((r) => r.status === 'queued' || r.status === 'running').length;
     const m = liveStore();
     live.meeting = m ? clone(m.meeting) : live.state === 'processing' ? live.meeting : null;
-    emit('scribe://live', live);
+    emit('steno://live', live);
   };
 
   /** Comme le cœur : un appel d'une app désactivée n'est plus signalé. */
@@ -124,7 +124,7 @@ export function createMockBackend(): Backend {
       me: Math.round((live.levels.me * 0.35 + target(speaking.me || live.aside) * 0.65) * 10) / 10,
       them: Math.round((live.levels.them * 0.35 + target(speaking.them) * 0.65) * 10) / 10,
     };
-    emit('scribe://live', live);
+    emit('steno://live', live);
   };
   setInterval(levelTimer, 250);
 
@@ -164,9 +164,9 @@ export function createMockBackend(): Backend {
     // Politique lecture seule : toute demande de publication est refusée.
     if (/\b(poste|publie|envoie|partage)\b/i.test(q) && it !== 'note') {
       req.status = 'refused';
-      req.error = 'Demande refusée : le Scribe ne publie rien à l’extérieur (lecture seule).';
+      req.error = 'Demande refusée : Sténo ne publie rien à l’extérieur (lecture seule).';
       req.finished_at = iso(new Date());
-      setTimeout(() => { emit('scribe://request', req); emitLive(); }, 50);
+      setTimeout(() => { emit('steno://request', req); emitLive(); }, 50);
       return clone(req);
     }
 
@@ -174,16 +174,16 @@ export function createMockBackend(): Backend {
       req.status = 'refused';
       req.error = 'Réunion confidentielle : aucun appel à l’IA.';
       req.finished_at = iso(new Date());
-      setTimeout(() => { emit('scribe://request', req); emitLive(); }, 50);
+      setTimeout(() => { emit('steno://request', req); emitLive(); }, 50);
       return clone(req);
     }
 
-    setTimeout(() => { emit('scribe://request', req); emitLive(); }, 50);
+    setTimeout(() => { emit('steno://request', req); emitLive(); }, 50);
     setTimeout(() => {
       if (req.status !== 'queued') return;
       req.status = 'running';
       req.started_at = iso(new Date());
-      emit('scribe://request', req);
+      emit('steno://request', req);
     }, 700);
     setTimeout(() => {
       if (req.status !== 'running') return;
@@ -194,9 +194,9 @@ export function createMockBackend(): Backend {
         req.summary = 'Note ajoutée.';
         if (store) store.notes.push({ id: nextIds.note(), meeting_id: store.meeting.id, ts: iso(new Date()), text: q.replace(/^note\s*:?\s*/i, ''), source: 'voice' });
       } else if (it === 'history') {
-        req.answer_md = `D'après vos réunions des 30 derniers jours :\n\n- **Daily ORION** (aujourd'hui) : pagination par 500 pour le batch de stations (APP-1251).\n- **Revue d'architecture** (hier) : export Brindille par fichier SFTP quotidien.\n\n_Recherche effectuée via le serveur MCP Scribe._`;
+        req.answer_md = `D'après vos réunions des 30 derniers jours :\n\n- **Daily ORION** (aujourd'hui) : pagination par 500 pour le batch de stations (APP-1251).\n- **Revue d'architecture** (hier) : export Brindille par fichier SFTP quotidien.\n\n_Recherche effectuée via le serveur MCP Sténo._`;
         req.summary = 'Deux réunions pertinentes trouvées.';
-        req.tools_used = ['scribe.search_meetings', 'scribe.get_report'];
+        req.tools_used = ['steno.search_meetings', 'steno.get_report'];
       } else if (/numéro de cadre/i.test(q)) {
         req.answer_md = `La validation est faite dans \`FrameNumberValidator.java:23\` par l'expression \`^[A-Z]{2}\\d{6}$\` : **aucune règle** pour les cadres importés ni les anciens modèles.\n\n- Les vélos cargo ont un préfixe à trois lettres et sont refusés.\n- Aucune table de référence des modèles dans le dépôt.\n\n**Sources**\n- [FrameNumberValidator.java:23](https://gitlab.example.com/orion/ms-fleet/-/blob/main/src/main/java/fr/orion/fleet/validation/FrameNumberValidator.java#L23)\n- [APP-1260 — Validation des numéros de cadre](https://jira.example.com/browse/APP-1260)`;
         req.summary = 'Regex ^[A-Z]{2}\\d{6}$ dans FrameNumberValidator.java:23, sans cadres importés ni vélos cargo.';
@@ -206,7 +206,7 @@ export function createMockBackend(): Backend {
         req.summary = 'Deux tickets proches, rien dans le code.';
         req.tools_used = ['code.grep', 'jira.search'];
       }
-      emit('scribe://request', req);
+      emit('steno://request', req);
       emitLive();
     }, it === 'note' ? 1400 : 6500);
     return clone(req);
@@ -220,7 +220,7 @@ export function createMockBackend(): Backend {
     const seg = pushSegment(store, speaker, text, priv);
     const det = speaker === 'Moi' && !priv ? wakeDetect(text) : null;
     if (det?.detected && det.intent === 'stop') {
-      // « Scribe, arrête l'écoute » : seule façon, avec le bouton et le raccourci, de terminer.
+      // « Sténo, arrête l'écoute » : seule façon, avec le bouton et le raccourci, de terminer.
       const now = iso(new Date());
       const req: Request = {
         id: `req-${++reqSeq}`, meeting_id: store.meeting.id, created_at: now, origin: 'voice', intent: 'stop',
@@ -230,8 +230,8 @@ export function createMockBackend(): Backend {
       };
       store.requests.push(req);
       seg.request_id = req.id;
-      emit('scribe://segment', seg);
-      emit('scribe://request', req);
+      emit('steno://segment', seg);
+      emit('steno://request', req);
       setTimeout(() => liveStore() === store && finishMeeting(store), 300);
       return;
     }
@@ -239,7 +239,7 @@ export function createMockBackend(): Backend {
       const req = createRequest(det.query, store.meeting.id, 'voice', det.intent as Request['intent']);
       seg.request_id = req.id;
     }
-    emit('scribe://segment', seg);
+    emit('steno://segment', seg);
   }
 
   const segTimer = () => {
@@ -264,8 +264,8 @@ export function createMockBackend(): Backend {
     });
     store.decisions.push({ id: nextIds.decision(), meeting_id: store.meeting.id, text: 'APP-1260 estimé à 3 points, avec la table de référence des modèles de vélos.', created_at: iso(new Date()) });
     store.actions.push({ id: nextIds.action(), meeting_id: store.meeting.id, owner: 'Moi', text: 'Analyser APP-1262 (doublons de comptes)', due: null, status: 'open' });
-    emit('scribe://report', { meeting_id: store.meeting.id, version: store.reports.length });
-    emit('scribe://meetings', null);
+    emit('steno://report', { meeting_id: store.meeting.id, version: store.reports.length });
+    emit('steno://meetings', null);
   }
 
   function scheduleReport(store: MeetingStore, at: number) {
@@ -288,7 +288,7 @@ export function createMockBackend(): Backend {
     live.state = 'processing';
     live.meeting = clone(store.meeting);
     emitLive();
-    emit('scribe://meetings', null);
+    emit('steno://meetings', null);
     if (store.meeting.confidential) store.meeting.status = 'ended';
     else scheduleReport(store, Date.now() + Math.max(3, settings.report?.context_delay_s ?? 0) * 1000);
     setTimeout(() => {
@@ -297,7 +297,7 @@ export function createMockBackend(): Backend {
       live.aside = false;
       live.mic_muted = false;
       emitLive();
-      emit('scribe://meetings', null);
+      emit('steno://meetings', null);
     }, 3000);
   }
 
@@ -366,7 +366,7 @@ export function createMockBackend(): Backend {
 
   // --- Mini TOML (import/export des réglages) ---
   function toToml(s: Settings): string {
-    const out: string[] = ['# Réglages Scribe — sans chemins ni données personnelles', ''];
+    const out: string[] = ['# Réglages Sténo — sans chemins ni données personnelles', ''];
     const val = (v: unknown): string =>
       Array.isArray(v) ? `[${v.map(val).join(', ')}]` : typeof v === 'string' ? JSON.stringify(v) : String(v);
     const isTableArray = (v: unknown) => Array.isArray(v) && v.length > 0 && v.every((x) => x !== null && typeof x === 'object');
@@ -468,7 +468,7 @@ export function createMockBackend(): Backend {
       scriptPos = 0;
       live.state = 'listening';
       emitLive();
-      emit('scribe://meetings', null);
+      emit('steno://meetings', null);
       return clone(meeting);
     },
     stop_meeting: () => {
@@ -492,7 +492,7 @@ export function createMockBackend(): Backend {
       if (!s) throw 'Aucune réunion en cours.';
       s.meeting.confidential = !!a.on;
       emitLive();
-      emit('scribe://meetings', null);
+      emit('steno://meetings', null);
       return null;
     },
     ask: (a) => createRequest(a.query as string, (a.meetingId as string) ?? null, 'text'),
@@ -502,7 +502,7 @@ export function createMockBackend(): Backend {
       if (r && (r.status === 'queued' || r.status === 'running')) {
         r.status = 'cancelled';
         r.finished_at = iso(new Date());
-        emit('scribe://request', r);
+        emit('steno://request', r);
         emitLive();
       }
       return null;
@@ -541,19 +541,19 @@ export function createMockBackend(): Backend {
       const s = find(a.id as string);
       s.meeting.title = String(a.title);
       s.meeting.title_source = 'user';
-      emit('scribe://meetings', null);
+      emit('steno://meetings', null);
       emitLive();
       return null;
     },
     set_confidential: (a) => {
       find(a.id as string).meeting.confidential = !!a.on;
-      emit('scribe://meetings', null);
+      emit('steno://meetings', null);
       return null;
     },
     delete_meeting: (a) => {
       find(a.id as string);
       meetings = meetings.filter((m) => m.meeting.id !== a.id);
-      emit('scribe://meetings', null);
+      emit('steno://meetings', null);
       emitLive();
       return null;
     },
@@ -587,14 +587,14 @@ export function createMockBackend(): Backend {
       if (s.meeting.confidential) throw 'Réunion confidentielle : aucun compte rendu n’est généré.';
       const prevStatus = s.meeting.status;
       s.meeting.status = 'processing';
-      emit('scribe://meetings', null);
+      emit('steno://meetings', null);
       setTimeout(() => {
         const last = s.reports.at(-1);
         const md = last ? last.markdown.split('\n## Liens avec le code')[0] : `# ${s.meeting.title}\n\n## En bref\n- Compte rendu régénéré.`;
         s.reports.push({ meeting_id: s.meeting.id, markdown: md, generated_at: iso(new Date()), provider: settings.agent.provider, model: settings.agent.models.summary || null, correlated: false, version: s.reports.length + 1 });
         s.meeting.status = prevStatus === 'processing' ? 'done' : prevStatus === 'ended' ? 'done' : prevStatus;
-        emit('scribe://report', { meeting_id: s.meeting.id, version: s.reports.length });
-        emit('scribe://meetings', null);
+        emit('steno://report', { meeting_id: s.meeting.id, version: s.reports.length });
+        emit('steno://meetings', null);
       }, 2500);
       return null;
     },
@@ -607,8 +607,8 @@ export function createMockBackend(): Backend {
       setTimeout(() => {
         const base = last.markdown.split('\n## Liens avec le code')[0];
         s.reports.push({ ...last, markdown: `${base}\n\n## Liens avec le code et les outils\n- Rien de contradictoire trouvé dans les dépôts cochés.\n- Tickets cités vérifiés dans Jira.`, generated_at: iso(new Date()), correlated: true, version: s.reports.length + 1 });
-        emit('scribe://report', { meeting_id: s.meeting.id, version: s.reports.length });
-        emit('scribe://meetings', null);
+        emit('steno://report', { meeting_id: s.meeting.id, version: s.reports.length });
+        emit('steno://meetings', null);
       }, 3000);
       return null;
     },
@@ -675,7 +675,7 @@ export function createMockBackend(): Backend {
         const x = s.actions.find((y) => y.id === a.id);
         if (x) x.status = a.status as Action['status'];
       }
-      emit('scribe://meetings', null);
+      emit('steno://meetings', null);
       return null;
     },
     list_decisions: (a) =>
@@ -785,7 +785,7 @@ export function createMockBackend(): Backend {
       const w = fold(String(a.word ?? '').trim());
       if (!w) return { accepted: [], rejected: [] };
       const cands = new Set<string>([w, w.replace(/e$/, ''), w.replace(/c/g, 'k'), w + 's', w.replace(/i/g, 'y')]);
-      if (w === 'scribe') ['script', 'inscrit', 'description', 'scribes', 'skribe', 'scrib'].forEach((x) => cands.add(x));
+      if (w === 'steno') ['script', 'inscrit', 'description', 'stenos', 'skribe', 'scrib'].forEach((x) => cands.add(x));
       return checkVariants(w, [...cands]);
     },
     check_variants: (a) => checkVariants(String(a.word), (a.variants as string[]) ?? []),
@@ -806,9 +806,9 @@ export function createMockBackend(): Backend {
       const items: DoctorItem[] = [
         { name: 'Microphone', status: 'ok', message: 'Autorisé.', fix: null },
         { name: 'Audio du système', status: 'warn', message: 'Pas encore demandé.', fix: 'Démarrez une réunion : macOS affichera la demande « Enregistrement audio du système ».' },
-        { name: 'Accessibilité', status: 'error', message: 'Refusée : le titre des appels (Teams, Slack, Zoom…) ne sera pas lu.', fix: 'Réglages Système → Confidentialité et sécurité → Accessibilité → cochez Scribe.' },
+        { name: 'Accessibilité', status: 'error', message: 'Refusée : le titre des appels (Teams, Slack, Zoom…) ne sera pas lu.', fix: 'Réglages Système → Confidentialité et sécurité → Accessibilité → cochez Sténo.' },
         { name: 'Apps de visio', status: 'ok', message: `Surveillées : ${settings.audio.call_apps.filter((x) => x.enabled).map((x) => x.name).join(', ') || 'aucune'}.`, fix: null },
-        { name: 'Sidecar audio', status: 'ok', message: 'scribe-audio 0.1.0, modèle de transcription présent.', fix: null },
+        { name: 'Sidecar audio', status: 'ok', message: 'steno-audio 0.1.0, modèle de transcription présent.', fix: null },
         { name: 'Agent IA', status: 'ok', message: `${agents.find((x) => x.id === settings.agent.provider)?.name ?? settings.agent.provider} détecté.`, fix: null },
         { name: 'Politique lecture seule', status: 'ok', message: 'Test « poste sur Slack » : refusé comme attendu.', fix: null },
       ];
@@ -824,7 +824,7 @@ export function createMockBackend(): Backend {
     open_permission_settings: (a) => {
       const k = String(a.kind) as PermissionKind;
       if (!(k in permissions)) throw `Permission inconnue : ${k}`;
-      // Simule l'utilisateur qui coche Scribe dans les Réglages Système.
+      // Simule l'utilisateur qui coche Sténo dans les Réglages Système.
       setTimeout(() => (permissions[k] = 'granted'), 1200);
       return null;
     },
@@ -836,7 +836,7 @@ export function createMockBackend(): Backend {
     report_now: (a) => {
       const store = find(String(a.id));
       if (pendingReports.has(store.meeting.id)) scheduleReport(store, Date.now() + 800);
-      emit('scribe://meetings', null);
+      emit('steno://meetings', null);
       return null;
     },
     set_meeting_context: (a) => {
@@ -869,7 +869,7 @@ export function createMockBackend(): Backend {
       const s = meetings.find((x) => x.segments.some((g) => g.id === id));
       if (!s) throw 'Phrase introuvable.';
       s.segments = s.segments.filter((g) => g.id !== id);
-      emit('scribe://segment_deleted', { meeting_id: s.meeting.id, id });
+      emit('steno://segment_deleted', { meeting_id: s.meeting.id, id });
       return null;
     },
     delete_all_data: () => {
@@ -879,7 +879,7 @@ export function createMockBackend(): Backend {
       live.state = 'idle';
       live.meeting = null;
       emitLive();
-      emit('scribe://meetings', null);
+      emit('steno://meetings', null);
       return null;
     },
   };
@@ -940,6 +940,6 @@ export function createMockBackend(): Backend {
       return mockApi.call(active ? 'teams' : null, active ? title : null);
     },
   };
-  (window as unknown as { __scribeMock?: unknown }).__scribeMock = mockApi;
+  (window as unknown as { __stenoMock?: unknown }).__stenoMock = mockApi;
   return backend;
 }

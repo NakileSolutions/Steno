@@ -5,7 +5,7 @@ export type SidebarMode = 'expanded' | 'collapsed';
 /** `hidden` : rien ; `arming` : la souris attend sur le bord ; `shown` : panneau flottant visible. */
 export type PeekPhase = 'hidden' | 'arming' | 'shown';
 
-export const STORAGE_KEY = 'scribe.sidebar.collapsed';
+export const STORAGE_KEY = 'steno.sidebar.collapsed';
 /** Délai de survol du bord avant l'aperçu. */
 export const PEEK_DELAY = 120;
 /** Délai avant de rétracter l'aperçu une fois la souris sortie. */

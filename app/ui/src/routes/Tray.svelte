@@ -30,7 +30,7 @@
   }
   onMount(() => {
     loadRecent();
-    return onEvent('scribe://request', (r) => {
+    return onEvent('steno://request', (r) => {
       const i = recent.findIndex((x) => x.id === r.id);
       if (i >= 0) recent[i] = r;
       else loadRecent();
@@ -93,7 +93,7 @@
 <div class="tray">
   <header class="th">
     <span class="tlogo"><Logo size={16} /></span>
-    <span class="name">Scribe</span>
+    <span class="name">Sténo</span>
     <span class="grow"></span>
     <span class="state {s.state}">
       <span class="dot {s.state === 'listening' ? 'live' : s.state === 'idle' ? '' : s.state}"></span>
@@ -132,8 +132,8 @@
             class:on={s.mic_muted}
             aria-pressed={s.mic_muted}
             onclick={() => api.setMicMuted(!s.mic_muted).catch(toastError)}
-            title={s.mic_muted ? 'Rétablir votre micro dans Scribe' : 'Couper votre micro dans Scribe'}
-            aria-label={s.mic_muted ? 'Rétablir votre micro dans Scribe' : 'Couper votre micro dans Scribe'}
+            title={s.mic_muted ? 'Rétablir votre micro dans Sténo' : 'Couper votre micro dans Sténo'}
+            aria-label={s.mic_muted ? 'Rétablir votre micro dans Sténo' : 'Couper votre micro dans Sténo'}
           ><Icon name={s.mic_muted ? 'micoff' : 'mic'} size={15} /></button>
           <label class="check small conf" title="Aucun appel à l’IA pour cette réunion">
             <input class="switch" type="checkbox" role="switch" checked={!!m.confidential} onchange={(e) => api.setLiveConfidential(e.currentTarget.checked).catch(toastError)} />
@@ -148,12 +148,12 @@
           <span class="to-ic"><Icon name="phone" size={15} /></span>
           <div class="grow">
             <p class="to-title">{offer.heading} : <strong>{offer.title}</strong></p>
-            <p class="to-sub">Le Scribe n’écoute pas encore.{#if offer.browser} Tout le son du navigateur sera capté.{/if}</p>
+            <p class="to-sub">Sténo n’écoute pas encore.{#if offer.browser} Tout le son du navigateur sera capté.{/if}</p>
           </div>
         </div>
       {:else}
         <div class="quiet">
-          <p class="mt">Le Scribe n’écoute pas</p>
+          <p class="mt">Sténo n’écoute pas</p>
           <p class="faint small">L’écoute ne démarre que sur votre demande.</p>
         </div>
       {/if}
@@ -168,7 +168,7 @@
 
   <form class="ask" onsubmit={ask}>
     <Icon name="ask" size={15} />
-    <input data-search bind:value={query} placeholder="Demander au Scribe…" aria-label="Demande rapide" />
+    <input data-search bind:value={query} placeholder="Demander à Sténo…" aria-label="Demande rapide" />
     <kbd>↩</kbd>
   </form>
 
@@ -198,7 +198,7 @@
   <footer class="tf row">
     <button class="btn ghost sm" onclick={() => openMain('/settings')}><Icon name="settings" size={14} />Réglages</button>
     <span class="grow"></span>
-    <button class="btn sm" onclick={() => openMain()}>Ouvrir Scribe<Icon name="external" size={12} /></button>
+    <button class="btn sm" onclick={() => openMain()}>Ouvrir Sténo<Icon name="external" size={12} /></button>
   </footer>
 </div>
 

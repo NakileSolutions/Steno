@@ -60,7 +60,7 @@
     load();
   });
 
-  onMount(() => onEvent('scribe://meetings', () => load()));
+  onMount(() => onEvent('steno://meetings', () => load()));
 
   const groups = $derived(groupByDay(list));
 

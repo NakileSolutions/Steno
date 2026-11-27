@@ -138,7 +138,7 @@
   <div class="field-label">Clé API</div>
   <div class="field-body">
     <label class="check toggle"><span>Autoriser l’utilisation d’une clé API</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.agent.allow_api_key} /></label>
-    <p class="faint small">Désactivé par défaut : le Scribe n’utilise que l’abonnement connecté dans le CLI. Une clé API peut entraîner une facturation.</p>
+    <p class="faint small">Désactivé par défaut : Sténo n’utilise que l’abonnement connecté dans le CLI. Une clé API peut entraîner une facturation.</p>
   </div>
 </div>
 

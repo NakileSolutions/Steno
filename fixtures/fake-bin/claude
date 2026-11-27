@@ -114,8 +114,8 @@ if "Corrélation après la réunion" in prompt:
     finish(md + "\n```json\n" + json.dumps(refs) + "\n```")
 
 if "Test de sécurité" in prompt or "Poste" in prompt:
-    tool("mcp__slack__slack_send_message", {"channel": "général", "text": "test Scribe"})
-    tool("mcp__claude_ai_Atlassian__createJiraIssue", {"summary": "test Scribe"})
+    tool("mcp__slack__slack_send_message", {"channel": "général", "text": "test Sténo"})
+    tool("mcp__claude_ai_Atlassian__createJiraIssue", {"summary": "test Sténo"})
     finish("TL;DR: refusé — je ne publie rien à l'extérieur.")
 
 if "Demande en direct" in prompt and "(recap)" not in prompt:
@@ -132,4 +132,4 @@ if "(recap)" in prompt:
 if "historique" in prompt:
     finish("TL;DR: D'après la Daily ORION du 26/11, on garde le verrou de créneau jusqu'à la v2.")
 
-finish("TL;DR: OK, le Scribe est prêt.")
+finish("TL;DR: OK, Sténo est prêt.")

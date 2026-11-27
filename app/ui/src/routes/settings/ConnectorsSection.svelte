@@ -41,7 +41,7 @@
 </script>
 
 <div class="row top">
-  <p class="muted grow">Serveurs MCP configurés dans l’agent choisi. Le Scribe ne les utilise qu’en <strong>lecture seule</strong>. Enregistré automatiquement.</p>
+  <p class="muted grow">Serveurs MCP configurés dans l’agent choisi. Sténo ne les utilise qu’en <strong>lecture seule</strong>. Enregistré automatiquement.</p>
   <button class="btn" onclick={refresh} disabled={refreshing}><Icon name="refresh" size={14} />{refreshing ? 'Détection…' : 'Rafraîchir'}</button>
 </div>
 

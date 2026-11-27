@@ -184,11 +184,11 @@ describe('formatShortcut', () => {
 
 describe('stopPhrase', () => {
   it('compose le mot d’appel et le premier verbe d’arrêt', () => {
-    expect(stopPhrase('Scribe', { stop: ["arrête l'écoute", 'termine la réunion'] })).toBe('Scribe, arrête l’écoute');
+    expect(stopPhrase('Sténo', { stop: ["arrête l'écoute", 'termine la réunion'] })).toBe('Sténo, arrête l’écoute');
     expect(stopPhrase('Jarvis', { stop: ['  ', 'stop'] })).toBe('Jarvis, stop');
   });
   it('a des valeurs par défaut', () => {
-    expect(stopPhrase('', null)).toBe('Scribe, arrête l’écoute');
-    expect(stopPhrase('Scribe', { stop: [] })).toBe('Scribe, arrête l’écoute');
+    expect(stopPhrase('', null)).toBe('Sténo, arrête l’écoute');
+    expect(stopPhrase('Sténo', { stop: [] })).toBe('Sténo, arrête l’écoute');
   });
 });

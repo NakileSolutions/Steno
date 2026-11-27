@@ -47,7 +47,7 @@
     loadActions();
     loadOthers();
   });
-  onMount(() => onEvent('scribe://meetings', () => { loadActions(); loadOthers(); }));
+  onMount(() => onEvent('steno://meetings', () => { loadActions(); loadOthers(); }));
 
   const title = (id: string) => meetings.find((m) => m.id === id)?.title ?? 'Réunion';
 

@@ -6,7 +6,7 @@ import { DEFAULT_CALL_APPS, DEFAULT_CONSENT_MESSAGE, DEFAULT_STOP_VERB, formatSh
 import type { CallApp, Settings } from './types';
 
 export const prefs = $state({
-  wake: 'Scribe',
+  wake: 'Sténo',
   stopVerbs: [DEFAULT_STOP_VERB] as string[],
   toggle: 'Ctrl+Alt+S',
   callApps: DEFAULT_CALL_APPS.map((a) => ({ ...a })) as CallApp[],
@@ -19,7 +19,7 @@ export const prefs = $state({
 });
 
 export function setPrefs(s: Settings): void {
-  prefs.wake = s.voice.wake_word || 'Scribe';
+  prefs.wake = s.voice.wake_word || 'Sténo';
   prefs.stopVerbs = s.voice.verbs.stop?.length ? [...s.voice.verbs.stop] : [DEFAULT_STOP_VERB];
   prefs.toggle = s.audio.shortcuts.toggle || 'Ctrl+Alt+S';
   prefs.inputDevice = s.audio.input_device ?? null;
@@ -36,7 +36,7 @@ export function loadPrefs(): void {
   api.getSettings().then(setPrefs).catch(() => {});
 }
 
-/** « Pour arrêter : bouton, ⌃⌥S, ou dites « Scribe, arrête l’écoute » ». */
+/** « Pour arrêter : bouton, ⌃⌥S, ou dites « Sténo, arrête l’écoute » ». */
 export function stopHint(): string {
   const sc = formatShortcut(prefs.toggle);
   const phrase = stopPhrase(prefs.wake, { stop: prefs.stopVerbs });

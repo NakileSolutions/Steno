@@ -32,8 +32,8 @@ jobs:
       - name: Tests Rust (unitaires, fonctionnels CLI, acceptation avec le faux agent, conformité des commandes)
         run: make sidecar-placeholder && cargo test --workspace
       - name: Performance de la recherche (500 réunions)
-        run: cargo test -p scribe-core --release --test perf -- --ignored
-      - name: Tests e2e (maquette + réels via scribe serve)
+        run: cargo test -p steno-core --release --test perf -- --ignored
+      - name: Tests e2e (maquette + réels via steno serve)
         working-directory: app/ui
         run: npx playwright install --with-deps chromium && npm run test:e2e
       - uses: actions/upload-artifact@v4
@@ -53,7 +53,7 @@ jobs:
         with:
           node-version: 22
       - name: Sidecar
-        working-directory: audio/ScribeAudio
+        working-directory: audio/StenoAudio
         run: swift build -c release && swift test
       - name: App
         run: make app

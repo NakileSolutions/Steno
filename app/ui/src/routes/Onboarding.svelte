@@ -116,7 +116,7 @@
       if (step < STEPS.length - 1) step++;
       else {
         await api.completeOnboarding();
-        toast('Scribe est prêt.');
+        toast('Sténo est prêt.');
         navigate('/meetings');
       }
     } catch (e) {
@@ -167,7 +167,7 @@
 
 <div class="ob">
   <aside class="rail">
-    <div class="brand"><span class="btile"><Logo size={40} tile /></span><div><strong>Scribe</strong><p class="tiny">Premier lancement</p></div></div>
+    <div class="brand"><span class="btile"><Logo size={40} tile /></span><div><strong>Sténo</strong><p class="tiny">Premier lancement</p></div></div>
     <div class="prog" role="progressbar" aria-label="Progression" aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={step + 1}>
       <span style="width: {((step + 1) / STEPS.length) * 100}%"></span>
     </div>
@@ -192,13 +192,13 @@
 
         {#if STEPS[step].id === 'permissions'}
           <h1>Permissions macOS</h1>
-          <p class="lead">Le Scribe a besoin du micro et de l’audio du système (pour entendre l’app de l’appel : Teams, Slack, Zoom…) ; l’accessibilité lui permet de lire le titre de l’appel. Il n’écoute que lorsque vous démarrez l’écoute.</p>
+          <p class="lead">Sténo a besoin du micro et de l’audio du système (pour entendre l’app de l’appel : Teams, Slack, Zoom…) ; l’accessibilité lui permet de lire le titre de l’appel. Il n’écoute que lorsque vous démarrez l’écoute.</p>
           <Permissions />
           <p class="small faint">Vous retrouverez ces droits dans Réglages → Permissions.</p>
 
         {:else if STEPS[step].id === 'agent'}
           <h1>Agent IA</h1>
-          <p class="lead">Choisissez le CLI d’agent déjà connecté à votre abonnement. Le Scribe ne l’appelle que sur demande et en fin de réunion.</p>
+          <p class="lead">Choisissez le CLI d’agent déjà connecté à votre abonnement. Sténo ne l’appelle que sur demande et en fin de réunion.</p>
           <div class="choices" role="radiogroup" aria-label="Agent IA">
             {#each obAgents as a (a.id)}
               <label class="choice" class:sel={settings.agent.provider === a.id} class:off={!a.installed}>
@@ -260,7 +260,7 @@
 
         {:else}
           <h1>Corrélation</h1>
-          <p class="lead">Après le compte rendu, le Scribe peut le croiser avec le code et les connecteurs pour repérer les contradictions.</p>
+          <p class="lead">Après le compte rendu, Sténo peut le croiser avec le code et les connecteurs pour repérer les contradictions.</p>
           <div class="choices" role="radiogroup" aria-label="Mode de corrélation">
             {#each [['off', 'Désactivée', 'Jamais.'], ['on_demand', 'À la demande', 'Bouton « Corréler » sur chaque compte rendu. Recommandé.'], ['auto', 'Automatique', 'Après chaque réunion. Consomme davantage de quota.']] as [v, l, h]}
               <label class="choice" class:sel={settings.correlation.mode === v}>

@@ -47,7 +47,7 @@
       <button class="btn" onclick={doExport}><Icon name="download" size={14} />Générer le TOML</button>
       {#if exported}
         <button class="btn ghost" onclick={async () => (await copyText(exported)) && toast('TOML copié.')}><Icon name="copy" size={14} />Copier</button>
-        <button class="btn ghost" onclick={() => downloadText('scribe-reglages.toml', exported, 'application/toml')}>Télécharger</button>
+        <button class="btn ghost" onclick={() => downloadText('steno-reglages.toml', exported, 'application/toml')}>Télécharger</button>
       {/if}
     </div>
     {#if exported}<textarea class="input mono" rows="12" readonly value={exported} aria-label="Réglages exportés"></textarea>{/if}

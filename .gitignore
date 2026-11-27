@@ -7,7 +7,7 @@ node_modules/
 *.db
 *.db-wal
 *.db-shm
-/audio/ScribeAudio/.build/
+/audio/StenoAudio/.build/
 /app/ui/screenshots/
 /.dev-home/
 /app/ui/test-results/

@@ -107,7 +107,7 @@
 
   onMount(() => {
     const uns = [
-      onEvent('scribe://segment', async (seg) => {
+      onEvent('steno://segment', async (seg) => {
         if (seg.meeting_id !== meeting?.id) return;
         // Une phrase déjà affichée peut revenir mise à jour (rattachée à une demande, écho…).
         const i = segments.findIndex((x) => x.id === seg.id);
@@ -123,10 +123,10 @@
           scrollBottom(true);
         } else unseen++;
       }),
-      onEvent('scribe://segment_deleted', ({ meeting_id, id }) => {
+      onEvent('steno://segment_deleted', ({ meeting_id, id }) => {
         if (meeting_id === meeting?.id) segments = segments.filter((x) => x.id !== id);
       }),
-      onEvent('scribe://request', (r) => {
+      onEvent('steno://request', (r) => {
         if (r.meeting_id !== meeting?.id) return;
         const i = requests.findIndex((x) => x.id === r.id);
         if (i >= 0) requests[i] = r;
@@ -307,7 +307,7 @@
             class:on={s.mic_muted}
             aria-pressed={s.mic_muted}
             onclick={() => api.setMicMuted(!s.mic_muted).catch(toastError)}
-            title={s.mic_muted ? 'Rétablir votre micro dans Scribe' : 'Couper votre micro dans Scribe : vos paroles ne sont plus transcrites (le son de l’appel, si)'}
+            title={s.mic_muted ? 'Rétablir votre micro dans Sténo' : 'Couper votre micro dans Sténo : vos paroles ne sont plus transcrites (le son de l’appel, si)'}
           >
             <Icon name={s.mic_muted ? 'micoff' : 'mic'} size={15} />
             {s.mic_muted ? 'Micro coupé' : 'Couper mon micro'}
@@ -378,15 +378,15 @@
         {/if}
       </section>
 
-      <aside class="side" aria-label="Demandes au Scribe">
+      <aside class="side" aria-label="Demandes à Sténo">
         <form class="ask" onsubmit={ask}>
-          <label class="label" for="live-ask">Demander au Scribe</label>
+          <label class="label" for="live-ask">Demander à Sténo</label>
           <div class="askbox">
             <Icon name="ask" size={15} />
             <input id="live-ask" bind:value={query} placeholder={meeting.confidential ? 'Confidentielle : notes seulement' : 'Votre question…'} autocomplete="off" />
             <button class="btn primary sm" disabled={!query.trim()}>Envoyer</button>
           </div>
-          <p class="faint tiny">Ou à voix haute : « Scribe, cherche… », « Scribe, note… »</p>
+          <p class="faint tiny">Ou à voix haute : « Sténo, cherche… », « Sténo, note… »</p>
         </form>
         <div class="feed scroll">
           {#each feed as r (r.id)}
@@ -415,14 +415,14 @@
           <span class="to-ic"><Icon name="phone" size={18} /></span>
           <div class="grow">
             <p class="to-title">{offer.heading} : <strong>{offer.title}</strong></p>
-            <p class="to-sub">Le Scribe n’écoute pas encore : rien n’est transcrit tant que vous ne l’avez pas décidé.{#if offer.browser} Attention : tout le son du navigateur sera capté, y compris les autres onglets.{/if}</p>
+            <p class="to-sub">Sténo n’écoute pas encore : rien n’est transcrit tant que vous ne l’avez pas décidé.{#if offer.browser} Attention : tout le son du navigateur sera capté, y compris les autres onglets.{/if}</p>
           </div>
         </div>
         <button class="btn primary go" onclick={() => start()} disabled={busy}><Icon name="play" size={15} stroke={2} />Démarrer l’écoute</button>
         <button class="btn room" onclick={() => start(true)} disabled={busy} title="Sans app de visio : seul le micro du Mac est écouté"><Icon name="user" size={15} />Plutôt une réunion en présentiel</button>
       {:else}
         <span class="hic"><Logo size={56} tile /></span>
-        <h2>Le Scribe n’écoute pas</h2>
+        <h2>Sténo n’écoute pas</h2>
         <p class="lead">L’écoute démarre et s’arrête uniquement sur votre demande.</p>
         <form class="start" onsubmit={(e) => { e.preventDefault(); start(); }}>
           <input class="input lg" bind:value={newTitle} placeholder="Titre de la réunion (facultatif)" aria-label="Titre de la réunion" />

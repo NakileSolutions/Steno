@@ -14,7 +14,7 @@
 
   onMount(() => {
     initLive();
-    const un = onEvent('scribe://navigate', ({ route }) => navigate(route));
+    const un = onEvent('steno://navigate', ({ route }) => navigate(route));
     return un;
   });
 

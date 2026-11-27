@@ -1,4 +1,4 @@
-# Scribe — assistant de réunion local (Mac + Teams) — plan v3
+# Sténo — assistant de réunion local (Mac + Teams) — plan v3
 
 > Plan de réalisation destiné à des agents de code (Orca, Claude Code, Codex…).
 > **Objectif** : l'équivalent de Granola en 100 % local, augmenté de recherches croisées
@@ -14,15 +14,15 @@
 
 ## 0. Comment utiliser ce plan
 
-1. Créer un dépôt local `scribe/` (privé, jamais poussé sur un dépôt public), y déposer ce fichier.
+1. Créer un dépôt local `steno/` (privé, jamais poussé sur un dépôt public), y déposer ce fichier.
 2. Premier agent : « Lis PLAN.md, écris `docs/contracts.md` (schéma SQLite section 3 + protocole section 4.3), puis exécute la phase 0 et rends-moi `docs/spikes.md`. »
 3. Après validation de la phase 0 : **4 agents en parallèle** (section 11).
 
 Règles pour tous les agents :
 - Français dans l'interface, les notifications et les comptes rendus.
-- **Le Scribe ne publie jamais rien à l'extérieur** (Slack, Jira, Confluence, GitLab, Datadog). Il lit seulement ; tout ce qui sortirait est un brouillon que l'utilisateur valide lui-même.
+- **Sténo ne publie jamais rien à l'extérieur** (Slack, Jira, Confluence, GitLab, Datadog). Il lit seulement ; tout ce qui sortirait est un brouillon que l'utilisateur valide lui-même.
 - Aucun appel à une API payante. Les modèles ne sont appelés que via le **CLI officiel de l'agent choisi**, dans le cadre de l'abonnement du dev, jamais via un client maison qui réutiliserait un jeton.
-- Aucun nom de fournisseur, de modèle ou d'option de CLI en dehors des adaptateurs (`crates/scribe-core/src/agents/`) et des réglages.
+- Aucun nom de fournisseur, de modèle ou d'option de CLI en dehors des adaptateurs (`crates/steno-core/src/agents/`) et des réglages.
 - Rien de propre à un dev dans le dépôt (équipe, chemins, mot d'appel, modèles) : tout est en base.
 
 ---
@@ -30,9 +30,9 @@ Règles pour tous les agents :
 ## 1. Vue d'ensemble
 
 ```
-┌──────────────────────────── Scribe.app (Mac) ─────────────────────────────┐
+┌──────────────────────────── Steno.app (Mac) ─────────────────────────────┐
 │                                                                            │
-│  ┌─ scribe-audio (sidecar Swift, binaire embarqué dans l'app) ──────────┐  │
+│  ┌─ steno-audio (sidecar Swift, binaire embarqué dans l'app) ──────────┐  │
 │  │  Micro (AVAudioEngine + AEC)           → canal "me"   (Moi)          │  │
 │  │  Process tap Core Audio sur Teams      → canal "them" (Eux)          │  │
 │  │  Détection d'appel Teams, titre de fenêtre (Accessibilité)           │  │
@@ -40,7 +40,7 @@ Règles pour tous les agents :
 │  │  ⇄ JSON lines sur stdin/stdout (section 4.3)                         │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                         │ segments                                         │
-│  ┌─ scribe-core (Rust, dans le processus Tauri) ─────────────────────────┐ │
+│  ┌─ steno-core (Rust, dans le processus Tauri) ─────────────────────────┐ │
 │  │  SQLite (WAL + FTS5) : réunions, transcription, demandes, comptes     │ │
 │  │  rendus, décisions, actions, réglages                                 │ │
 │  │  Détection du mot d'appel (canal "me" uniquement)                     │ │
@@ -54,12 +54,12 @@ Règles pour tous les agents :
 │  │  Réglages · vue « en direct »                                         │ │
 │  └───────────────────────────────────────────────────────────────────────┘ │
 └────────────────────────────────────────────────────────────────────────────┘
-   scribe (CLI Rust) : ask · doctor · init · export · mcp (serveur MCP local)
+   steno (CLI Rust) : ask · doctor · init · export · mcp (serveur MCP local)
           │ texte uniquement (jamais l'audio)
           ▼
    Agent IA choisi par le dev (son abonnement) + ses MCP (Atlassian, Datadog, GitLab…)
 
-   Orca : facultatif. Ses agents peuvent interroger les réunions via `scribe mcp`.
+   Orca : facultatif. Ses agents peuvent interroger les réunions via `steno mcp`.
 ```
 
 **Principe de coût** : transcription continue en local ; l'IA n'est appelée que sur demande (voix ou texte), une fois en fin de réunion, et pour la corrélation si elle est activée.
@@ -73,7 +73,7 @@ Règles pour tous les agents :
 | App de bureau | **Tauri 2** (Rust + WKWebView système), UI en **Svelte 5** + Vite, sans gros framework | Pas de Chromium embarqué : quelques dizaines de Mo de RAM au lieu de plusieurs centaines pour Electron | UI 100 % Rust native (Slint ou egui) si la WebView pose problème |
 | Cœur | Rust stable, `tokio`, `rusqlite` (feature `bundled`, FTS5 inclus), `rusqlite_migration`, `serde`, `tracing` | Un seul langage pour l'app, la CLI et le serveur MCP | — |
 | Serveur MCP | crate `rmcp` (SDK Rust officiel), transport stdio | Tous les agents parlent MCP | JSON-RPC stdio minimal fait main |
-| Audio + ASR | **Sidecar Swift** `scribe-audio` : Core Audio process taps (`CATapDescription`, macOS 14.2+), `AVAudioEngine` avec voice processing, **FluidAudio** (Parakeet TDT v3 + Silero VAD, Apache 2.0) | Meilleures API Apple + transcription sur le Neural Engine, très peu de CPU | Tout en Rust : `objc2-core-audio` pour les taps + `whisper-rs` (Metal) ou `sherpa-onnx` (Parakeet ONNX) |
+| Audio + ASR | **Sidecar Swift** `steno-audio` : Core Audio process taps (`CATapDescription`, macOS 14.2+), `AVAudioEngine` avec voice processing, **FluidAudio** (Parakeet TDT v3 + Silero VAD, Apache 2.0) | Meilleures API Apple + transcription sur le Neural Engine, très peu de CPU | Tout en Rust : `objc2-core-audio` pour les taps + `whisper-rs` (Metal) ou `sherpa-onnx` (Parakeet ONNX) |
 | Raccourcis globaux | `tauri-plugin-global-shortcut` (événements appui/relâchement) | Mode aparté « maintenir pour parler » | — |
 | Lancement au démarrage | `tauri-plugin-autostart` | L'app vit dans la barre de menu | — |
 | Rendu markdown | `marked` + `DOMPurify` (contenu produit par l'IA, donc toujours assaini) + CSP stricte | Sécurité | — |
@@ -85,7 +85,7 @@ Cibles de performance (critères d'acceptation) :
 - Ouverture de la fenêtre < 500 ms ; recherche plein texte sur 500 réunions < 200 ms.
 
 Points d'attention :
-- **Permissions macOS** : micro, « Enregistrement audio du système » (`NSAudioCaptureUsageDescription` dans l'`Info.plist`), Accessibilité (titre de la fenêtre Teams). Vérifier que la permission accordée à `Scribe.app` couvre bien le sidecar embarqué (spike S1).
+- **Permissions macOS** : micro, « Enregistrement audio du système » (`NSAudioCaptureUsageDescription` dans l'`Info.plist`), Accessibilité (titre de la fenêtre Teams). Vérifier que la permission accordée à `Steno.app` couvre bien le sidecar embarqué (spike S1).
 - **Teams** : le nouveau Teams (bundle probable `com.microsoft.teams2`) peut sortir l'audio par un processus auxiliaire → taper tout l'arbre de processus Teams.
 - **Mac géré par l'entreprise** : le MDM peut bloquer la permission audio système (spike S4).
 
@@ -93,9 +93,9 @@ Points d'attention :
 
 ## 3. Données — SQLite local
 
-Fichier : `~/Library/Application Support/Scribe/scribe.db` (permissions 600 ; s'appuyer sur FileVault).
+Fichier : `~/Library/Application Support/Steno/steno.db` (permissions 600 ; s'appuyer sur FileVault).
 `PRAGMA journal_mode=WAL; foreign_keys=ON; busy_timeout=5000`. Migrations versionnées.
-**Un seul écrivain principal** : `scribe-core` dans l'app. La CLI ouvre la base en lecture, et pour agir elle insère une tâche dans `jobs` (que l'app traite) ; si l'app ne tourne pas, la CLI exécute la tâche elle-même.
+**Un seul écrivain principal** : `steno-core` dans l'app. La CLI ouvre la base en lecture, et pour agir elle insère une tâche dans `jobs` (que l'app traite) ; si l'app ne tourne pas, la CLI exécute la tâche elle-même.
 
 ```sql
 CREATE TABLE meetings (
@@ -162,14 +162,14 @@ CREATE TABLE connectors (               -- MCP détectés chez l'agent choisi
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);   -- JSON
 ```
 
-- **Audio** : jamais en base. Tampon temporaire dans `~/Library/Caches/Scribe/`, supprimé après traitement (réglage « conserver l'audio N jours », 0 par défaut).
+- **Audio** : jamais en base. Tampon temporaire dans `~/Library/Caches/Steno/`, supprimé après traitement (réglage « conserver l'audio N jours », 0 par défaut).
 - **Rétention** : réglage « supprimer les transcriptions après N jours » (vide = jamais). Les comptes rendus peuvent être gardés plus longtemps.
 - **Sauvegarde** : copie quotidienne (`VACUUM INTO`) dans `backups/`, 7 dernières conservées.
 - **Export** : markdown par réunion à la demande, ou export automatique vers un dossier (réglage, désactivé par défaut).
 
 ---
 
-## 4. Composant A — `scribe-audio` (sidecar Swift)
+## 4. Composant A — `steno-audio` (sidecar Swift)
 
 ### 4.1 Rôle
 Uniquement audio → segments de texte. Aucune logique métier, aucun accès à la base.
@@ -188,14 +188,14 @@ Sidecar → core (stdout) :
 ```json
 {"type":"ready","version":"0.1.0","asr":"parakeet-tdt-v3"}
 {"type":"teams_call","active":true,"title":"Daily ORION"}
-{"type":"segment","ts":"2026-11-26T10:41:12+01:00","t0":668.2,"t1":672.9,"channel":"me","text":"Scribe, cherche…","private":false}
+{"type":"segment","ts":"2026-11-26T10:41:12+01:00","t0":668.2,"t1":672.9,"channel":"me","text":"Sténo, cherche…","private":false}
 {"type":"level","me":-32.5,"them":-24.1}
 {"type":"state","state":"listening|paused|stopped"}
 {"type":"error","code":"tap_failed","message":"…","recoverable":true}
 ```
 Core → sidecar (stdin) :
 ```json
-{"cmd":"start","vocabulary":["Scribe","Atlas"],"silence_ms":1000}
+{"cmd":"start","vocabulary":["Sténo","Atlas"],"silence_ms":1000}
 {"cmd":"stop"}
 {"cmd":"aside","on":true}
 {"cmd":"wake_test","seconds":8}
@@ -208,7 +208,7 @@ Core → sidecar (stdin) :
 
 ---
 
-## 5. Composant B — `scribe-core` (Rust) : base, tâches, agents
+## 5. Composant B — `steno-core` (Rust) : base, tâches, agents
 
 ### 5.1 Réception des segments
 - Écrit les segments en base et alimente la vue « en direct ».
@@ -252,7 +252,7 @@ Les options de ces CLI évoluent vite : l'agent qui implémente les **vérifie s
 
 ### 5.4 Politique lecture seule commune
 `agent/policy.toml` : dépôts lisibles (ceux cochés dans les réglages), aucun dossier inscriptible, commandes shell autorisées (`rg`, `git log|show|blame|grep`, `glab mr view|list`…), et motifs d'outils MCP interdits (`*send*`, `*post*`, `*create*`, `*update*`, `*edit*`, `*delete*`, `*transition*`, `*comment*`, `*merge*`, `*push*`). Chaque adaptateur la traduit dans le mécanisme de son CLI.
-**Règle de sécurité** : si un adaptateur ne sait pas interdire les outils MCP en écriture, ses connecteurs sont marqués `write_blockable = 0` et **ne peuvent pas être activés** (case grisée dans l'UI, avec l'explication). L'agent ne fait que lire et répond sur sa sortie standard : c'est `scribe-core` qui écrit en base.
+**Règle de sécurité** : si un adaptateur ne sait pas interdire les outils MCP en écriture, ses connecteurs sont marqués `write_blockable = 0` et **ne peuvent pas être activés** (case grisée dans l'UI, avec l'explication). L'agent ne fait que lire et répond sur sa sortie standard : c'est `steno-core` qui écrit en base.
 
 ### 5.5 Consignes de l'agent (`agent/`)
 - Une seule source : `agent/INSTRUCTIONS.md` + `agent/playbooks/*.md`, générés à la volée vers le format de chaque CLI dans un dossier d'exécution temporaire.
@@ -279,12 +279,12 @@ Les options de ces CLI évoluent vite : l'agent qui implémente les **vérifie s
 ## 6. Commande vocale et mot d'appel
 
 ### 6.1 Deux modes
-1. **À voix haute** (les participants entendent) : « Scribe, cherche les erreurs Datadog sur ms-booking depuis hier. »
-2. **En aparté** : couper son micro dans Teams et **maintenir le raccourci d'aparté** (par défaut ⌃⌥Espace) pendant qu'on parle. Le Scribe capte le micro indépendamment de Teams, il n'y a pas besoin de mot d'appel, et ces phrases sont marquées `private`, donc exclues du compte rendu.
+1. **À voix haute** (les participants entendent) : « Sténo, cherche les erreurs Datadog sur ms-booking depuis hier. »
+2. **En aparté** : couper son micro dans Teams et **maintenir le raccourci d'aparté** (par défaut ⌃⌥Espace) pendant qu'on parle. Sténo capte le micro indépendamment de Teams, il n'y a pas besoin de mot d'appel, et ces phrases sont marquées `private`, donc exclues du compte rendu.
 
 ### 6.2 Mot d'appel configurable (Réglages → Voix)
-- **Mot d'appel** : champ texte, « Scribe » par défaut. L'utilisateur choisit le sien.
-- **Mode strict** (case à cocher) : exige un préfixe (« OK Scribe », « Dis Scribe ») pour réduire encore les faux déclenchements.
+- **Mot d'appel** : champ texte, « Sténo » par défaut. L'utilisateur choisit le sien.
+- **Mode strict** (case à cocher) : exige un préfixe (« OK Sténo », « Dis Sténo ») pour réduire encore les faux déclenchements.
 - **Variantes acceptées** : générées automatiquement (variantes phonétiques en français, erreurs de transcription courantes) et modifiables. Le mot est ajouté au vocabulaire de l'ASR.
 - **Mots interdits comme variantes** : liste intégrée de mots courants en réunion de dev (« script », « description », « inscrit », « prescrire »…) + le vocabulaire de l'équipe. Une variante qui entre en conflit est refusée, avec l'explication.
 - **Contrôles à la saisie** (avertissements, pas des blocages) :
@@ -295,7 +295,7 @@ Les options de ces CLI évoluent vite : l'agent qui implémente les **vérifie s
 - **Retour sonore** discret quand une commande est détectée (réglable : aucun / son système / son dans le casque uniquement).
 
 ### 6.3 Règles de détection (mode à voix haute)
-- **Uniquement sur le canal `me`** (et hors écho) : un participant ne peut jamais déclencher le Scribe.
+- **Uniquement sur le canal `me`** (et hors écho) : un participant ne peut jamais déclencher Sténo.
 - Le mot d'appel (ou le préfixe + le mot en mode strict) doit se trouver **dans les 2 premiers mots de la phrase**.
 - Il doit être suivi d'un verbe reconnu ou d'une pause, puis de la demande :
   - `cherche|recherche|regarde|trouve` → `search`
@@ -324,7 +324,7 @@ Les options de ces CLI évoluent vite : l'agent qui implémente les **vérifie s
 ## 7. Compte rendu et corrélation
 
 ### 7.1 Compte rendu (fin de réunion, toujours, sauf réunion confidentielle)
-Déclenché quand la réunion passe à `ended`, c'est-à-dire **uniquement à l'arrêt demandé par l'utilisateur** (menu de la barre d'état, raccourci, app, ou « Scribe, arrête l'écoute »). La fin de l'appel Teams n'arrête pas l'écoute.
+Déclenché quand la réunion passe à `ended`, c'est-à-dire **uniquement à l'arrêt demandé par l'utilisateur** (menu de la barre d'état, raccourci, app, ou « Sténo, arrête l'écoute »). La fin de l'appel Teams n'arrête pas l'écoute.
 1. Diarisation hors ligne du canal `them` (Eux-1, Eux-2…). Claude propose des noms quand ils sont prononcés (« merci Marie ») ; l'utilisateur valide dans l'app.
 2. Agent, niveau `summary`, **sans outils externes** (rapide, ne consomme pas d'appels de recherche) :
    ```
@@ -357,7 +357,7 @@ Déclenché quand la réunion passe à `ended`, c'est-à-dire **uniquement à l'
 ## 8. App de bureau (Tauri 2)
 
 ### 8.1 Barre de menu (toujours présente)
-Icône dans la barre d'état macOS (à côté de l'heure), menu natif au clic : état (« ● Écoute en cours — titre » / « Appel Teams détecté : titre » / « En attente »), **Démarrer / Arrêter l'écoute**, « Réunion confidentielle », « Demande rapide… » (panneau : champ de demande, 5 dernières réponses), « Voir la transcription en direct », « Ouvrir Scribe », « Réglages… », « Quitter ». Un « ● » s'affiche à côté de l'icône pendant l'écoute.
+Icône dans la barre d'état macOS (à côté de l'heure), menu natif au clic : état (« ● Écoute en cours — titre » / « Appel Teams détecté : titre » / « En attente »), **Démarrer / Arrêter l'écoute**, « Réunion confidentielle », « Demande rapide… » (panneau : champ de demande, 5 dernières réponses), « Voir la transcription en direct », « Ouvrir Sténo », « Réglages… », « Quitter ». Un « ● » s'affiche à côté de l'icône pendant l'écoute.
 
 ### 8.2 Fenêtre principale
 - **Réunions** : liste par date avec recherche plein texte (FTS5 sur transcriptions et comptes rendus), filtres (période, corrélée ou non, avec actions ouvertes).
@@ -367,8 +367,8 @@ Icône dans la barre d'état macOS (à côté de l'heure), menu natif au clic : 
   - **Demandes** : chaque demande avec sa réponse, ses sources et les outils utilisés ;
   - **Notes** : éditables.
   - Actions : renommer, marquer confidentielle, supprimer (avec confirmation).
-- **En direct** : transcription qui défile, champ « Demander au Scribe », fil des demandes en cours.
-- **Recherche** : plein texte dans toutes les réunions, plus « Demander à l'IA » (question sur l'historique, via l'agent et le serveur MCP Scribe).
+- **En direct** : transcription qui défile, champ « Demander à Sténo », fil des demandes en cours.
+- **Recherche** : plein texte dans toutes les réunions, plus « Demander à l'IA » (question sur l'historique, via l'agent et le serveur MCP Sténo).
 - **Décisions & actions** : toutes les actions de toutes les réunions, case « fait », filtres par personne et par date.
 
 ### 8.3 Réglages
@@ -391,14 +391,14 @@ Pas de framework lourd ; bundle front < 300 Ko gzip ; thème clair et sombre sui
 
 ## 9. CLI, serveur MCP et Orca (facultatif)
 
-- `scribe ask "qu'a-t-on décidé sur l'export Brindille ?"` : recherche dans l'historique, puis éventuellement une recherche croisée.
-- `scribe doctor` : permissions macOS, Teams, sidecar, agent et version, MCP visibles en mode non interactif, et **test automatique de la politique lecture seule** (« poste sur Slack » doit échouer) → ✅ / ⚠️ / ❌ avec la marche à suivre.
-- `scribe init` : premier lancement en ligne de commande (équivalent de l'assistant de l'app).
-- `scribe export <id|--all> --format md`.
-- `scribe mcp` : **serveur MCP local (stdio, lecture seule)** pour n'importe quel agent, y compris dans Orca :
+- `steno ask "qu'a-t-on décidé sur l'export Brindille ?"` : recherche dans l'historique, puis éventuellement une recherche croisée.
+- `steno doctor` : permissions macOS, Teams, sidecar, agent et version, MCP visibles en mode non interactif, et **test automatique de la politique lecture seule** (« poste sur Slack » doit échouer) → ✅ / ⚠️ / ❌ avec la marche à suivre.
+- `steno init` : premier lancement en ligne de commande (équivalent de l'assistant de l'app).
+- `steno export <id|--all> --format md`.
+- `steno mcp` : **serveur MCP local (stdio, lecture seule)** pour n'importe quel agent, y compris dans Orca :
   - `search_meetings(query, from?, to?)`, `get_meeting(id)`, `get_transcript(id, from_ts?, to_ts?)` (sans les phrases privées), `get_report(id)`, `list_decisions(since?)`, `list_actions(status?, owner?)`.
-  - Pour l'utiliser dans un agent : `claude mcp add scribe -- scribe mcp` (ou l'équivalent du CLI).
-- **Orca n'est plus nécessaire** ; pour ceux qui l'utilisent, `scribe mcp` donne accès aux réunions depuis leurs agents.
+  - Pour l'utiliser dans un agent : `claude mcp add steno -- steno mcp` (ou l'équivalent du CLI).
+- **Orca n'est plus nécessaire** ; pour ceux qui l'utilisent, `steno mcp` donne accès aux réunions depuis leurs agents.
 
 ---
 
@@ -414,7 +414,7 @@ Pas de framework lourd ; bundle front < 300 Ko gzip ; thème clair et sombre sui
 | S5 Empreinte | app Tauri vide + barre de menu, mesure de la RAM au repos | < 120 Mo |
 
 ### Phase 1 — Socle
-`scribe-core` (schéma, migrations, file de tâches), sidecar (capture + transcription), vue « en direct » minimale.
+`steno-core` (schéma, migrations, file de tâches), sidecar (capture + transcription), vue « en direct » minimale.
 
 ### Phase 2 — Compte rendu + historique
 Compte rendu de fin de réunion, écrans Réunions / Détail, recherche plein texte.
@@ -426,10 +426,10 @@ Adaptateurs `claude-code` puis `codex`, politique lecture seule, demandes tapée
 Détection du mot d'appel, mode aparté, écran Voix avec le bouton « Tester ».
 
 ### Phase 5 — Corrélation + finitions
-Tâche `correlate`, écran Corrélation, décisions et actions, CLI `ask` / `export`, serveur `scribe mcp`, import/export des réglages.
+Tâche `correlate`, écran Corrélation, décisions et actions, CLI `ask` / `export`, serveur `steno mcp`, import/export des réglages.
 
 ### Phase 6 — Équipe
-`make install`, assistant de premier lancement, `scribe doctor` complet, adaptateurs `gemini` et `opencode` (expérimentaux), README.
+`make install`, assistant de premier lancement, `steno doctor` complet, adaptateurs `gemini` et `opencode` (expérimentaux), README.
 
 ---
 
@@ -439,20 +439,20 @@ Prérequis commun, fait par le premier agent : `docs/contracts.md` (schéma SQL 
 
 | Worktree | Agent | Périmètre | Testable sans |
 |---|---|---|---|
-| `scribe-audio` | A | `audio/` (sidecar Swift) | base, UI |
-| `scribe-core` | B | `crates/scribe-core` : base, tâches, adaptateurs, politique, mot d'appel | audio (fichiers d'exemple) |
-| `scribe-post` | C | compte rendu, corrélation, `crates/scribe-cli` (ask, export, mcp, doctor) | audio, UI |
-| `scribe-app` | D | `app/` (Tauri + Svelte) : barre de menu, écrans, réglages | audio (données d'exemple en base) |
+| `steno-audio` | A | `audio/` (sidecar Swift) | base, UI |
+| `steno-core` | B | `crates/steno-core` : base, tâches, adaptateurs, politique, mot d'appel | audio (fichiers d'exemple) |
+| `steno-post` | C | compte rendu, corrélation, `crates/steno-cli` (ask, export, mcp, doctor) | audio, UI |
+| `steno-app` | D | `app/` (Tauri + Svelte) : barre de menu, écrans, réglages | audio (données d'exemple en base) |
 
 Arborescence :
 ```
-scribe/
+steno/
   PLAN.md
   docs/{contracts.md, spikes.md, adapters.md}
-  audio/ScribeAudio/            # Swift package, exécutable sidecar
-  crates/scribe-core/           # lib Rust : db, jobs, agents/, policy, wake/
-  crates/scribe-cli/            # bin `scribe` : ask, doctor, init, export, mcp
-  app/src-tauri/                # Rust (dépend de scribe-core), embarque le sidecar
+  audio/StenoAudio/            # Swift package, exécutable sidecar
+  crates/steno-core/           # lib Rust : db, jobs, agents/, policy, wake/
+  crates/steno-cli/            # bin `steno` : ask, doctor, init, export, mcp
+  app/src-tauri/                # Rust (dépend de steno-core), embarque le sidecar
   app/ui/                       # Svelte 5 + Vite
   agent/                        # INSTRUCTIONS.md, playbooks/, policy.toml
   fixtures/
@@ -477,10 +477,10 @@ scribe/
 |---|---|
 | Le MDM bloque la permission audio système | Spike S4 en premier ; arrêter et prévenir si c'est bloqué |
 | La permission accordée à l'app ne couvre pas le sidecar | Spike S1 ; plan B : capture en Rust (`objc2-core-audio`) dans le processus principal |
-| Teams sort l'audio par un processus auxiliaire | Taper tout l'arbre de processus Teams ; plan B : tap global en excluant Scribe |
+| Teams sort l'audio par un processus auxiliaire | Taper tout l'arbre de processus Teams ; plan B : tap global en excluant Sténo |
 | Écho (haut-parleurs) | AEC + déduplication + casque recommandé |
 | Faux déclenchements | Mot d'appel en début de phrase + verbe, mode strict, mots interdits, analyse de l'historique, canal `me` seul, tests |
-| Un CLI d'agent change ses options | Adaptateurs isolés, versions testées notées, `scribe doctor` signale tout écart |
+| Un CLI d'agent change ses options | Adaptateurs isolés, versions testées notées, `steno doctor` signale tout écart |
 | Un agent ne sait pas bloquer les MCP en écriture | Connecteurs non activables pour cet adaptateur |
 | L'agent écrit à l'extérieur | Politique en refus explicite + test automatique dans `doctor` et dans la CI |
 | Contenu IA malveillant dans l'UI | Markdown assaini (DOMPurify) + CSP stricte |
@@ -494,8 +494,8 @@ scribe/
 Objectif : cloner, compiler et être opérationnel en moins de 15 minutes.
 
 - **Prérequis** (README) : macOS 14.2+ sur Apple Silicon, Xcode (pour le sidecar Swift), Rust stable (`rustup`), Node 22 (seulement pour compiler l'UI), au moins un CLI d'agent installé et connecté.
-- **`make install`** : compile le sidecar, l'UI et l'app Tauri, applique la signature ad hoc, copie `Scribe.app` dans `~/Applications`, installe la CLI `scribe`, télécharge les modèles audio.
-- **Assistant de premier lancement** (dans l'app, ou `scribe init`) :
+- **`make install`** : compile le sidecar, l'UI et l'app Tauri, applique la signature ad hoc, copie `Steno.app` dans `~/Applications`, installe la CLI `steno`, télécharge les modèles audio.
+- **Assistant de premier lancement** (dans l'app, ou `steno init`) :
   1. permissions macOS, guidées étape par étape ;
   2. choix de l'agent parmi ceux détectés, puis test ;
   3. dépôts à rendre lisibles ;

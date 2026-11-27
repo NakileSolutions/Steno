@@ -7,7 +7,7 @@ import { isTauri } from './lib/api';
 // Très tôt : `native-vibrancy` (Tauri sur macOS) rend la fenêtre transparente avant le premier rendu.
 applyPlatformClasses();
 
-// Les erreurs de l'interface sont consignées dans le journal de l'app (logs/scribe.log).
+// Les erreurs de l'interface sont consignées dans le journal de l'app (logs/steno.log).
 if (isTauri) {
   const report = (message: string) => {
     import('@tauri-apps/api/core')

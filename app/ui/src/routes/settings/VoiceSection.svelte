@@ -85,7 +85,7 @@
 </script>
 
 <div class="field">
-  <label class="field-label" for="wake">Mot d’appel<span class="hint">Seul, en début de phrase ; précédé d’un préfixe (« OK Scribe »), n’importe où dans la phrase. Micro uniquement.</span></label>
+  <label class="field-label" for="wake">Mot d’appel<span class="hint">Seul, en début de phrase ; précédé d’un préfixe (« OK Sténo »), n’importe où dans la phrase. Micro uniquement.</span></label>
   <div class="field-body">
     <div class="row">
       <input id="wake" class="input lg wake" bind:value={settings.voice.wake_word} autocomplete="off" spellcheck="false" />
@@ -139,7 +139,7 @@
 </div>
 
 <div class="field">
-  <div class="field-label">Verbes par intention<span class="hint">Le verbe qui suit le mot d’appel détermine l’action. Ex. « {settings.voice.wake_word || 'Scribe'}, arrête l’écoute » termine la réunion.</span></div>
+  <div class="field-label">Verbes par intention<span class="hint">Le verbe qui suit le mot d’appel détermine l’action. Ex. « {settings.voice.wake_word || 'Sténo'}, arrête l’écoute » termine la réunion.</span></div>
   <div class="field-body verbs">
     {#each INTENTS as it (it.id)}
       <div class="verb">

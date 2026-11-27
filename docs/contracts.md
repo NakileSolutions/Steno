@@ -5,26 +5,26 @@ post-traitement/CLI, app Tauri). Toute évolution passe par une mise à jour de 
 
 Sommaire :
 1. Schéma SQLite
-2. Protocole du sidecar `scribe-audio` (JSON lines)
+2. Protocole du sidecar `steno-audio` (JSON lines)
 3. Trait `AgentAdapter`
 4. Réglages (JSON en base, TOML en import/export)
 5. API de l'app : commandes Tauri et événements
 6. Fichiers d'exemple (`fixtures/`)
-7. Backend HTTP (`scribe serve`) : tests e2e et développement sans Tauri
+7. Backend HTTP (`steno serve`) : tests e2e et développement sans Tauri
 
 > **Règle produit** : l'écoute ne démarre **jamais** automatiquement et ne s'arrête **jamais**
 > automatiquement. Un appel détecté (Teams, Slack, Zoom…) donne au plus une notification qui propose de
 > démarrer ; l'arrêt se fait par l'utilisateur (menu de la barre d'état, raccourci, app) ou à
-> la voix (« Scribe, arrête l'écoute », intention `stop`).
+> la voix (« Sténo, arrête l'écoute », intention `stop`).
 
 ---
 
 ## 1. Schéma SQLite
 
-Fichier : `~/Library/Application Support/Scribe/scribe.db` (variable d'environnement
-`SCRIBE_HOME` pour changer le dossier, utilisée par les tests et sous Linux).
+Fichier : `~/Library/Application Support/Steno/steno.db` (variable d'environnement
+`STENO_HOME` pour changer le dossier, utilisée par les tests et sous Linux).
 Pragmas à chaque ouverture : `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`.
-Permissions du fichier : `0600`. Migrations : `crates/scribe-core/src/db/migrations/NNN_*.sql`,
+Permissions du fichier : `0600`. Migrations : `crates/steno-core/src/db/migrations/NNN_*.sql`,
 appliquées par `rusqlite_migration` (`user_version`). Une sauvegarde `VACUUM INTO` est faite
 avant toute migration d'une base non vide.
 
@@ -65,7 +65,7 @@ CREATE TABLE runtime (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
 
 ---
 
-## 2. Protocole du sidecar `scribe-audio`
+## 2. Protocole du sidecar `steno-audio`
 
 Transport : le sidecar est lancé par le cœur ; une ligne JSON par message sur stdout
 (sidecar → cœur) et stdin (cœur → sidecar), UTF-8, terminée par `\n`. Les journaux du
@@ -79,11 +79,11 @@ inconnus (compatibilité ascendante).
 {"type":"permissions","microphone":"granted","system_audio":"unknown","accessibility":"denied"}
 {"type":"call","active":true,"app":"slack","title":"Huddle dans #equipe-flotte"}
 {"type":"teams_call","active":true,"title":"Daily ORION"}
-{"type":"segment","ts":"2026-11-26T10:41:12+01:00","t0":668.2,"t1":672.9,"channel":"me","text":"Scribe, cherche…","private":false}
+{"type":"segment","ts":"2026-11-26T10:41:12+01:00","t0":668.2,"t1":672.9,"channel":"me","text":"Sténo, cherche…","private":false}
 {"type":"level","me":-32.5,"them":-24.1}
 {"type":"devices","inputs":[{"id":"BuiltInMicrophoneDevice","name":"Micro du MacBook Pro","default":true,"transport":"builtin"}],"outputs":[{"id":"AirPodsUID","name":"AirPods Pro","default":true,"transport":"bluetooth"}]}
 {"type":"state","state":"listening"}
-{"type":"wake_test","text":"scribe cherche quelque chose"}
+{"type":"wake_test","text":"steno cherche quelque chose"}
 {"type":"diarization","meeting_id":"…","turns":[{"t0":12.0,"t1":18.5,"speaker":"S1"}]}
 {"type":"retranscription","meeting_id":"…","items":[{"id":42,"text":"Ce deuxième sujet…"}]}
 {"type":"error","code":"tap_failed","message":"…","recoverable":true}
@@ -114,7 +114,7 @@ inconnus (compatibilité ascendante).
 
 ```json
 {"cmd":"watch","apps":[{"id":"teams","name":"Microsoft Teams","bundles":["com.microsoft.teams2","com.microsoft.teams"]},{"id":"slack","name":"Slack","bundles":["com.tinyspeck.slackmacgap"]}]}
-{"cmd":"start","vocabulary":["Scribe","Atlas"],"silence_ms":1000,"keep_audio":false,"audio_dir":"/…/Caches/Scribe/<meeting_id>","apps":["slack"],"input_device":null}
+{"cmd":"start","vocabulary":["Sténo","Atlas"],"silence_ms":1000,"keep_audio":false,"audio_dir":"/…/Caches/Steno/<meeting_id>","apps":["slack"],"input_device":null}
 {"cmd":"start",…,"apps":[],"room":true}   // présentiel : micro seul, sans tap ni voice processing
 {"cmd":"set_input","device":"BuiltInMicrophoneDevice"}
 {"cmd":"devices"}
@@ -123,9 +123,9 @@ inconnus (compatibilité ascendante).
 {"cmd":"aside","on":true}
 {"cmd":"pause"}             // capture en pause : silence sur les deux canaux (`state: paused`)
 {"cmd":"resume"}            // reprise (`state: listening`)
-{"cmd":"mute","on":true}     // micro coupé dans Scribe : silence à la place du micro
+{"cmd":"mute","on":true}     // micro coupé dans Sténo : silence à la place du micro
 {"cmd":"wake_test","seconds":8}
-{"cmd":"diarize","meeting_id":"…","audio_dir":"/…/Caches/Scribe/<meeting_id>"}
+{"cmd":"diarize","meeting_id":"…","audio_dir":"/…/Caches/Steno/<meeting_id>"}
 {"cmd":"diarize","meeting_id":"…","audio_dir":"…","file":"me.wav"}   // présentiel : le micro (défaut : them.wav)
 {"cmd":"retranscribe","meeting_id":"…","audio_dir":"…","language":"fr","vocabulary":["Atlas"],
  "items":[{"id":42,"file":"them.wav","t0":12.0,"t1":18.5}]}
@@ -154,13 +154,13 @@ inconnus (compatibilité ascendante).
   chaque phrase est retranscrite depuis `me.wav` / `them.wav` avec Canary 1B v2, langue imposée.
   `retranscription` ne liste que les phrases dont le nouveau texte est exploitable (non vide,
   sans boucle de répétition) ; les autres gardent le texte du direct. Le cœur remplace le texte
-  (`segments.text`, index plein texte compris) et émet `scribe://segment` pour chacune.
+  (`segments.text`, index plein texte compris) et émet `steno://segment` pour chacune.
 - Sans `start`, le sidecar ne capture rien mais continue de surveiller les apps et émet
   `call`. Le cœur n'en déduit **jamais** un démarrage : il met à jour `LiveState.call` et,
   si `audio.auto_detect_calls`, envoie une notification (« Appel Slack détecté… »).
 - La fin de l'appel (`call` avec `active: false`) n'arrête pas l'écoute.
 
-Simulateur : `scribe replay <fixture.jsonl> [--speed N] [--exit]` parle exactement ce protocole
+Simulateur : `steno replay <fixture.jsonl> [--speed N] [--exit]` parle exactement ce protocole
 (il rejoue un fichier d'exemple). Comme le vrai sidecar, il annonce l'appel (Teams ou autre) tout de
 suite mais n'envoie les phrases qu'après `start` ; `stop` met le rejeu en pause. Il permet de
 tester l'app et le cœur sans Mac.
@@ -169,7 +169,7 @@ tester l'app et le cœur sans Mac.
 
 ## 3. Trait `AgentAdapter`
 
-Emplacement : `crates/scribe-core/src/agents/`. Aucun autre module ne connaît les noms de
+Emplacement : `crates/steno-core/src/agents/`. Aucun autre module ne connaît les noms de
 CLI, de modèles ou d'options.
 
 ```rust
@@ -244,7 +244,7 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
     "live_context_seconds": 120
   },
   "voice": {
-    "wake_word": "Scribe",
+    "wake_word": "Sténo",
     "strict": false,
     "prefixes": ["ok", "dis", "hey"],
     "variants": [],
@@ -443,27 +443,27 @@ type Settings = /* section 4 */;
 | `wake_test_record` | `seconds: number` | `{ text: string }` |
 | `doctor` | — | `DoctorItem[]` |
 | `delete_all_data` | — | `null` |
-| `log_ui_error` | `message` | `null` (consigné dans logs/scribe.log) |
+| `log_ui_error` | `message` | `null` (consigné dans logs/steno.log) |
 | `get_permissions` | — | `{ microphone, system_audio, accessibility: "granted" \| "denied" \| "unknown", available: boolean }` (redemande l'état au sidecar ; `available` = sidecar lancé) |
 | `request_permission` | `kind: "microphone" \| "system_audio" \| "accessibility"` | `null` (invite macOS affichée par le sidecar ; sans effet si déjà répondu) |
 | `open_permission_settings` | `kind` | `null` (ouvre la page des Réglages Système du droit ; adresses fixes) |
 | `complete_onboarding` | — | `null` (assistant terminé ou passé : il ne se rouvre plus) |
 | `pause_meeting` | — | `null` (écoute en pause : la réunion continue, rien n'est transcrit ; `LiveState.state = "paused"`) |
 | `resume_meeting` | — | `null` (reprise de l'écoute) |
-| `set_mic_muted` | `on: boolean` | `null` (micro coupé dans Scribe : rien de ce que vous dites n'est transcrit ; rétabli à la fin de la réunion ; `LiveState.mic_muted`) |
-| `delete_segment` | `id: number` | `null` (phrase jamais dite retirée ; événement `scribe://segment_deleted`) |
+| `set_mic_muted` | `on: boolean` | `null` (micro coupé dans Sténo : rien de ce que vous dites n'est transcrit ; rétabli à la fin de la réunion ; `LiveState.mic_muted`) |
+| `delete_segment` | `id: number` | `null` (phrase jamais dite retirée ; événement `steno://segment_deleted`) |
 
 ### Événements (`listen`)
 
 | Événement | Charge |
 |---|---|
-| `scribe://live` | `LiveState` (à chaque changement d'état, niveaux au plus 4×/s) |
-| `scribe://segment` | `Segment` |
-| `scribe://segment_deleted` | `{ meeting_id, id }` (phrase retirée) |
-| `scribe://request` | `Request` (création et chaque changement de statut) |
-| `scribe://report` | `{ meeting_id: string, version: number }` |
-| `scribe://meetings` | `null` (la liste a changé) |
-| `scribe://navigate` | `{ route: string }` (ex. `"/meetings/<id>?tab=requests&request=<rid>"`) |
+| `steno://live` | `LiveState` (à chaque changement d'état, niveaux au plus 4×/s) |
+| `steno://segment` | `Segment` |
+| `steno://segment_deleted` | `{ meeting_id, id }` (phrase retirée) |
+| `steno://request` | `Request` (création et chaque changement de statut) |
+| `steno://report` | `{ meeting_id: string, version: number }` |
+| `steno://meetings` | `null` (la liste a changé) |
+| `steno://navigate` | `{ route: string }` (ex. `"/meetings/<id>?tab=requests&request=<rid>"`) |
 
 ---
 
@@ -471,7 +471,7 @@ type Settings = /* section 4 */;
 
 - `fixtures/daily-45min.jsonl` : réunion synthétique au format du protocole du sidecar
   (§2, messages sidecar → cœur), 45 min, en français. Contient : des tickets `APP-…`, le
-  service `ms-booking`, une décision, deux actions, une commande vocale (« Scribe, cherche… »),
+  service `ms-booking`, une décision, deux actions, une commande vocale (« Sténo, cherche… »),
   un aparté (`private: true`), des mots pièges (« script », « description », « inscrit »),
   un écho (même phrase sur `them` puis `me` à moins de 2 s).
 - `fixtures/expected.json` : ce que les tests attendent de ce fichier (nombre de commandes,
@@ -481,16 +481,16 @@ type Settings = /* section 4 */;
 
 ---
 
-## 7. Backend HTTP (`scribe serve`)
+## 7. Backend HTTP (`steno serve`)
 
-`scribe serve --port 4180 --ui app/ui/dist` expose l'API du §5 sur `127.0.0.1` et sert
+`steno serve --port 4180 --ui app/ui/dist` expose l'API du §5 sur `127.0.0.1` et sert
 l'interface sur la même origine. Ouvrir `http://127.0.0.1:4180/?backend=http`.
 
 - `POST /api/invoke/<commande>` : corps = arguments JSON en camelCase (vide = aucun) ;
   200 → JSON du résultat (`null` si rien) ; 400 → `{"error": "…"}` ; 404 si commande inconnue.
 - `GET /api/events` : flux SSE ; `event:` = nom de l'événement du §5, `data:` = charge JSON.
-- Variables : `SCRIBE_HOME`, `SCRIBE_SIDECAR` (ex. `scribe replay fichier.jsonl --speed 20`).
+- Variables : `STENO_HOME`, `STENO_SIDECAR` (ex. `steno replay fichier.jsonl --speed 20`).
 - `pick_folder` renvoie `null` (pas de sélecteur natif).
 
-Le répartiteur (`scribe_core::api::dispatch`) couvre exactement les commandes du §5 ; un test
+Le répartiteur (`steno_core::api::dispatch`) couvre exactement les commandes du §5 ; un test
 vérifie que chaque commande listée ici est connue.

@@ -313,7 +313,7 @@
     {#if detail.drafts.length}
       <section class="block">
         <h2 class="bh">Brouillons</h2>
-        <p class="faint small">Jamais publiés par le Scribe : copiez-les si vous voulez les utiliser.</p>
+        <p class="faint small">Jamais publiés par Sténo : copiez-les si vous voulez les utiliser.</p>
         {#each detail.drafts as d (d.id)}
           <div class="draft card">
             <div class="row">

@@ -88,7 +88,7 @@
 <div class="field danger-zone">
   <div class="field-label">Tout supprimer</div>
   <div class="field-body">
-    <p class="muted small">Efface toutes les données du Scribe sur ce Mac. Les réglages sont conservés.</p>
+    <p class="muted small">Efface toutes les données de Sténo sur ce Mac. Les réglages sont conservés.</p>
     <div><button class="btn danger" onclick={wipe}><Icon name="trash" size={14} />Tout supprimer…</button></div>
   </div>
 </div>

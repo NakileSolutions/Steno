@@ -1,4 +1,4 @@
-// Scénario complet contre le cœur réel : `scribe serve` sur une base neuve, faux CLI `claude`,
+// Scénario complet contre le cœur réel : `steno serve` sur une base neuve, faux CLI `claude`,
 // simulateur audio qui rejoue fixtures/daily-45min.jsonl (×40) une fois l'écoute démarrée.
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
@@ -21,22 +21,22 @@ test('réunion complète : écoute manuelle, demandes, compte rendu, corrélatio
 
   await live.getByRole('button', { name: 'Démarrer l’écoute' }).click();
   await expect(live.getByRole('heading', { name: 'Daily ORION' })).toBeVisible();
-  await expect(live.getByText(/Pour arrêter : bouton, ⌃⌥S, ou dites « Scribe, arrête l’écoute »/)).toBeVisible();
+  await expect(live.getByText(/Pour arrêter : bouton, ⌃⌥S, ou dites « Sténo, arrête l’écoute »/)).toBeVisible();
 
   // La transcription défile.
   const tx = live.getByRole('region', { name: 'Transcription en direct' });
   await expect(tx.getByText('Bonjour à tous, on commence la daily ?')).toBeAttached({ timeout: 20_000 });
   await expect(tx.getByText('le verrou de créneau côté ms-booking').first()).toBeAttached({ timeout: 20_000 });
 
-  // Demande vocale : « Scribe, cherche les erreurs Datadog sur ms-booking… ».
-  const feed = live.getByRole('complementary', { name: 'Demandes au Scribe' });
+  // Demande vocale : « Sténo, cherche les erreurs Datadog sur ms-booking… ».
+  const feed = live.getByRole('complementary', { name: 'Demandes à Sténo' });
   const voice = feed.locator('article.req', { hasText: 'les erreurs Datadog sur ms-booking' });
   await expect(voice).toBeVisible({ timeout: 30_000 });
   await expect(voice.getByText('Terminée', { exact: true })).toBeVisible({ timeout: 60_000 });
   await expect(voice).toContainText('src/SlotLock.kt:42');
 
   // Demande tapée.
-  const ask = live.getByLabel('Demander au Scribe');
+  const ask = live.getByLabel('Demander à Sténo');
   await ask.fill('Où est géré le verrou de créneau ?');
   await live.getByRole('button', { name: 'Envoyer' }).click();
   const typed = feed.locator('article.req', { hasText: 'Où est géré le verrou de créneau ?' });

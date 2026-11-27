@@ -46,7 +46,7 @@
   <label class="arow">
     <span class="grow">
       <span class="an">Proposer de démarrer l’écoute quand un appel commence</span>
-      <span class="sub small faint">Une notification seulement : l’appel reste aussi signalé dans le Scribe.</span>
+      <span class="sub small faint">Une notification seulement : l’appel reste aussi signalé dans Sténo.</span>
     </span>
     <input class="switch" type="checkbox" role="switch" bind:checked={settings.audio.auto_detect_calls} />
   </label>

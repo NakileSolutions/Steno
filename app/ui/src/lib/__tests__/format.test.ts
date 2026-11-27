@@ -126,7 +126,7 @@ describe('cleanSnippet', () => {
 
 describe('stripLeadingIcon', () => {
   it('retire le pictogramme de tête', () => {
-    expect(stripLeadingIcon('⚠️ « Scribe » n’a qu’une syllabe')).toBe('« Scribe » n’a qu’une syllabe');
+    expect(stripLeadingIcon('⚠️ « Sténo » n’a qu’une syllabe')).toBe('« Sténo » n’a qu’une syllabe');
     expect(stripLeadingIcon('Sans icône')).toBe('Sans icône');
   });
 });

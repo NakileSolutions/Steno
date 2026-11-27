@@ -1,6 +1,6 @@
 //! Raccourcis globaux (réglables) : démarrer/arrêter, aparté (maintenir), note rapide.
 
-use scribe_core::Core;
+use steno_core::Core;
 use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 

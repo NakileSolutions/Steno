@@ -32,7 +32,7 @@
   {#if !m.confidential}
     <form class="ask row" onsubmit={ask}>
       <Icon name="ask" size={16} />
-      <input class="grow" bind:value={query} placeholder="Poser une question sur cette réunion…" aria-label="Demander au Scribe à propos de cette réunion" />
+      <input class="grow" bind:value={query} placeholder="Poser une question sur cette réunion…" aria-label="Demander à Sténo à propos de cette réunion" />
       <button class="btn sm primary" disabled={!query.trim() || sending}>Demander</button>
     </form>
   {/if}
@@ -41,7 +41,7 @@
     <div class="empty">
       <Icon name="ask" size={24} stroke={1.5} />
       <h2>Aucune demande</h2>
-      <p class="small">Pendant une réunion, dites « Scribe, cherche… » ou tapez votre question.</p>
+      <p class="small">Pendant une réunion, dites « Sténo, cherche… » ou tapez votre question.</p>
     </div>
   {:else}
     <div class="col list">

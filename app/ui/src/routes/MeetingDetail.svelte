@@ -38,9 +38,9 @@
   onMount(() => {
     load();
     const uns = [
-      onEvent('scribe://report', (p) => p.meeting_id === id && load()),
-      onEvent('scribe://meetings', () => load()),
-      onEvent('scribe://request', (r) => {
+      onEvent('steno://report', (p) => p.meeting_id === id && load()),
+      onEvent('steno://meetings', () => load()),
+      onEvent('steno://request', (r) => {
         if (!detail || r.meeting_id !== id) return;
         const i = detail.requests.findIndex((x) => x.id === r.id);
         if (i >= 0) detail.requests[i] = r;

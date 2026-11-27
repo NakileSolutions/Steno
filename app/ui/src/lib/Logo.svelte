@@ -1,7 +1,7 @@
 <script lang="ts">
-  // Logo Scribe : bec de plume au trait, onde sonore au centre (d'après assets/logo.jpg).
+  // Logo Sténo : bec de plume au trait, onde sonore au centre (d'après assets/logo.jpg).
   // `tile` ajoute le fond bleu nuit dégradé de l'icône d'app.
-  let { size = 24, tile = false, title = 'Scribe' }: { size?: number; tile?: boolean; title?: string } = $props();
+  let { size = 24, tile = false, title = 'Sténo' }: { size?: number; tile?: boolean; title?: string } = $props();
   const uid = Math.random().toString(36).slice(2, 8);
 </script>
 

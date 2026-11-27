@@ -65,7 +65,7 @@
       <li>
         <div class="meta">
           <span>{time(n.ts)}</span>
-          {#if n.source === 'voice'}<span class="src" title="Dictée au Scribe"><Icon name="mic" size={11} /></span>{/if}
+          {#if n.source === 'voice'}<span class="src" title="Dictée à Sténo"><Icon name="mic" size={11} /></span>{/if}
         </div>
         <textarea class="note" rows="1" bind:value={n.text} onblur={() => save(n)} use:grow aria-label="Note de {time(n.ts)}"></textarea>
         <button class="btn ghost sm icon del" onclick={() => remove(n)} aria-label="Supprimer la note" title="Supprimer"><Icon name="trash" size={13} /></button>

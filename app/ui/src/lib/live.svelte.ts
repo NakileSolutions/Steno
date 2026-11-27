@@ -32,7 +32,7 @@ export function initLive(): void {
     live.ready = true;
   };
   api.liveState().then(set).catch(() => {});
-  onEvent('scribe://live', set);
+  onEvent('steno://live', set);
   loadPrefs();
   setInterval(() => (clock.now = Date.now()), 1000);
 }

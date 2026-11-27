@@ -1,7 +1,7 @@
 // Couche d'accès au backend : commandes Tauri (docs/contracts.md §5) et événements.
 // Trois modes :
 //  - Tauri (l'app) : `invoke` / `listen` de Tauri ;
-//  - HTTP (`?backend=http` dans l'URL, servi par `scribe serve`) : POST /api/invoke/<commande>
+//  - HTTP (`?backend=http` dans l'URL, servi par `steno serve`) : POST /api/invoke/<commande>
 //    et un flux SSE /api/events, même origine ; les opérations de fenêtre sont sans effet ;
 //  - sinon (navigateur seul) : le faux backend en mémoire `mock.ts`.
 
@@ -41,7 +41,7 @@ export function httpErrorMessage(status: number, body: string): string {
   } catch {
     // Corps non JSON.
   }
-  return body.trim() || `Erreur ${status} du serveur Scribe.`;
+  return body.trim() || `Erreur ${status} du serveur Sténo.`;
 }
 
 export function httpBackend(base = ''): Backend {
@@ -79,8 +79,8 @@ export function httpBackend(base = ''): Backend {
     es.addEventListener('open', () => {
       if (!lostOnce) return;
       // Reconnexion : des événements ont pu être perdus, on resynchronise l'essentiel.
-      backend.invoke<LiveState>('live_state').then((s) => dispatch('scribe://live', s)).catch(() => {});
-      dispatch('scribe://meetings', null);
+      backend.invoke<LiveState>('live_state').then((s) => dispatch('steno://live', s)).catch(() => {});
+      dispatch('steno://meetings', null);
     });
     for (const name of subs.keys()) attach(name);
   };
@@ -96,7 +96,7 @@ export function httpBackend(base = ''): Backend {
           body: JSON.stringify(args ?? {}),
         });
       } catch {
-        throw new Error('Serveur Scribe injoignable.');
+        throw new Error('Serveur Sténo injoignable.');
       }
       const text = await res.text();
       if (!res.ok) throw new Error(httpErrorMessage(res.status, text));
@@ -139,7 +139,7 @@ async function tauriBackend(): Promise<Backend> {
         await main.show();
         await main.unminimize();
         await main.setFocus();
-        if (route) await ev.emitTo('main', 'scribe://navigate', { route });
+        if (route) await ev.emitTo('main', 'steno://navigate', { route });
       }
       const current = win.getCurrentWindow();
       if (current.label !== 'main') await current.hide();
@@ -175,7 +175,7 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   }
 }
 
-/** Abonnement à un événement `scribe://…`. Renvoie une fonction de désabonnement synchrone. */
+/** Abonnement à un événement `steno://…`. Renvoie une fonction de désabonnement synchrone. */
 export function onEvent<K extends EventName>(name: K, cb: (payload: EventMap[K]) => void): Unlisten {
   let un: Unlisten | null = null;
   let cancelled = false;

@@ -1,5 +1,5 @@
 // Détection du mot d'appel côté interface (faux backend et aperçus) : même règle que le cœur,
-// en plus simple. Précédé d'un préfixe (« OK Scribe »), le mot d'appel est reconnu n'importe où
+// en plus simple. Précédé d'un préfixe (« OK Sténo »), le mot d'appel est reconnu n'importe où
 // dans la phrase ; seul (hors mode strict), dans les 2 premiers mots. Le verbe qui suit
 // détermine l'intention (recherche par défaut).
 

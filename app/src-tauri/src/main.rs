@@ -8,7 +8,7 @@ fn main() {
         let mut input = String::new();
         let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
         let policy = args.get(2).map(std::path::PathBuf::from).unwrap_or_default();
-        std::process::exit(scribe_core::policy::hook_main(&policy, &input));
+        std::process::exit(steno_core::policy::hook_main(&policy, &input));
     }
-    scribe_app_lib::run()
+    steno_app_lib::run()
 }

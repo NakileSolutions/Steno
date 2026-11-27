@@ -77,9 +77,9 @@
         </p>
         <p class="small muted">{r.why}</p>
         {#if v === 'denied'}
-          <p class="small hint">macOS ne redemandera pas : cochez Scribe dans Réglages Système → Confidentialité et sécurité → {r.pane}.</p>
+          <p class="small hint">macOS ne redemandera pas : cochez Sténo dans Réglages Système → Confidentialité et sécurité → {r.pane}.</p>
         {:else if v === 'unknown' && asked[r.kind]}
-          <p class="small hint">Aucune fenêtre ? Ouvrez les Réglages Système et cochez Scribe dans « {r.pane} ».</p>
+          <p class="small hint">Aucune fenêtre ? Ouvrez les Réglages Système et cochez Sténo dans « {r.pane} ».</p>
         {/if}
       </div>
       <div class="acts">

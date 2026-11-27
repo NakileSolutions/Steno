@@ -1,8 +1,8 @@
 # Adaptateurs d'agent — options utilisées et versions testées
 
-Code : `crates/scribe-core/src/agents/`. C'est le **seul** endroit qui connaît les CLI.
+Code : `crates/steno-core/src/agents/`. C'est le **seul** endroit qui connaît les CLI.
 Les options des CLI changent vite : à chaque mise à jour d'un agent, relancer
-`scribe doctor --live` (test réel « poste sur Slack ») et mettre ce fichier à jour.
+`steno doctor --live` (test réel « poste sur Slack ») et mettre ce fichier à jour.
 
 | Adaptateur | Statut | Version vérifiée | Bloque les MCP en écriture ? | Reprise de session |
 |---|---|---|---|---|
@@ -16,7 +16,7 @@ Les options des CLI changent vite : à chaque mise à jour d'un agent, relancer
 
 ## Principe commun
 
-- Un **dossier d'exécution par réunion** (`~/Library/Application Support/Scribe/runs/<réunion>/`),
+- Un **dossier d'exécution par réunion** (`~/Library/Application Support/Steno/runs/<réunion>/`),
   stable pour que la reprise de session fonctionne. Les consignes (`agent/INSTRUCTIONS.md` +
   `agent/playbooks/*.md`, complétées par le profil) y sont écrites au format du CLI :
   `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` ou `INSTRUCTIONS.md`.
@@ -33,7 +33,7 @@ Les options des CLI changent vite : à chaque mise à jour d'un agent, relancer
 ```
 claude -p --output-format stream-json --verbose
        --permission-mode dontAsk
-       --settings <run>/.scribe/settings-<id>.json
+       --settings <run>/.steno/settings-<id>.json
        [--model <m>]
        --session-id <uuid> | --resume <id> | --no-session-persistence
        # sans outils (compte rendu, récap) :
@@ -48,13 +48,13 @@ claude -p --output-format stream-json --verbose
 Lecture seule, en trois couches :
 1. `dontAsk` : tout outil non listé dans `--allowedTools` est refusé sans question.
 2. `--disallowedTools` + `permissions.deny` (projet et `--settings`) : écriture, web, sous-agents.
-3. **Crochet `PreToolUse`** (`<exécutable Scribe> policy-hook <politique.json>`) appelé avant
+3. **Crochet `PreToolUse`** (`<exécutable Sténo> policy-hook <politique.json>`) appelé avant
    **chaque** outil : motifs MCP interdits, mots d'écriture dans le nom de l'outil
    (`addOrEditJiraIssueComment`, `executeWrite`…), connecteurs non activés, commandes shell
    hors liste (`;`, `>`, `$(`… refusés), chemins hors des dépôts cochés, budget d'appels
    (15 en direct, 30 en corrélation). Code de sortie 2 = refus, raison renvoyée à l'agent.
-   Le crochet est le même binaire que l'app (`Scribe.app/Contents/MacOS/scribe-app policy-hook …`)
-   ou la CLI (`scribe policy-hook …`).
+   Le crochet est le même binaire que l'app (`Steno.app/Contents/MacOS/steno-app policy-hook …`)
+   ou la CLI (`steno policy-hook …`).
 
 Sortie : `system/init` (session, modèle), `assistant` (`tool_use` → outils utilisés), `user`
 (`tool_result` en erreur → outil refusé, retiré de `tools_used`), `result` (réponse finale).
@@ -122,7 +122,7 @@ codex exec [resume <thread>] --json --skip-git-repo-check --sandbox read-only
 
 ```
 gemini --output-format json --approval-mode default
-       --allowed-mcp-server-names scribe-aucun-serveur [-m <m>]
+       --allowed-mcp-server-names steno-aucun-serveur [-m <m>]
        [--include-directories <dépôt>…] -p "Réponds à la demande ci-dessus…"   # invite sur stdin
 ```
 
@@ -148,7 +148,7 @@ Modèle de commande saisi dans Réglages → Agent IA, lancé par `sh -c`. Varia
 ## Tester un adaptateur
 
 ```bash
-scribe doctor            # détection, version, politique (test local)
-scribe doctor --live     # + test réel : l'agent doit refuser « poste sur Slack »
-cargo test -p scribe-cli --test acceptance   # avec le faux `claude` de fixtures/fake-bin
+steno doctor            # détection, version, politique (test local)
+steno doctor --live     # + test réel : l'agent doit refuser « poste sur Slack »
+cargo test -p steno-cli --test acceptance   # avec le faux `claude` de fixtures/fake-bin
 ```

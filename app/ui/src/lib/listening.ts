@@ -152,7 +152,7 @@ export function normalizeLiveState(input: LiveState): LiveState {
 /** Réglages d'un cœur plus ancien (`auto_detect_teams`, sans `call_apps`) ramenés au contrat actuel. */
 /** Message d'information par défaut (identique au cœur : `DEFAULT_CONSENT_MESSAGE`). */
 export const DEFAULT_CONSENT_MESSAGE =
-  "Pour information : j\'utilise Scribe pour transcrire cette réunion et en préparer un compte rendu. La transcription reste sur mon ordinateur ; un assistant IA s\'en sert pour rédiger le compte rendu. Dites-le-moi si vous préférez que je ne transcrive pas.";
+  "Pour information : j\'utilise Sténo pour transcrire cette réunion et en préparer un compte rendu. La transcription reste sur mon ordinateur ; un assistant IA s\'en sert pour rédiger le compte rendu. Dites-le-moi si vous préférez que je ne transcrive pas.";
 
 export const DEFAULT_REPORT_SETTINGS = { default_template: 'standard', ask_context_on_stop: false, context_delay_s: 60, templates: [] };
 
@@ -224,9 +224,9 @@ export function formatShortcut(accel: string | null | undefined): string {
   return mods.join('') + (key === 'Espace' && mods.length ? ' Espace' : key);
 }
 
-/** Phrase d'arrêt à la voix : « Scribe, arrête l’écoute ». */
+/** Phrase d'arrêt à la voix : « Sténo, arrête l’écoute ». */
 export function stopPhrase(wakeWord: string | null | undefined, verbs?: Partial<VoiceVerbs> | null): string {
-  const w = wakeWord?.trim() || 'Scribe';
+  const w = wakeWord?.trim() || 'Sténo';
   const v = verbs?.stop?.find((x) => x.trim())?.trim() || DEFAULT_STOP_VERB;
   return `${w}, ${v.replace(/'/g, '’')}`;
 }

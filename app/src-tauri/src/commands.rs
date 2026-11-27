@@ -1,12 +1,12 @@
-//! Commandes Tauri : l'API de docs/contracts.md §5, branchée sur `scribe-core`.
+//! Commandes Tauri : l'API de docs/contracts.md §5, branchée sur `steno-core`.
 
 use crate::AppState;
-use scribe_core::doctor::DoctorItem;
-use scribe_core::events::LiveState;
-use scribe_core::model::*;
-use scribe_core::settings::Settings;
-use scribe_core::wake::check::WakeCheck;
-use scribe_core::wake::variants::VariantCheck;
+use steno_core::doctor::DoctorItem;
+use steno_core::events::LiveState;
+use steno_core::model::*;
+use steno_core::settings::Settings;
+use steno_core::wake::check::WakeCheck;
+use steno_core::wake::variants::VariantCheck;
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
@@ -132,7 +132,7 @@ pub fn regenerate_report(st: State<'_, AppState>, id: String) -> R<()> {
 }
 
 #[tauri::command]
-pub fn get_meeting_context(st: State<'_, AppState>, id: String) -> R<scribe_core::context::MeetingContext> {
+pub fn get_meeting_context(st: State<'_, AppState>, id: String) -> R<steno_core::context::MeetingContext> {
     st.core.meeting_context(&id).map_err(er)
 }
 
@@ -142,7 +142,7 @@ pub fn set_meeting_context(
     id: String,
     text: String,
     template: Option<String>,
-) -> R<scribe_core::context::MeetingContext> {
+) -> R<steno_core::context::MeetingContext> {
     st.core.set_meeting_context(&id, &text, template.as_deref()).map_err(er)
 }
 
@@ -153,7 +153,7 @@ pub async fn add_context_file(
     id: String,
     name: String,
     data: String,
-) -> R<scribe_core::context::ContextFile> {
+) -> R<steno_core::context::ContextFile> {
     let core = st.core.clone();
     tauri::async_runtime::spawn_blocking(move || core.add_context_file(&id, &name, &data))
         .await
@@ -172,7 +172,7 @@ pub fn report_now(st: State<'_, AppState>, id: String) -> R<()> {
 }
 
 #[tauri::command]
-pub fn list_report_templates(st: State<'_, AppState>) -> Vec<scribe_core::report::Template> {
+pub fn list_report_templates(st: State<'_, AppState>) -> Vec<steno_core::report::Template> {
     st.core.report_templates()
 }
 
@@ -191,7 +191,7 @@ pub fn export_meeting(st: State<'_, AppState>, id: String, format: Option<String
 pub async fn save_export(app: AppHandle, st: State<'_, AppState>, id: String, format: String) -> R<Option<String>> {
     use tauri_plugin_dialog::DialogExt;
     let name = st.core.export_file_name(&id, &format).map_err(er)?;
-    let ext = scribe_core::export::extension(&format).map_err(er)?;
+    let ext = steno_core::export::extension(&format).map_err(er)?;
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()
         .file()
@@ -264,7 +264,7 @@ pub fn import_settings(app: AppHandle, st: State<'_, AppState>, toml: String) ->
 }
 
 #[tauri::command]
-pub async fn detect_agents(st: State<'_, AppState>) -> R<Vec<scribe_core::agents::AgentInfo>> {
+pub async fn detect_agents(st: State<'_, AppState>) -> R<Vec<steno_core::agents::AgentInfo>> {
     Ok(st.core.detect_agents().await)
 }
 
@@ -276,12 +276,12 @@ pub struct TestAgentResult {
 }
 
 #[tauri::command]
-pub fn list_audio_devices(st: State<'_, AppState>) -> scribe_core::sidecar::AudioDevices {
+pub fn list_audio_devices(st: State<'_, AppState>) -> steno_core::sidecar::AudioDevices {
     st.core.audio_devices()
 }
 
 #[tauri::command]
-pub async fn list_models(st: State<'_, AppState>, provider: String) -> R<Vec<scribe_core::agents::ModelInfo>> {
+pub async fn list_models(st: State<'_, AppState>, provider: String) -> R<Vec<steno_core::agents::ModelInfo>> {
     st.core.list_models(&provider).await.map_err(er)
 }
 
@@ -403,7 +403,7 @@ pub async fn wake_test_record(st: State<'_, AppState>, seconds: u32) -> R<WakeTe
 
 #[tauri::command]
 pub async fn doctor(st: State<'_, AppState>) -> R<Vec<DoctorItem>> {
-    Ok(scribe_core::doctor::run(&st.core, false).await)
+    Ok(steno_core::doctor::run(&st.core, false).await)
 }
 
 #[tauri::command]
@@ -414,7 +414,7 @@ pub fn delete_all_data(st: State<'_, AppState>) -> R<()> {
 // ------------------------------------------------------------------ permissions macOS
 
 #[tauri::command]
-pub fn get_permissions(st: State<'_, AppState>) -> R<scribe_core::permissions::Permissions> {
+pub fn get_permissions(st: State<'_, AppState>) -> R<steno_core::permissions::Permissions> {
     Ok(st.core.permissions())
 }
 

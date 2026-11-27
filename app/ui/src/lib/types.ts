@@ -134,7 +134,7 @@ export type LiveState = {
   meeting: Meeting | null;
   levels: { me: number; them: number };
   aside: boolean;
-  /** Micro coupé dans Scribe : vos paroles ne sont pas transcrites. */
+  /** Micro coupé dans Sténo : vos paroles ne sont pas transcrites. */
   mic_muted: boolean;
   sidecar: 'running' | 'starting' | 'stopped' | 'missing' | 'error';
   last_error: string | null;
@@ -210,7 +210,7 @@ export type VariantCheck = { accepted: string[]; rejected: { variant: string; re
 
 export type WakeDetect = { detected: boolean; intent: string | null; query: string | null };
 
-/** Droits macOS demandés par Scribe. */
+/** Droits macOS demandés par Sténo. */
 export type PermissionKind = 'microphone' | 'system_audio' | 'accessibility';
 export type PermissionValue = 'granted' | 'denied' | 'unknown';
 export type Permissions = Record<PermissionKind, PermissionValue> & {
@@ -359,12 +359,12 @@ export type ActionFilter = { status?: 'open' | 'done'; owner?: string; from?: st
 // --- Événements ---
 
 export type EventMap = {
-  'scribe://live': LiveState;
-  'scribe://segment': Segment;
-  'scribe://segment_deleted': { meeting_id: string; id: number };
-  'scribe://request': Request;
-  'scribe://report': { meeting_id: string; version: number };
-  'scribe://meetings': null;
-  'scribe://navigate': { route: string };
+  'steno://live': LiveState;
+  'steno://segment': Segment;
+  'steno://segment_deleted': { meeting_id: string; id: number };
+  'steno://request': Request;
+  'steno://report': { meeting_id: string; version: number };
+  'steno://meetings': null;
+  'steno://navigate': { route: string };
 };
 export type EventName = keyof EventMap;

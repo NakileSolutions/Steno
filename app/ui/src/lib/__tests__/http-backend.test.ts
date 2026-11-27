@@ -9,7 +9,7 @@ describe('httpErrorMessage', () => {
   });
   it('replie sur le texte brut ou le statut', () => {
     expect(httpErrorMessage(500, 'boum')).toBe('boum');
-    expect(httpErrorMessage(502, '')).toBe('Erreur 502 du serveur Scribe.');
+    expect(httpErrorMessage(502, '')).toBe('Erreur 502 du serveur Sténo.');
   });
 });
 
@@ -65,16 +65,16 @@ describe('httpBackend', () => {
     const b = httpBackend();
     const live = vi.fn();
     const meetings = vi.fn();
-    const un = await b.listen('scribe://live', live);
-    await b.listen('scribe://meetings', meetings);
+    const un = await b.listen('steno://live', live);
+    await b.listen('steno://meetings', meetings);
     expect(sources).toHaveLength(1);
     expect(sources[0].url).toBe('/api/events');
-    sources[0].fire('scribe://live', '{"state":"listening"}');
-    sources[0].fire('scribe://meetings', 'null');
+    sources[0].fire('steno://live', '{"state":"listening"}');
+    sources[0].fire('steno://meetings', 'null');
     expect(live).toHaveBeenCalledWith({ state: 'listening' });
     expect(meetings).toHaveBeenCalledWith(null);
     un();
-    sources[0].fire('scribe://live', '{"state":"idle"}');
+    sources[0].fire('steno://live', '{"state":"idle"}');
     expect(live).toHaveBeenCalledTimes(1);
   });
 });

@@ -180,7 +180,7 @@ test.describe('réunions', () => {
 
     await tabs.getByRole('tab', { name: /Transcription/ }).click();
     await expect(page).toHaveURL(/tab=transcript/);
-    await expect(detail.getByText('Scribe, cherche les erreurs Datadog sur ms-booking depuis hier soir.')).toBeVisible();
+    await expect(detail.getByText('Sténo, cherche les erreurs Datadog sur ms-booking depuis hier soir.')).toBeVisible();
     // L'aparté est masqué par défaut.
     await expect(detail.getByText('Il faut que je pense à relancer Thomas')).toHaveCount(0);
     await detail.getByLabel(/Afficher les phrases privées/).check();
@@ -262,12 +262,12 @@ test.describe('écoute', () => {
 
     await live.getByRole('button', { name: 'Démarrer l’écoute' }).click();
     await expect(live.getByRole('heading', { name: 'Refinement ORION — sprint 48' })).toBeVisible();
-    await expect(live.getByText('Pour arrêter : bouton, ⌃⌥S, ou dites « Scribe, arrête l’écoute »')).toBeVisible();
+    await expect(live.getByText('Pour arrêter : bouton, ⌃⌥S, ou dites « Sténo, arrête l’écoute »')).toBeVisible();
     await expect(nav(page).getByRole('button', { name: 'Arrêter l’écoute' })).toBeVisible();
     await expect(live.getByText('On attaque le ticket APP-1260')).toBeVisible({ timeout: 8000 });
 
-    // « Scribe, arrête l'écoute » : la réunion se termine.
-    await page.evaluate(() => (window as unknown as { __scribeMock: { say(t: string): boolean } }).__scribeMock.say('Scribe, arrête l’écoute.'));
+    // « Sténo, arrête l'écoute » : la réunion se termine.
+    await page.evaluate(() => (window as unknown as { __stenoMock: { say(t: string): boolean } }).__stenoMock.say('Sténo, arrête l’écoute.'));
     await expect(live.getByRole('button', { name: 'Arrêter l’écoute' })).toHaveCount(0);
     await expect(live.getByText(/Traitement/).first()).toBeVisible();
     await expect(live.getByText('Appel Teams détecté :')).toBeVisible({ timeout: 8000 });
@@ -282,7 +282,7 @@ test.describe('écoute', () => {
     await nav(page).getByRole('button', { name: 'Démarrer l’écoute' }).click();
     const live = main(page);
     await expect(live.getByRole('button', { name: 'Arrêter l’écoute' })).toBeVisible();
-    await live.getByLabel('Demander au Scribe').fill('Poste ça sur Slack');
+    await live.getByLabel('Demander à Sténo').fill('Poste ça sur Slack');
     await live.getByRole('button', { name: 'Envoyer' }).click();
     const card = live.locator('article.req', { hasText: 'Poste ça sur Slack' });
     await expect(card.getByText('Refusée', { exact: true })).toBeVisible();
@@ -315,14 +315,14 @@ test.describe('réglages', () => {
   test('voix : avertissements, variantes et verbe d’arrêt', async ({ page }) => {
     await open(page, '/settings?section=voice');
     const wake = page.locator('#wake');
-    await expect(wake).toHaveValue('Scribe');
-    // « Scribe » apparaît une fois dans l'historique sans être une commande.
+    await expect(wake).toHaveValue('Sténo');
+    // « Sténo » apparaît une fois dans l'historique sans être une commande.
     await expect(page.getByText(/Ce mot apparaît 1 fois/)).toBeVisible();
     await wake.fill('Bonjour');
     await expect(page.getByText('Mot très courant en français')).toBeVisible();
     await wake.fill('Scribouillard');
     await expect(page.getByText('Aucun risque repéré.')).toBeVisible();
-    await wake.fill('Scribe');
+    await wake.fill('Sténo');
     await expect(page.getByText(/Ce mot apparaît 1 fois/)).toBeVisible();
 
     await page.getByRole('button', { name: 'Générer les variantes' }).click();
@@ -343,7 +343,7 @@ test.describe('réglages', () => {
     await expect(page.getByText('Arrêter l’écoute', { exact: true })).toBeVisible();
     await expect(stop.getByText("arrête l'écoute")).toBeVisible();
     await expect(stop.getByText('fin de la réunion')).toBeVisible();
-    await page.getByLabel('Verbes : Arrêter l’écoute : ajouter').fill('stop scribe');
+    await page.getByLabel('Verbes : Arrêter l’écoute : ajouter').fill('stop steno');
     await page.getByLabel('Verbes : Arrêter l’écoute : ajouter').press('Enter');
     await page.getByRole('button', { name: 'Enregistrer' }).click();
     await expect(page.getByText('Réglages enregistrés.')).toBeVisible();
@@ -401,7 +401,7 @@ test.describe('réglages', () => {
     await expect(page.getByLabel('Surveiller Zoom')).not.toBeChecked();
     await expect(page.getByLabel('Surveiller Google Chat')).toBeChecked();
     // Un appel Zoom n'est plus signalé.
-    const zoom = await page.evaluate(() => (window as unknown as { __scribeMock: { call(a: string, t: string): boolean } }).__scribeMock.call('zoom', 'Point'));
+    const zoom = await page.evaluate(() => (window as unknown as { __stenoMock: { call(a: string, t: string): boolean } }).__stenoMock.call('zoom', 'Point'));
     expect(zoom).toBe(false);
 
     await apps.getByRole('button', { name: 'Supprimer Google Chat' }).click();
@@ -411,7 +411,7 @@ test.describe('réglages', () => {
   test('agent IA : modèle et réflexion par usage, enregistrés', async ({ page }) => {
     await open(page, '/settings?section=agent');
     // Mention de l'auteur, discrète, en bas des Réglages.
-    await expect(page.getByText('Scribe 0.1.0 · Développé par Nakile Solutions')).toBeVisible();
+    await expect(page.getByText('Sténo 0.1.0 · Développé par Nakile Solutions')).toBeVisible();
     await expect(page.getByText('Modèle par niveau')).toHaveCount(0);
 
     const defaults = page.getByRole('radiogroup', { name: 'Agent par défaut' });
@@ -490,7 +490,7 @@ test.describe('réglages', () => {
     await expect(page.getByText(/débranché/)).toHaveCount(0);
 
     // Débranchement simulé : avertissement discret, puis la puce dans En direct.
-    await page.evaluate(() => (window as unknown as { __scribeMock: { unplug(id: string): void } }).__scribeMock.unplug('AirPodsPro-UID:input'));
+    await page.evaluate(() => (window as unknown as { __stenoMock: { unplug(id: string): void } }).__stenoMock.unplug('AirPodsPro-UID:input'));
     await mic.getByRole('button', { name: 'Rafraîchir' }).click();
     await expect(page.getByText('AirPods Pro — débranché, micro par défaut utilisé')).toBeVisible();
     await expect(mic.locator('[data-device="AirPodsPro-UID:input"]')).toHaveCount(0);
@@ -560,7 +560,7 @@ test.describe('apps de visio', () => {
     await open(page, '/live');
     const live = main(page);
     await expect(live.getByText('Appel Teams détecté : Refinement ORION — sprint 48')).toBeVisible();
-    await page.evaluate(() => (window as unknown as { __scribeMock: { call(a: string, t: string): boolean } }).__scribeMock.call('slack', 'Huddle dans #equipe-flotte'));
+    await page.evaluate(() => (window as unknown as { __stenoMock: { call(a: string, t: string): boolean } }).__stenoMock.call('slack', 'Huddle dans #equipe-flotte'));
     await expect(live.getByText('Appel Slack détecté : Huddle dans #equipe-flotte')).toBeVisible();
     await expect(live.getByRole('button', { name: 'Démarrer l’écoute' })).toBeVisible();
     await expect(nav(page).getByText('Appel Slack détecté')).toBeVisible();
@@ -586,7 +586,7 @@ test.describe('apps de visio', () => {
     await page.getByLabel('Surveiller Navigateur (Google Meet…)').check();
     await page.getByRole('button', { name: 'Enregistrer' }).click();
     await expect(page.getByText('Réglages enregistrés.')).toBeVisible();
-    await page.evaluate(() => (window as unknown as { __scribeMock: { call(a: string, t: string): boolean } }).__scribeMock.call('browser', 'Meet — Point hebdo'));
+    await page.evaluate(() => (window as unknown as { __stenoMock: { call(a: string, t: string): boolean } }).__stenoMock.call('browser', 'Meet — Point hebdo'));
     await nav(page).getByRole('link', { name: 'En direct', exact: true }).click();
     await expect(main(page).getByText('Appel détecté dans le navigateur : Meet — Point hebdo')).toBeVisible();
     await expect(main(page).getByText(/tout le son du navigateur sera capté, y compris les autres onglets/)).toBeVisible();
@@ -637,7 +637,7 @@ test('assistant de premier lancement', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Mot d’appel' })).toBeVisible();
   await page.getByRole('button', { name: 'Suivant' }).click();
   await page.getByRole('button', { name: 'Terminer' }).click();
-  await expect(page.getByText('Scribe est prêt.')).toBeVisible();
+  await expect(page.getByText('Sténo est prêt.')).toBeVisible();
   await expect(page).toHaveURL(/#\/meetings/);
 });
 
@@ -652,7 +652,7 @@ test.describe('panneau de barre de menu', () => {
     await expect(page.getByText('Dernières réponses')).toBeVisible();
     await page.getByRole('button', { name: 'Démarrer l’écoute' }).click();
     await expect(page.getByRole('button', { name: 'Arrêter l’écoute' })).toBeVisible();
-    await expect(page.getByText('Pour arrêter : bouton, ⌃⌥S, ou dites « Scribe, arrête l’écoute »')).toBeVisible();
+    await expect(page.getByText('Pour arrêter : bouton, ⌃⌥S, ou dites « Sténo, arrête l’écoute »')).toBeVisible();
     await expect(page.getByText('Appel Teams détecté :')).toHaveCount(0);
 
     await page.getByLabel('Demande rapide').fill('cherche le runbook de ms-pricing');
@@ -661,7 +661,7 @@ test.describe('panneau de barre de menu', () => {
 
     await page.getByRole('button', { name: 'Arrêter l’écoute' }).click();
     await expect(page.getByText('Compte rendu en préparation…')).toBeVisible();
-    await page.getByRole('button', { name: 'Ouvrir Scribe' }).click();
+    await page.getByRole('button', { name: 'Ouvrir Sténo' }).click();
     await expect(page).toHaveURL(/#\/meetings/);
   });
 });

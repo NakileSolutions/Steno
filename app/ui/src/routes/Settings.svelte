@@ -100,7 +100,7 @@
         {:else if section.id === 'audio'}<AudioSection bind:settings={settings} />
         {:else if section.id === 'permissions'}
           <section class="perm-sec">
-            <p class="muted">Droits accordés à Scribe par macOS. Un droit refusé ne peut être rétabli que dans les Réglages Système.</p>
+            <p class="muted">Droits accordés à Sténo par macOS. Un droit refusé ne peut être rétabli que dans les Réglages Système.</p>
             <Permissions />
           </section>
         {:else if section.id === 'reports'}<ReportsSection bind:settings={settings} />
@@ -112,7 +112,7 @@
           {#each [0, 1, 2] as k (k)}<div class="sk-row"><span class="skeleton" style="width: 30%"></span><span class="skeleton" style="width: {60 - k * 12}%"></span></div>{/each}
         </div>
       {/if}
-      <p class="credit">Scribe {version} · Développé par Nakile Solutions</p>
+      <p class="credit">Sténo {version} · Développé par Nakile Solutions</p>
     </div>
   </div>
 </div>

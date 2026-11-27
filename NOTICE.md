@@ -1,6 +1,6 @@
 # Composants tiers et modèles
 
-Scribe est distribué sous licence MIT (voir [`LICENSE`](LICENSE)). Il s'appuie sur les
+Sténo est distribué sous licence MIT (voir [`LICENSE`](LICENSE)). Il s'appuie sur les
 composants et modèles ci-dessous, chacun sous sa propre licence.
 
 ## Modèles d'IA audio
@@ -9,7 +9,7 @@ Les modèles ne sont **pas inclus dans ce dépôt** : ils sont téléchargés de
 premier lancement (ou par `make install`) et restent sur votre Mac
 (`~/Library/Application Support/FluidAudio/Models`). Ils tournent entièrement en local.
 
-| Usage dans Scribe | Modèle | Auteur | Licence |
+| Usage dans Sténo | Modèle | Auteur | Licence |
 |---|---|---|---|
 | Transcription en direct | Parakeet TDT 0.6B v3 (conversion CoreML [`FluidInference/parakeet-tdt-0.6b-v3-coreml`](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml)) | NVIDIA | CC-BY-4.0 |
 | Retranscription de fin de réunion | Canary 1B v2 (conversion CoreML [`FluidInference/canary-1b-v2-coreml`](https://huggingface.co/FluidInference/canary-1b-v2-coreml)) | NVIDIA | CC-BY-4.0 |
@@ -33,10 +33,10 @@ après conversion au format CoreML par FluidInference, sans autre modification.
 | [pdf-extract](https://github.com/jrmuizel/pdf-extract) (lecture des PDF) | MIT |
 
 La liste complète des dépendances et de leurs licences se trouve dans `Cargo.lock`,
-`app/ui/package-lock.json` et `audio/ScribeAudio/Package.resolved`.
+`app/ui/package-lock.json` et `audio/StenoAudio/Package.resolved`.
 
 ## Agents IA
 
-Scribe ne contient aucun modèle de langage : il pilote le CLI d'agent que vous avez installé
+Sténo ne contient aucun modèle de langage : il pilote le CLI d'agent que vous avez installé
 (Claude Code, Codex, Gemini CLI, OpenCode…), avec votre propre abonnement et selon les
 conditions de son éditeur.

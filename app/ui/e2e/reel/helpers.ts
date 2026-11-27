@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 
-/** Ouvre une route de l'interface servie par `scribe serve`, en mode backend HTTP. */
+/** Ouvre une route de l'interface servie par `steno serve`, en mode backend HTTP. */
 export async function go(page: Page, route: string): Promise<void> {
   await page.goto(`/?backend=http#${route}`);
 }

@@ -1,5 +1,5 @@
 // Captures de docs/screenshots : 1440×900 (×2), en clair et en sombre, contre le cœur réel
-// (`scribe serve`, base neuve, faux CLI `claude`, simulateur audio). `npm run captures`.
+// (`steno serve`, base neuve, faux CLI `claude`, simulateur audio). `npm run captures`.
 import { expect, test, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -53,11 +53,11 @@ test('captures', async ({ page, browser }) => {
   const live = main(page);
   await expect(live.getByText('Appel Teams détecté : Daily ORION')).toBeVisible();
   await live.getByRole('button', { name: 'Démarrer l’écoute' }).click();
-  const feed = live.getByRole('complementary', { name: 'Demandes au Scribe' });
-  await live.getByLabel('Demander au Scribe').fill('Où en est le ticket APP-1234 ?');
+  const feed = live.getByRole('complementary', { name: 'Demandes à Sténo' });
+  await live.getByLabel('Demander à Sténo').fill('Où en est le ticket APP-1234 ?');
   await live.getByRole('button', { name: 'Envoyer' }).click();
-  await expect(live.getByLabel('Demander au Scribe')).toHaveValue('');
-  await live.getByLabel('Demander au Scribe').fill('Poste ça sur Slack');
+  await expect(live.getByLabel('Demander à Sténo')).toHaveValue('');
+  await live.getByLabel('Demander à Sténo').fill('Poste ça sur Slack');
   await live.getByRole('button', { name: 'Envoyer' }).click();
   const voice = feed.locator('article.req', { hasText: 'les erreurs Datadog sur ms-booking' });
   await expect(voice.getByText('Terminée', { exact: true })).toBeVisible({ timeout: 90_000 });
@@ -103,7 +103,7 @@ test('captures', async ({ page, browser }) => {
 
   await detail.getByRole('tab', { name: /Transcription/ }).click();
   await expect(detail.locator('ol.segs li').first()).toBeVisible();
-  await detail.getByText('Scribe, cherche les erreurs Datadog sur ms-booking depuis hier.').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await detail.getByText('Sténo, cherche les erreurs Datadog sur ms-booking depuis hier.').evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await shot(page, 'detail-transcription');
 
   await detail.getByRole('tab', { name: /Demandes/ }).click();
@@ -172,7 +172,7 @@ test('captures', async ({ page, browser }) => {
   const tray2 = await ctx2.newPage();
   await tray2.goto('/#/tray');
   await expect(tray2.getByText('Appel Teams détecté :')).toBeVisible();
-  await tray2.evaluate(() => (window as unknown as { __scribeMock: { call(a: string, t: string): boolean } }).__scribeMock.call('slack', 'Huddle dans #equipe-flotte'));
+  await tray2.evaluate(() => (window as unknown as { __stenoMock: { call(a: string, t: string): boolean } }).__stenoMock.call('slack', 'Huddle dans #equipe-flotte'));
   await expect(tray2.getByText('Appel Slack détecté : Huddle dans #equipe-flotte')).toBeVisible();
   await tray2.waitForTimeout(500);
   await shot(tray2, 'tray-slack');

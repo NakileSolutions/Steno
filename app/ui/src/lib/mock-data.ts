@@ -95,19 +95,19 @@ function daily(): MeetingStore {
     [32, 'Eux-2', 'De mon côté je suis toujours bloqué sur APP-1251 : le script de migration des stations plante en recette.'],
     [47, 'Eux-1', 'Tu as regardé les logs ? Il y avait des timeouts sur ms-booking hier soir.'],
     [58, 'Eux-2', "Pas encore, la description du ticket ne donne pas l'heure exacte."],
-    [70, 'Moi', 'Scribe, cherche les erreurs Datadog sur ms-booking depuis hier soir.', { req: 'req-daily-1' }],
+    [70, 'Moi', 'Sténo, cherche les erreurs Datadog sur ms-booking depuis hier soir.', { req: 'req-daily-1' }],
     [84, 'Eux-1', "Merci. Pendant ce temps : Thomas s'est inscrit à la revue d'archi de jeudi."],
     [95, 'Moi', 'Il faut que je pense à relancer Thomas pour mon entretien annuel.', { priv: true }],
     [110, 'Eux-2', "Sur APP-1251, je propose qu'on passe le batch en pagination par 500 au lieu de tout charger."],
     [126, 'Moi', 'Ça me paraît raisonnable. On garde la pagination par 500 et on ajoute une reprise sur erreur.'],
     [140, 'Eux-1', 'Donc décision : pagination par 500 pour le batch de stations, avec reprise. Je le note dans le ticket.'],
     [141.5, 'Moi', 'Je le note dans le ticket.', { echo: true }],
-    [210, 'Moi', 'Le Scribe a trouvé 37 timeouts sur ms-booking entre 22 h et 23 h, tous sur l’appel au service des stations.'],
+    [210, 'Moi', 'Sténo a trouvé 37 timeouts sur ms-booking entre 22 h et 23 h, tous sur l’appel au service des stations.'],
     [224, 'Eux-2', 'Ça colle avec mon plantage. Je regarde ça ce matin.'],
     [238, 'Moi', "Je prends la reprise sur erreur dans ms-booking, je m'en occupe d'ici vendredi."],
     [255, 'Eux-1', 'Parfait. Tu mets à jour APP-1251 avec les résultats Datadog ?'],
     [266, 'Eux-2', 'Oui, je le fais aujourd’hui.'],
-    [280, 'Moi', "Scribe, note : vérifier le quota de l'API des stations avec l'équipe plateforme.", { req: 'req-daily-2' }],
+    [280, 'Moi', "Sténo, note : vérifier le quota de l'API des stations avec l'équipe plateforme.", { req: 'req-daily-2' }],
     [300, 'Eux-1', 'Dernier point : la mise en production de ms-booking est prévue mardi, sauf blocage.'],
     [320, 'Eux-1', 'Merci tout le monde, bonne journée.'],
   ]);
@@ -355,7 +355,7 @@ function incident(): MeetingStore {
   const start = dayAt(5, 11, 0);
   const segments = buildSegments(id, start, [
     [10, 'Eux-1', 'Les factures de novembre sont sorties en double pour 312 clients.'],
-    [35, 'Moi', 'Scribe, vérifie si le correctif de APP-1198 est déployé en production.', { req: 'req-incident-1' }],
+    [35, 'Moi', 'Sténo, vérifie si le correctif de APP-1198 est déployé en production.', { req: 'req-incident-1' }],
     [80, 'Eux-2', 'Le job de recalcul des tarifs a été relancé deux fois après le redémarrage du cluster.'],
     [140, 'Moi', "Le correctif n'est pas encore en production, il est seulement en recette."],
     [200, 'Eux-1', 'On déploie le correctif aujourd’hui et on prévient les clients concernés.'],
@@ -424,7 +424,7 @@ export const TEAMS_TITLE = 'Refinement ORION — sprint 48';
 /** Script joué en boucle pendant l'écoute simulée (après « Démarrer l'écoute »). */
 export const LIVE_SCRIPT: [speaker: string, text: string][] = [
   ['Eux-1', 'On attaque le ticket APP-1260 : la validation des numéros de cadre dans ms-fleet.'],
-  ['Moi', 'Scribe, cherche la règle de validation du numéro de cadre dans ms-fleet.'],
+  ['Moi', 'Sténo, cherche la règle de validation du numéro de cadre dans ms-fleet.'],
   ['Eux-2', 'Aujourd’hui on accepte n’importe quelle chaîne de cinq caractères.'],
   ['Moi', 'Il faudrait au moins gérer les cadres importés et les anciens modèles.'],
   ['Eux-1', 'La description du ticket parle aussi des vélos cargo.'],
@@ -453,7 +453,7 @@ export function seedHistoryRequests(): Request[] {
 
 - ADR à rédiger par Sophie d'ici mercredi prochain.
 - Estimation du connecteur SFTP : faite.`,
-    tools_used: ['scribe.search_meetings', 'scribe.get_report'],
+    tools_used: ['steno.search_meetings', 'steno.get_report'],
   }];
 }
 
@@ -477,10 +477,10 @@ export function defaultSettings(): Settings {
       live_context_seconds: 120,
     },
     voice: {
-      wake_word: 'Scribe',
+      wake_word: 'Sténo',
       strict: false,
       prefixes: ['ok', 'dis', 'hey'],
-      variants: ['scribe', 'scrib', 'skribe'],
+      variants: ['steno', 'scrib', 'skribe'],
       verbs: {
         search: ['cherche', 'recherche', 'regarde', 'trouve'],
         check: ['vérifie', 'confirme'],

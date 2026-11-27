@@ -5,10 +5,10 @@
   <key>LSUIElement</key>
   <true/>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Scribe transcrit votre voix pendant les réunions Teams, entièrement sur ce Mac.</string>
+  <string>Sténo transcrit votre voix pendant les réunions Teams, entièrement sur ce Mac.</string>
   <key>NSAudioCaptureUsageDescription</key>
-  <string>Scribe transcrit le son des réunions Teams (les autres participants), entièrement sur ce Mac.</string>
+  <string>Sténo transcrit le son des réunions Teams (les autres participants), entièrement sur ce Mac.</string>
   <key>NSAppleEventsUsageDescription</key>
-  <string>Scribe lit le titre de la réunion Teams en cours.</string>
+  <string>Sténo lit le titre de la réunion Teams en cours.</string>
 </dict>
 </plist>

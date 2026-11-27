@@ -36,13 +36,13 @@
 
   onMount(() => {
     const uns = [
-      onEvent('scribe://segment', (s) => {
+      onEvent('steno://segment', (s) => {
         if (s.meeting_id !== m.id || (s.private && !showPrivate)) return;
         const i = segments.findIndex((x) => x.id === s.id);
         if (i >= 0) segments[i] = s;
         else insertChrono(segments, s);
       }),
-      onEvent('scribe://segment_deleted', ({ meeting_id, id }) => {
+      onEvent('steno://segment_deleted', ({ meeting_id, id }) => {
         if (meeting_id === m.id) segments = segments.filter((x) => x.id !== id);
       }),
     ];

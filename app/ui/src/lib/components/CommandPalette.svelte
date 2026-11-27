@@ -101,7 +101,7 @@
     }
   }
 
-  /** Nouvelle demande : pendant l'écoute, champ « Demander au Scribe » ; sinon, recherche dans l'historique. */
+  /** Nouvelle demande : pendant l'écoute, champ « Demander à Sténo » ; sinon, recherche dans l'historique. */
   async function newRequest(q: string) {
     if (isListening(live.s) && live.s.meeting) {
       navigate('/live');
@@ -133,7 +133,7 @@
       },
       {
         id: 'ask',
-        title: 'Nouvelle demande au Scribe',
+        title: 'Nouvelle demande à Sténo',
         keywords: 'question agent ia demander chercher',
         icon: 'ask',
         run: () => newRequest(''),
@@ -178,14 +178,14 @@
     return mergeById(byTitle, found.map(meetingItem)).slice(0, 8);
   });
 
-  /** Replis proposés pour toute requête : la poser au Scribe, ou la chercher partout. */
+  /** Replis proposés pour toute requête : la poser à Sténo, ou la chercher partout. */
   const fallback = $derived.by((): Item[] => {
     const q = query.trim();
     if (!q) return [];
     return [
       {
         id: 'ask-q',
-        title: `Demander au Scribe : « ${q} »`,
+        title: `Demander à Sténo : « ${q} »`,
         subtitle: listening ? 'Demande pendant la réunion en cours' : 'Question sur l’historique des réunions',
         icon: 'ask',
         run: () => newRequest(q),
@@ -308,7 +308,7 @@
         <span><kbd>↵</kbd> ouvrir</span>
         <span><kbd>échap</kbd> fermer</span>
         <span class="grow"></span>
-        <span class="brand">Scribe</span>
+        <span class="brand">Sténo</span>
       </footer>
     </div>
   {/if}

@@ -1,4 +1,0 @@
-# Mots interdits comme variantes du mot d'appel (proches de « Scribe » et fréquents en réunion de dev).
-script scripts scripte scripter scripting description descriptions descriptif inscrit inscrite inscrits inscrire inscription
-prescrire prescrit prescription souscrire souscrit souscription transcrire transcrit transcription retranscrire
-decrire decrit ecrire ecrit ecrits crible cribler scrabble scrum sprite spring strike

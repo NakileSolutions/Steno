@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Scribe",
+  "productName": "Steno",
   "version": "0.1.0",
-  "identifier": "app.scribe.desktop",
+  "identifier": "fr.nakile.steno",
   "build": {
     "beforeDevCommand": "npm --prefix ../ui run dev",
     "devUrl": "http://localhost:5173",
@@ -15,7 +15,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Scribe",
+        "title": "Sténo",
         "url": "index.html",
         "width": 1200,
         "height": 780,
@@ -34,7 +34,7 @@
       },
       {
         "label": "tray",
-        "title": "Scribe",
+        "title": "Sténo",
         "url": "index.html#/tray",
         "width": 360,
         "height": 540,
@@ -76,7 +76,7 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-      "binaries/scribe-audio"
+      "binaries/steno-audio"
     ],
     "resources": [],
     "macOS": {

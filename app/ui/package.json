@@ -1,5 +1,5 @@
 {
-  "name": "scribe-ui",
+  "name": "steno-ui",
   "private": true,
   "license": "MIT",
   "version": "0.1.0",
@@ -11,10 +11,10 @@
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && tsc -p tsconfig.e2e.json",
     "test": "npm run test:unit && npm run test:e2e:maquette",
     "test:unit": "vitest run",
-    "test:e2e": "vite build && cargo build -p scribe-cli --manifest-path ../../Cargo.toml && playwright test --project=maquette --project=reel",
+    "test:e2e": "vite build && cargo build -p steno-cli --manifest-path ../../Cargo.toml && playwright test --project=maquette --project=reel",
     "test:e2e:maquette": "vite build && playwright test --project=maquette",
-    "test:e2e:reel": "vite build && cargo build -p scribe-cli --manifest-path ../../Cargo.toml && playwright test --project=reel",
-    "captures": "vite build && cargo build -p scribe-cli --manifest-path ../../Cargo.toml && playwright test --project=captures"
+    "test:e2e:reel": "vite build && cargo build -p steno-cli --manifest-path ../../Cargo.toml && playwright test --project=reel",
+    "captures": "vite build && cargo build -p steno-cli --manifest-path ../../Cargo.toml && playwright test --project=captures"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.9.0",

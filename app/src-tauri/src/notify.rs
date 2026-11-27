@@ -1,5 +1,5 @@
 //! Notifications système. Celles qui portent une route (réponse prête, compte rendu…) ouvrent
-//! Scribe sur cette route au clic. `tauri-plugin-notification` ne gère pas le clic sur
+//! Sténo sur cette route au clic. `tauri-plugin-notification` ne gère pas le clic sur
 //! macOS : on passe directement par `mac-notification-sys` (la bibliothèque qu'il utilise),
 //! qui attend l'interaction dans un fil dédié.
 

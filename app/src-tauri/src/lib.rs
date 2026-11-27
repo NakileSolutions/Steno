@@ -1,25 +1,25 @@
-//! App de bureau Scribe (Tauri 2) : barre de menu, fenêtre principale, notifications,
-//! raccourcis globaux. Toute la logique est dans `scribe-core`.
+//! App de bureau Sténo (Tauri 2) : barre de menu, fenêtre principale, notifications,
+//! raccourcis globaux. Toute la logique est dans `steno-core`.
 
 mod commands;
 mod shortcuts;
 mod notify;
 mod tray;
 
-use scribe_core::core::CoreOptions;
-use scribe_core::events::CoreEvent;
-use scribe_core::live::SidecarSpec;
-use scribe_core::{Core, Db};
+use steno_core::core::CoreOptions;
+use steno_core::events::CoreEvent;
+use steno_core::live::SidecarSpec;
+use steno_core::{Core, Db};
 use tauri::{Emitter, Manager, WindowEvent};
 
 pub struct AppState {
     pub core: Core,
 }
 
-/// Sidecar audio : `SCRIBE_SIDECAR` (développement, ex. « scribe replay fichier.jsonl »),
-/// sinon `scribe-audio` à côté de l'exécutable (Contents/MacOS dans Scribe.app).
+/// Sidecar audio : `STENO_SIDECAR` (développement, ex. « steno replay fichier.jsonl »),
+/// sinon `steno-audio` à côté de l'exécutable (Contents/MacOS dans Steno.app).
 fn sidecar_spec() -> SidecarSpec {
-    if let Ok(cmd) = std::env::var("SCRIBE_SIDECAR") {
+    if let Ok(cmd) = std::env::var("STENO_SIDECAR") {
         let parts: Vec<String> = cmd.split_whitespace().map(String::from).collect();
         if let Some((p, a)) = parts.split_first() {
             return SidecarSpec { program: p.clone(), args: a.to_vec() };
@@ -27,10 +27,10 @@ fn sidecar_spec() -> SidecarSpec {
     }
     let next_to_exe = std::env::current_exe()
         .ok()
-        .and_then(|e| e.parent().map(|d| d.join("scribe-audio")))
+        .and_then(|e| e.parent().map(|d| d.join("steno-audio")))
         .filter(|p| p.exists());
     SidecarSpec {
-        program: next_to_exe.map(|p| p.display().to_string()).unwrap_or_else(|| "scribe-audio".into()),
+        program: next_to_exe.map(|p| p.display().to_string()).unwrap_or_else(|| "steno-audio".into()),
         args: vec![],
     }
 }
@@ -43,7 +43,7 @@ fn complete_path() {
     let home = std::env::var("HOME").unwrap_or_default();
     let mut dirs: Vec<String> = std::env::var("PATH").unwrap_or_default().split(':').map(String::from).collect();
     let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/zsh".into());
-    let marker = "__SCRIBE_PATH__";
+    let marker = "__STENO_PATH__";
     let login_path = std::process::Command::new(&shell)
         .args(["-ilc", &format!("printf '{marker}%s{marker}' \"$PATH\"")])
         .stdin(std::process::Stdio::null())
@@ -76,9 +76,11 @@ fn complete_path() {
 }
 
 fn init_logs() {
-    let dir = scribe_core::paths::logs_dir();
+    // Avant toute création de dossier : reprise des données de l'ancien nom (« Scribe »).
+    let _ = steno_core::paths::migrate_legacy();
+    let dir = steno_core::paths::logs_dir();
     let _ = std::fs::create_dir_all(&dir);
-    let file = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("scribe.log"));
+    let file = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("steno.log"));
     let filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into());
     match file {
         Ok(f) => {
@@ -123,7 +125,7 @@ fn forward_events(app: tauri::AppHandle, core: Core) {
                 _ => {}
             }
             if let Some((name, mut payload)) = ev.to_wire() {
-                if name == "scribe://live" {
+                if name == "steno://live" {
                     payload["pending_requests"] = core.db().count_active_requests().unwrap_or(0).into();
                 }
                 let _ = app.emit(name, payload);
@@ -149,7 +151,7 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-            scribe_core::paths::ensure_dirs()?;
+            steno_core::paths::ensure_dirs()?;
             let db = Db::open_default()?;
             let core = Core::new(
                 db,
@@ -280,7 +282,7 @@ pub fn run() {
             commands::resume_meeting,
         ])
         .build(tauri::generate_context!())
-        .expect("erreur au démarrage de Scribe")
+        .expect("erreur au démarrage de Sténo")
         .run(|app, ev| match ev {
             tauri::RunEvent::ExitRequested { api, code, .. } => {
                 // Pas de fenêtre ouverte ≠ quitter : seul « Quitter » ferme l'app.
@@ -300,7 +302,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    /// L'app expose exactement les commandes du contrat (même liste que `scribe serve`).
+    /// L'app expose exactement les commandes du contrat (même liste que `steno serve`).
     #[test]
     fn commandes_tauri_conformes_au_contrat() {
         let src = include_str!("lib.rs");
@@ -312,7 +314,7 @@ mod tests {
             .map(|s| s.trim().trim_end_matches(',').trim())
             .collect();
         registered.sort();
-        let mut contract: Vec<&str> = scribe_core::api::COMMANDS.to_vec();
+        let mut contract: Vec<&str> = steno_core::api::COMMANDS.to_vec();
         contract.sort();
         assert_eq!(registered, contract);
     }

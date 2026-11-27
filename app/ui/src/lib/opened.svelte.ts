@@ -1,7 +1,7 @@
 // Réunions récemment ouvertes (palette ⌘K, « Récemment ouvert »), mémorisées localement.
 import { pushRecent } from './palette';
 
-const KEY = 'scribe.palette.recent';
+const KEY = 'steno.palette.recent';
 
 function load(): string[] {
   try {
