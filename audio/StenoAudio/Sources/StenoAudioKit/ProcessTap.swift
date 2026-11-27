@@ -4,8 +4,9 @@
 //   1. CATapDescription(stereoMixdownOfProcesses:) sur TOUT l'arbre de processus des apps
 //      captées (Teams, Slack… peuvent sortir l'audio par un processus auxiliaire) ;
 //   2. AudioHardwareCreateProcessTap ;
-//   3. agrégat privé contenant la sortie système par défaut + le tap ;
-//   4. IOProc par bloc sur une file dédiée (pas le thread temps réel : on peut allouer).
+//   3. agrégat privé contenant la sortie audio par défaut (celle de l'appel) + le tap ;
+//   4. IOProc temps réel : the block runs on the HAL IO thread and only copies the mono mix
+//      into a lock-free ring; a regular queue drains it (see `RealtimeSampleBridge`).
 // La recréation (changement de la liste des processus captés, de périphérique de sortie,
 // réveil) est pilotée par CaptureSession.
 
@@ -43,15 +44,12 @@ final class ProcessTap {
     let target: Target
 
     private let onSamples: SampleHandler
-    private let ioQueue = DispatchQueue(label: "steno.audio.tap.io", qos: .userInteractive)
+    private var bridge: RealtimeSampleBridge?
     private var tapID = HAL.unknownObject
     private var aggregateID = HAL.unknownObject
     private var procID: AudioDeviceIOProcID?
     private var format: AVAudioFormat?
     private(set) var isRunning = false
-    /// Débit réellement reçu (voir `checkRate`) : manipulé sur `ioQueue` seulement.
-    private var rateWindowStart: TimeInterval?
-    private var rateWindowFrames = 0
 
     init(target: Target, onSamples: @escaping SampleHandler) {
         self.target = target
@@ -86,6 +84,9 @@ final class ProcessTap {
             _ = AudioHardwareDestroyAggregateDevice(aggregateID)
         }
         procID = nil
+        // After the IOProc is gone: nothing writes to the ring any more.
+        bridge?.stop()
+        bridge = nil
         aggregateID = HAL.unknownObject
         if tapID != HAL.unknownObject {
             _ = AudioHardwareDestroyProcessTap(tapID)
@@ -129,7 +130,8 @@ final class ProcessTap {
         } catch let error as CoreAudioError {
             throw TapError.failed("lecture du format du tap", error.status)
         }
-        guard let fmt = AVAudioFormat(streamDescription: &asbd) else {
+        // The IOProc mixes Float32 samples down without converting them (real-time path).
+        guard let fmt = AVAudioFormat(streamDescription: &asbd), fmt.commonFormat == .pcmFormatFloat32 else {
             throw TapError.failed("format du tap non pris en charge", 0)
         }
         format = fmt
@@ -138,7 +140,7 @@ final class ProcessTap {
     private func createAggregateAndRun() throws {
         let outputUID: String
         do {
-            outputUID = try HAL.deviceUID(HAL.defaultSystemOutputDevice())
+            outputUID = try HAL.deviceUID(HAL.defaultOutputDevice())
         } catch let error as CoreAudioError {
             throw TapError.failed("lecture de la sortie par défaut", error.status)
         }
@@ -171,11 +173,28 @@ final class ProcessTap {
         aggregateID = aggregate
         alignFormatOnAggregate()
 
-        status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, ioQueue) {
-            [weak self] _, inputData, _, _, _ in
-            self?.handle(inputData)
+        // The aggregate's input lists the streams of its sub-device first (the default output's
+        // microphone, for AirPods) and the tap's last: only the tap's buffers are mixed.
+        let tapBuffers = tapBufferCount()
+        logAggregateInputLayout(tapBuffers: tapBuffers)
+        guard let bridge = RealtimeSampleBridge(label: "steno.audio.tap.io",
+                                                firstBuffer: -Int32(tapBuffers), bufferCount: tapBuffers)
+        else {
+            throw TapError.failed("allocation of the sample ring", OSStatus(kAudioHardwareUnspecifiedError))
         }
+        self.bridge = bridge
+        // No dispatch queue: the block is real-time safe and runs directly on the IO thread.
+        status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, nil, bridge.ioBlock)
         guard status == noErr else { throw TapError.failed("création de l'IOProc", status) }
+
+        // Processing on the bridge's queue. The closure captures neither `self` nor the bridge.
+        let tracker = SampleRateTracker(rate: format?.sampleRate ?? 48_000, label: "tap")
+        let onSamples = onSamples
+        bridge.start { samples, dropped in
+            if dropped > 0 { Log.warn("tap: \(dropped) frames dropped (processing too slow)") }
+            let rate = tracker.add(frames: samples.count)
+            if !samples.isEmpty { onSamples(samples, rate) }
+        }
 
         status = AudioDeviceStart(aggregateID, procID)
         guard status == noErr else {
@@ -184,20 +203,31 @@ final class ProcessTap {
         }
     }
 
-    private func handle(_ inputData: UnsafePointer<AudioBufferList>) {
-        guard let format,
-              let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: inputData, deallocator: nil)
-        else { return }
-        checkRate(frames: Int(buffer.frameLength))
-        let mono = AudioBufferUtils.monoSamples(from: buffer, mix: .average)
-        if !mono.isEmpty { onSamples(mono, format.sampleRate) }
+    /// Buffers the tap contributes to the IOProc's input: one if interleaved, one per channel
+    /// otherwise.
+    private func tapBufferCount() -> UInt32 {
+        guard let format else { return 1 }
+        return format.isInterleaved ? 1 : max(1, format.channelCount)
+    }
+
+    /// Diagnostic: input buffers of the aggregate (sub-device streams + tap).
+    private func logAggregateInputLayout(tapBuffers: UInt32) {
+        var addr = HAL.address(kAudioDevicePropertyStreamConfiguration, scope: kAudioObjectPropertyScopeInput)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(aggregateID, &addr, 0, nil, &size) == noErr, size > 0 else { return }
+        let raw = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { raw.deallocate() }
+        guard AudioObjectGetPropertyData(aggregateID, &addr, 0, nil, &size, raw) == noErr else { return }
+        let list = UnsafeMutableAudioBufferListPointer(raw.assumingMemoryBound(to: AudioBufferList.self))
+        let channels = list.map { String($0.mNumberChannels) }.joined(separator: "+")
+        Log.info("tap: aggregate input \(list.count) buffer(s) (\(channels) channels), the last \(tapBuffers) from the tap")
     }
 
     /// L'agrégat est cadencé par la sortie par défaut. Le format du tap annonce souvent
     /// 48 kHz alors qu'un casque Bluetooth en appel (profil mains libres) tourne à 16 ou
     /// 24 kHz : les échantillons arrivent alors à ce rythme. Les traiter comme du 48 kHz
     /// accélère la voix ×3 (transcription absurde, VAD muette). On suit donc la fréquence
-    /// nominale de l'agrégat.
+    /// nominale de l'agrégat (then `SampleRateTracker` follows the measured throughput).
     private func alignFormatOnAggregate() {
         guard let f = format,
               let nominal = try? HAL.read(aggregateID, kAudioDevicePropertyNominalSampleRate, default: Float64(0)),
@@ -212,38 +242,6 @@ final class ProcessTap {
         var asbd = f.streamDescription.pointee
         asbd.mSampleRate = rate
         if let updated = AVAudioFormat(streamDescription: &asbd) { format = updated }
-    }
-
-    /// Garde-fou : compare le débit reçu (sur ~3 s) à la fréquence supposée. Un écart net
-    /// (sortie changée en cours d'appel, profil Bluetooth basculé…) corrige la fréquence.
-    private func checkRate(frames: Int) {
-        let now = ProcessInfo.processInfo.systemUptime
-        guard let start = rateWindowStart else {
-            rateWindowStart = now
-            rateWindowFrames = 0
-            return
-        }
-        rateWindowFrames += frames
-        let elapsed = now - start
-        guard elapsed >= 3 else { return }
-        let measured = Double(rateWindowFrames) / elapsed
-        rateWindowStart = now
-        rateWindowFrames = 0
-        guard let current = format?.sampleRate,
-              abs(measured - current) / current > 0.15,
-              let snapped = Self.standardRate(near: measured)
-        else { return }
-        Log.warn("tap : \(Int(measured)) échantillons/s reçus pour \(Int(current)) Hz annoncés : passage à \(Int(snapped)) Hz")
-        setSampleRate(snapped)
-    }
-
-    /// Fréquence standard la plus proche (à 10 % près), sinon nil.
-    static func standardRate(near measured: Double) -> Double? {
-        let rates: [Double] = [8000, 11025, 16000, 22050, 24000, 32000, 44100, 48000, 88200, 96000]
-        guard let best = rates.min(by: { abs($0 - measured) < abs($1 - measured) }),
-              abs(best - measured) / best < 0.10
-        else { return nil }
-        return best
     }
 
     /// À VÉRIFIER (spike S1/S4) : code(s) renvoyé(s) quand l'utilisateur ou le MDM refuse

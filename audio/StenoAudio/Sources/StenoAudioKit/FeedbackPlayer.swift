@@ -129,8 +129,16 @@ final class FeedbackPlayer {
         }
 
         guard let player, let buffer = buffer(for: sound) else { return }
-        player.scheduleBuffer(buffer, at: nil, options: [.interrupts], completionHandler: nil)
-        if !player.isPlaying { player.play() }
+        do {
+            try ObjCException.catching {
+                player.scheduleBuffer(buffer, at: nil, options: [.interrupts], completionHandler: nil)
+                if !player.isPlaying { player.play() }
+            }
+        } catch {
+            Log.warn("sound cue failed (\(error))")
+            teardown()
+            return
+        }
         Log.debug("signal « \(sound.rawValue) » joué")
 
         let item = DispatchWorkItem { [weak self] in self?.teardown() }
@@ -150,11 +158,15 @@ final class FeedbackPlayer {
             throw CoreAudioError(status: OSStatus(kAudioHardwareUnspecifiedError), operation: "format du signal")
         }
         let player = AVAudioPlayerNode()
-        engine.attach(player)
-        // Mono → mixeur principal (centré sur les deux canaux de sortie).
-        engine.connect(player, to: engine.mainMixerNode, format: format)
-        engine.prepare()
-        try engine.start()
+        // `connect` and `prepare` raise Objective-C exceptions when the output changes format
+        // meanwhile (AirPods switching to hands-free mode): turned into a Swift error.
+        try ObjCException.catching {
+            engine.attach(player)
+            // Mono → mixeur principal (centré sur les deux canaux de sortie).
+            engine.connect(player, to: engine.mainMixerNode, format: format)
+            engine.prepare()
+            try engine.start()
+        }
 
         self.engine = engine
         self.player = player
@@ -191,10 +203,13 @@ final class FeedbackPlayer {
         idleTeardown = nil
         if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
         configObserver = nil
-        player?.stop()
-        engine?.stop()
-        player = nil
-        engine = nil
+        let (player, engine) = (self.player, self.engine)
+        try? ObjCException.catching {
+            player?.stop()
+            engine?.stop()
+        }
+        self.player = nil
+        self.engine = nil
         engineDevice = nil
     }
 }

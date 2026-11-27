@@ -12,11 +12,14 @@ pub struct WavWriter {
     sample_rate: u32,
     file: File,
     data_bytes: u32,
+    /// `data_bytes` when the header was last written.
+    header_bytes: u32,
     closed: bool,
 }
 
-/// Au-delà, un trou n'est plus comblé (évite d'écrire des heures de silence après une veille).
-pub const MAX_GAP_FILL_SECONDS: f64 = 30.0 * 60.0;
+/// The header is rewritten with the current sizes every this many seconds of audio, so a sidecar
+/// killed before `close` (SIGKILL, crash) leaves a readable file missing at most that much audio.
+pub const HEADER_REFRESH_SECONDS: u32 = 5;
 
 impl WavWriter {
     pub fn create(path: &Path, sample_rate: u32) -> Result<Self> {
@@ -25,7 +28,7 @@ impl WavWriter {
         }
         let mut file = OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path).with_context(|| format!("création de {}", path.display()))?;
         file.write_all(&header(sample_rate, 0))?;
-        Ok(WavWriter { path: path.to_path_buf(), sample_rate, file, data_bytes: 0, closed: false })
+        Ok(WavWriter { path: path.to_path_buf(), sample_rate, file, data_bytes: 0, header_bytes: 0, closed: false })
     }
 
     /// Ajoute des échantillons Float32 dans [-1, 1].
@@ -41,12 +44,15 @@ impl WavWriter {
         self.write(&data)
     }
 
-    /// Ajoute `count` échantillons de silence (trous du flux).
+    /// Ajoute `count` échantillons de silence (trous du flux). Never capped: the segmenter clock
+    /// advances by the whole gap, and `retranscribe` / diarization cut the WAV at `t0`/`t1`, so the
+    /// file must advance by as much (about 115 MB per hour of gap; the 4 GiB WAV limit still
+    /// applies).
     pub fn append_silence(&mut self, count: usize) -> Result<()> {
         if self.closed || count == 0 {
             return Ok(());
         }
-        let mut remaining = count.min((MAX_GAP_FILL_SECONDS * self.sample_rate as f64) as usize);
+        let mut remaining = count;
         let chunk = vec![0u8; self.sample_rate as usize * 2];
         while remaining > 0 {
             let n = remaining.min(self.sample_rate as usize);
@@ -80,6 +86,18 @@ impl WavWriter {
         }
         self.file.write_all(data)?;
         self.data_bytes += data.len() as u32;
+        if self.data_bytes - self.header_bytes >= HEADER_REFRESH_SECONDS * self.sample_rate * 2 {
+            self.refresh_header()?;
+        }
+        Ok(())
+    }
+
+    /// Rewrites the header with the current sizes, then goes back to the end of the file.
+    fn refresh_header(&mut self) -> Result<()> {
+        self.file.seek(SeekFrom::Start(0))?;
+        self.file.write_all(&header(self.sample_rate, self.data_bytes))?;
+        self.file.seek(SeekFrom::End(0))?;
+        self.header_bytes = self.data_bytes;
         Ok(())
     }
 }
@@ -176,5 +194,28 @@ mod tests {
         assert_eq!(s.len(), 3200);
         assert!((s[10] - 0.5).abs() < 1e-3);
         assert_eq!(s[3000], 0.0);
+    }
+
+    #[test]
+    fn header_is_valid_before_close() {
+        // A sidecar killed before `close` must still leave a readable file.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("me.wav");
+        let mut w = WavWriter::create(&p, 16_000).unwrap();
+        w.append(&vec![0.25; 16_000 * HEADER_REFRESH_SECONDS as usize]).unwrap();
+        w.append(&[0.25; 800]).unwrap();
+        let s = load_mono_16k(&p).unwrap();
+        assert_eq!(s.len(), 16_000 * HEADER_REFRESH_SECONDS as usize);
+        std::mem::forget(w); // no close, as after SIGKILL
+    }
+
+    #[test]
+    fn long_gaps_are_filled_completely() {
+        // The segmenter clock advances by the whole gap: the WAV must stay aligned with it.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("them.wav");
+        let mut w = WavWriter::create(&p, 100).unwrap();
+        w.append_silence(100 * 3600).unwrap();
+        assert!((w.duration_seconds() - 3600.0).abs() < 1e-9);
     }
 }

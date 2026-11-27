@@ -174,6 +174,15 @@ final class CaptureSession {
         } else { tapQueue.sync {
             running = true
             tapSource = initial
+            // When system audio access is denied, macOS still creates the tap without error and
+            // delivers silence: ask TCC first so the user learns why "them" stays empty. The tap
+            // is created anyway: if the answer is wrong (private API), real audio proves it and
+            // `handleTapSamples` records the permission as granted.
+            if permissions.currentSystemAudio() == .denied {
+                Log.warn("system audio access denied (TCC): the tap will only receive silence")
+                permissions.setSystemAudio(.denied)
+                reportError(.systemAudioDenied, Self.systemAudioDeniedMessage, recoverable: false)
+            }
             for selector in [kAudioHardwarePropertyDefaultSystemOutputDevice, kAudioHardwarePropertyDefaultOutputDevice] {
                 if let l = HALPropertyListener(selector: selector, queue: tapQueue, handler: { [weak self] in
                     self?.tapQueue.async { self?.reconcileTap(force: true, reason: "sortie audio par défaut modifiée") }
@@ -294,7 +303,7 @@ final class CaptureSession {
         } catch ProcessTap.TapError.permissionDenied(let status) {
             Log.error("tap refusé (OSStatus \(status))")
             permissions.setSystemAudio(.denied)
-            reportError(.systemAudioDenied, "Accès à l'audio système refusé : autorisez Sténo dans Réglages Système › Confidentialité et sécurité › Enregistrement audio du système.", recoverable: false)
+            reportError(.systemAudioDenied, Self.systemAudioDeniedMessage, recoverable: false)
         } catch {
             tapFailures += 1
             Log.error("tap : \(error)")
@@ -399,6 +408,8 @@ final class CaptureSession {
                                             channel: channel, text: text, isPrivate: isPrivate,
                                             speaker: speaker)))
     }
+
+    private static let systemAudioDeniedMessage = "Accès à l'audio système refusé : autorisez Sténo dans Réglages Système › Confidentialité et sécurité › Enregistrement audio du système."
 
     private func reportError(_ code: ErrorCode, _ message: String, recoverable: Bool) {
         guard errorLimiter.allow(code.rawValue) else { return }

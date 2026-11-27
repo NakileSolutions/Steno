@@ -225,6 +225,11 @@ pub fn parse_line(line: &str) -> Option<SidecarEvent> {
     }
 }
 
+/// Time the sidecar gets to exit after `shutdown` before it is killed. The macOS sidecar gives
+/// itself 5 s to flush the pending segments and close its WAV files (`Controller.shutdown`), then
+/// drains stdout: killing it earlier can leave `me.wav` / `them.wav` unreadable.
+const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(7);
+
 /// Processus sidecar lancé.
 pub struct SidecarProcess {
     pub commands: mpsc::UnboundedSender<SidecarCommand>,
@@ -293,7 +298,7 @@ impl SidecarProcess {
 
     pub async fn shutdown(mut self) {
         self.send(SidecarCommand::Shutdown);
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), self.child.wait()).await;
+        let _ = tokio::time::timeout(SHUTDOWN_GRACE, self.child.wait()).await;
         let _ = self.child.kill().await;
     }
 }
