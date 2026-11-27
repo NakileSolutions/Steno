@@ -1,6 +1,6 @@
 // swift-tools-version:5.10
 //
-// scribe-audio : sidecar audio de Scribe (capture micro + process tap Teams, VAD, ASR).
+// scribe-audio : sidecar audio de Scribe (capture micro + process tap des apps de visio, VAD, ASR).
 // Voir README.md pour la compilation et l'intégration comme `externalBin` Tauri.
 
 import PackageDescription

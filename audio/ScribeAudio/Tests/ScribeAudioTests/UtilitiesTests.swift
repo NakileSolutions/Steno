@@ -34,12 +34,12 @@ final class TeamsTitleTests: XCTestCase {
     }
 
     func testTeamsBundleMatching() {
-        guard #available(macOS 14.2, *) else { return }
-        XCTAssertTrue(TeamsMonitor.isTeamsBundle("com.microsoft.teams2"))
-        XCTAssertTrue(TeamsMonitor.isTeamsBundle("com.microsoft.teams2.helper"))
-        XCTAssertTrue(TeamsMonitor.isTeamsBundle("com.microsoft.teams"))
-        XCTAssertFalse(TeamsMonitor.isTeamsBundle("com.microsoft.edgemac"))
-        XCTAssertFalse(TeamsMonitor.isTeamsBundle("com.apple.WebKit.GPU"))
+        let teams = WatchedApp.defaults[0]
+        XCTAssertTrue(teams.matches(bundleID: "com.microsoft.teams2"))
+        XCTAssertTrue(teams.matches(bundleID: "com.microsoft.teams2.helper"))
+        XCTAssertTrue(teams.matches(bundleID: "com.microsoft.teams"))
+        XCTAssertFalse(teams.matches(bundleID: "com.microsoft.edgemac"))
+        XCTAssertFalse(teams.matches(bundleID: "com.apple.WebKit.GPU"))
     }
 }
 

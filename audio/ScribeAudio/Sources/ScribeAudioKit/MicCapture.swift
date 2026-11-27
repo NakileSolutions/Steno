@@ -106,8 +106,8 @@ final class MicCapture {
         if voiceProcessing {
             // AEC : retire de la piste micro le son joué par les haut-parleurs.
             try input.setVoiceProcessingEnabled(true)
-            // Ne pas baisser le volume des autres apps (Teams) pendant la capture.
-            // À VÉRIFIER (spike S1) : effet réel du réglage sur le son de Teams.
+            // Ne pas baisser le volume des autres apps (Teams, Slack…) pendant la capture.
+            // À VÉRIFIER (spike S1) : effet réel du réglage sur le son de l'app de visio.
             input.voiceProcessingOtherAudioDuckingConfiguration =
                 AVAudioVoiceProcessingOtherAudioDuckingConfiguration(enableAdvancedDucking: false,
                                                                      duckingLevel: .min)
