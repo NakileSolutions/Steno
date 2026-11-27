@@ -38,6 +38,15 @@ export function t(fr: string, vars?: Record<string, string | number>): string {
   return fill(s, vars);
 }
 
+/**
+ * Marque un texte à traduire sans le traduire tout de suite : pour les tables définies au
+ * chargement du module (menus, libellés), traduites à l'affichage par `t(label)`. Le test de
+ * couverture repère aussi ces clés.
+ */
+export function tk(fr: string): string {
+  return fr;
+}
+
 /** Singulier / pluriel (variable `{n}` fournie automatiquement). */
 export function tn(n: number, one: string, many: string, vars?: Record<string, string | number>): string {
   return t(n > 1 || (i18n.lang === 'en' && n === 0) ? many : one, { n, ...vars });

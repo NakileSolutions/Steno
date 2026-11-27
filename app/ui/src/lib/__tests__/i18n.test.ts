@@ -18,7 +18,7 @@ function files(dir: string): string[] {
 function keys(): Map<string, string> {
   const out = new Map<string, string>();
   const lit = String.raw`'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"`;
-  const re = new RegExp(String.raw`\bt\(\s*(?:${lit})`, 'g');
+  const re = new RegExp(String.raw`\bt[k]?\(\s*(?:${lit})`, 'g');
   const reN = new RegExp(String.raw`\btn\([^,]+,\s*(?:${lit})\s*,\s*(?:${lit})`, 'g');
   for (const f of files(SRC)) {
     const s = readFileSync(f, 'utf8');
