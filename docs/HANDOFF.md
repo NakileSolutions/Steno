@@ -162,6 +162,15 @@ Sur Mac, pour les e2e : `cd app/ui && npx playwright install chromium` une fois.
 - En simulation, il n'y a qu'un intervenant « Eux » : pas de diarisation sans audio. La durée vaut 0 min à cause du rejeu accéléré.
 - En mode HTTP, `openMain(route)` change la route dans la page et `openExternal` ouvre un onglet.
 
+### Design v2 : à vérifier sur Mac
+- Translucidité native : la barre latérale à ~60 % d'opacité sur la matière « sidebar », la lisibilité selon le fond d'écran, la fenêtre active ou inactive, et le panneau `#/tray` transparent sur la matière « popover » (`tauri.conf.json` : `transparent`, `windowEffects`, `macOSPrivateApi`).
+- Barre latérale façon Arc :
+  - position du bouton flottant à côté des boutons de fenêtre (`--tb-left: 78px`, `--tb-top: 2px` dans `Shell.svelte`) ;
+  - zone de déplacement de la fenêtre en mode réduit ;
+  - ⌘\ sur un clavier AZERTY.
+- View Transitions dans le WebKit de macOS 14.2 et plus.
+- Test Playwright de la palette ⌘K (`maquette.spec.ts`, navigation ↑↓) : un échec isolé a été observé une fois, puis il est passé plus de 30 fois. Si l'échec revient, chercher ce qui ferme la palette juste après une navigation (perte de focus, transition de vue).
+
 ### P3 — Équipe et finitions
 - Configuration d'équipe : rédiger un TOML de départ (vocabulaire des services, verbes, exclusions).
 - Rendre un vrai Mac disponible en CI (job `macos` en `workflow_dispatch` seulement, car les minutes macOS coûtent plus cher).
