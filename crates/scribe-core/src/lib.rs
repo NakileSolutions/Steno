@@ -4,6 +4,7 @@
 //! Aucun nom de fournisseur d'IA ne doit apparaître hors de `agents/`.
 
 pub mod agents;
+pub mod api;
 pub mod core;
 pub mod correlate;
 pub mod db;

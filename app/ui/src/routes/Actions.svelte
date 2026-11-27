@@ -6,6 +6,7 @@
   import { dayLabel, shortDate } from '../lib/format';
   import { toastError } from '../lib/ui.svelte';
   import Icon from '../lib/components/Icon.svelte';
+  import { isOverdue } from '../lib/group';
 
   let view = $state<'actions' | 'decisions'>('actions');
   let status = $state<'open' | 'done' | 'all'>('open');
@@ -58,7 +59,7 @@
       toastError(e);
     }
   }
-  const overdue = (a: Action) => a.status === 'open' && !!a.due && /^\d{4}-\d{2}-\d{2}/.test(a.due) && a.due < new Date().toISOString().slice(0, 10);
+  const overdue = (a: Action) => isOverdue(a);
 </script>
 
 <div class="page scroll">

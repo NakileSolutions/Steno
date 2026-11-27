@@ -68,6 +68,7 @@
     { id: 'note', label: 'Noter', hint: 'aucune recherche' },
     { id: 'recap', label: 'Récapituler', hint: 'résumé rapide' },
     { id: 'cancel', label: 'Annuler', hint: 'dernière demande' },
+    { id: 'stop', label: 'Arrêter l’écoute', hint: 'termine la réunion' },
   ];
 </script>
 
@@ -126,12 +127,12 @@
 </div>
 
 <div class="field">
-  <div class="field-label">Verbes par intention<span class="hint">Le verbe qui suit le mot d’appel détermine l’action.</span></div>
+  <div class="field-label">Verbes par intention<span class="hint">Le verbe qui suit le mot d’appel détermine l’action. Ex. « {settings.voice.wake_word || 'Scribe'}, arrête l’écoute » termine la réunion.</span></div>
   <div class="field-body verbs">
     {#each INTENTS as it (it.id)}
       <div class="verb">
         <span class="vlabel"><strong>{it.label}</strong><span class="faint small">{it.hint}</span></span>
-        <TagInput bind:values={settings.voice.verbs[it.id]} label="Verbes : {it.label}" />
+        <TagInput bind:values={() => settings.voice.verbs[it.id] ?? [], (v) => (settings.voice.verbs[it.id] = v)} label="Verbes : {it.label}" />
       </div>
     {/each}
   </div>

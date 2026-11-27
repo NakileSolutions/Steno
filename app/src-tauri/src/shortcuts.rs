@@ -48,7 +48,7 @@ pub fn register(app: &AppHandle, core: &Core) {
     }
     if let Err(err) = gs.on_shortcut(normalize(&sc.quick_note).as_str(), move |app, _s, ev| {
         if ev.state() == ShortcutState::Pressed {
-            crate::tray::show_panel(app, None);
+            crate::tray::show_panel(app);
         }
     }) {
         tracing::warn!("raccourci « {} » refusé : {err}", sc.quick_note);

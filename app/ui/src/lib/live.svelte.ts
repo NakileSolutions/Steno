@@ -2,6 +2,7 @@
 
 import { api, onEvent } from './api';
 import type { LiveState } from './types';
+import { loadPrefs } from './prefs.svelte';
 
 export const live = $state<{ s: LiveState; ready: boolean }>({
   s: {
@@ -12,6 +13,7 @@ export const live = $state<{ s: LiveState; ready: boolean }>({
     sidecar: 'starting',
     last_error: null,
     pending_requests: 0,
+    teams_call: { active: false, title: null },
   },
   ready: false,
 });
@@ -22,19 +24,19 @@ let started = false;
 export function initLive(): void {
   if (started) return;
   started = true;
-  api.liveState().then((s) => {
-    live.s = s;
+  // Un backend plus ancien peut omettre `teams_call` : on le complète.
+  const set = (s: LiveState) => {
+    live.s = { ...s, teams_call: s.teams_call ?? { active: false, title: null } };
     live.ready = true;
-  }).catch(() => {});
-  onEvent('scribe://live', (s) => {
-    live.s = s;
-    live.ready = true;
-  });
+  };
+  api.liveState().then(set).catch(() => {});
+  onEvent('scribe://live', set);
+  loadPrefs();
   setInterval(() => (clock.now = Date.now()), 1000);
 }
 
 export const STATE_LABEL: Record<LiveState['state'], string> = {
-  idle: 'Inactif',
+  idle: 'N’écoute pas',
   listening: 'Écoute',
   paused: 'En pause',
   processing: 'Traitement',

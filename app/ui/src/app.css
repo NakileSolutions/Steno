@@ -33,6 +33,10 @@
   --err-soft: rgba(184, 56, 47, 0.1);
   --focus: #5a78c8;
   --mark: rgba(242, 196, 82, 0.42);
+  --offer-bg: #eef1f8;
+  --offer-line: rgba(90, 120, 200, 0.22);
+  --offer-ic-bg: rgba(90, 120, 200, 0.14);
+  --offer-ic: #46609f;
 
   --side-bg: linear-gradient(180deg, #2b3140 0%, #1c202b 100%);
   --side-text: rgba(241, 240, 236, 0.92);
@@ -80,6 +84,10 @@
     --err-soft: rgba(232, 103, 94, 0.13);
     --focus: #8aa3e6;
     --mark: rgba(242, 196, 82, 0.28);
+    --offer-bg: rgba(138, 163, 230, 0.09);
+    --offer-line: rgba(138, 163, 230, 0.22);
+    --offer-ic-bg: rgba(138, 163, 230, 0.16);
+    --offer-ic: #a9bcef;
 
     --side-bg: linear-gradient(180deg, #1f2430 0%, #13161d 100%);
 
@@ -307,6 +315,32 @@ input[type='radio'] {
 .dot.paused { background: var(--warn); }
 .dot.processing { background: var(--focus); animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.45; } }
+
+/* ---------- Appel Teams détecté (proposition, jamais un démarrage) ---------- */
+
+.teams-offer {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  background: var(--offer-bg);
+  border: 1px solid var(--offer-line);
+  text-align: left;
+}
+.teams-offer .to-ic {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--offer-ic-bg);
+  color: var(--offer-ic);
+}
+.teams-offer .to-title { font-size: 13px; line-height: 1.35; color: var(--text); }
+.teams-offer .to-title strong { font-weight: 600; }
+.teams-offer .to-sub { font-size: 12px; color: var(--text-2); margin-top: 1px; }
 
 /* ---------- Surfaces ---------- */
 

@@ -3,6 +3,8 @@
   import { onMount } from 'svelte';
   import { api, onEvent, openMain } from '../lib/api';
   import { live, clock, STATE_LABEL } from '../lib/live.svelte';
+  import { isListening, teamsOffer } from '../lib/listening';
+  import { stopHint } from '../lib/prefs.svelte';
   import type { Request } from '../lib/types';
   import { duration, relDay, STATUS_CLASS, STATUS_LABEL } from '../lib/format';
   import { toastError } from '../lib/ui.svelte';
@@ -12,7 +14,8 @@
 
   const s = $derived(live.s);
   const m = $derived(s.meeting);
-  const active = $derived(s.state === 'listening' || s.state === 'paused');
+  const active = $derived(isListening(s));
+  const offer = $derived(teamsOffer(s));
 
   let recent = $state<Request[]>([]);
   let query = $state('');
@@ -81,25 +84,42 @@
           <p class="faint small">{s.state === 'processing' ? 'Compte rendu en préparation…' : duration(m.started_at, null, clock.now)}{#if s.pending_requests}{' · '}{s.pending_requests} demande{s.pending_requests > 1 ? 's' : ''} en cours{/if}</p>
         </div>
       </div>
+
+      {#if active}
+        <div class="meters">
+          <Meter db={s.levels.me} label="Micro" icon="mic" active />
+          <Meter db={s.levels.them} label="Teams" icon="speaker" active />
+        </div>
+        <div class="row ctl">
+          <button class="btn danger grow" onclick={toggle} disabled={busy}>
+            <Icon name="stop" size={13} />Arrêter l’écoute
+          </button>
+          <label class="check small conf" title="Aucun appel à l’IA pour cette réunion">
+            <input type="checkbox" checked={!!m.confidential} onchange={(e) => api.setLiveConfidential(e.currentTarget.checked).catch(toastError)} />
+            Confidentielle
+          </label>
+        </div>
+        <p class="stophint tiny">{stopHint()}</p>
+      {/if}
     {:else}
-      <p class="mt">Aucune réunion en cours</p>
-      <p class="faint small">Démarrage automatique avec Teams.</p>
-    {/if}
-
-    <div class="meters">
-      <Meter db={s.levels.me} label="Micro" icon="mic" active={active} />
-      <Meter db={s.levels.them} label="Teams" icon="speaker" active={active} />
-    </div>
-
-    <div class="row ctl">
-      <button class="btn {active ? 'danger' : 'primary'} grow" onclick={toggle} disabled={busy || s.state === 'processing'}>
-        <Icon name={active ? 'stop' : 'play'} size={13} />{active ? 'Arrêter' : 'Démarrer'}
+      {#if offer}
+        <div class="teams-offer" role="status">
+          <span class="to-ic"><Icon name="speaker" size={15} /></span>
+          <div class="grow">
+            <p class="to-title">Appel Teams détecté : <strong>{offer}</strong></p>
+            <p class="to-sub">Le Scribe n’écoute pas encore.</p>
+          </div>
+        </div>
+      {:else}
+        <div>
+          <p class="mt">Le Scribe n’écoute pas</p>
+          <p class="faint small">L’écoute ne démarre que sur votre demande.</p>
+        </div>
+      {/if}
+      <button class="btn primary go" onclick={toggle} disabled={busy || s.state === 'processing'}>
+        <Icon name="play" size={14} />Démarrer l’écoute
       </button>
-      <label class="check small conf" title={m ? 'Aucun appel à l’IA pour cette réunion' : 'Disponible pendant une réunion'}>
-        <input type="checkbox" checked={!!m?.confidential} disabled={!active} onchange={(e) => api.setLiveConfidential(e.currentTarget.checked).catch(toastError)} />
-        Réunion confidentielle
-      </label>
-    </div>
+    {/if}
   </section>
 
   <form class="ask" onsubmit={ask}>
@@ -157,6 +177,8 @@
   .ctl { gap: 12px; }
   .ctl .btn { height: 30px; }
   .conf { flex: none; }
+  .go { height: 36px; font-size: 13.5px; font-weight: 600; }
+  .stophint { color: var(--text-3); line-height: 1.4; margin-top: -2px; }
   .ask {
     display: flex;
     align-items: center;

@@ -69,29 +69,36 @@ async fn wait_until(what: &str, secs: u64, mut f: impl FnMut() -> bool) {
     }
 }
 
-/// Rejoue la daily de 45 min dans la session en direct et renvoie l'identifiant de la réunion.
+/// Rejoue la daily de 45 min : l'écoute est démarrée **manuellement** (jamais automatiquement),
+/// puis arrêtée manuellement. Renvoie l'identifiant de la réunion.
 async fn replay_fixture(c: &Core) -> String {
     let expected: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(root().join("fixtures/expected.json")).unwrap()).unwrap();
     let n = expected["segments"].as_i64().unwrap();
-    let mut id = None;
-    wait_until("réunion créée", 20, || {
-        id = c.db().live_meeting().unwrap().map(|m| m.id);
-        id.is_some()
-    })
-    .await;
-    let id = id.unwrap();
+    wait_until("appel Teams annoncé", 20, || c.live_state().teams_call.active).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(c.db().live_meeting().unwrap().is_none(), "l'écoute ne doit jamais démarrer seule");
+    let m = c.start_meeting(None).await.unwrap();
+    assert_eq!(m.title.as_deref(), Some("Daily ORION"), "titre repris de la fenêtre Teams");
+    let id = m.id;
     wait_until("segments reçus", 30, || c.db().segments(&id, true, true).unwrap().len() as i64 == n).await;
     tokio::time::sleep(Duration::from_millis(500)).await;
+    // La fin de l'appel Teams (dernier événement du fichier) n'arrête pas l'écoute.
+    assert_eq!(c.db().get_meeting(&id).unwrap().unwrap().status, "live");
     c.stop_meeting().await.unwrap();
     id
 }
 
-fn cat_sidecar() -> SidecarSpec {
+/// Simulateur du sidecar (`scribe replay`), à vitesse maximale.
+fn replay_sidecar(file: &std::path::Path) -> SidecarSpec {
     SidecarSpec {
-        program: "sh".into(),
-        args: vec!["-c".into(), format!("cat '{}'; sleep 600", fixture().display())],
+        program: env!("CARGO_BIN_EXE_scribe").into(),
+        args: vec!["replay".into(), file.display().to_string(), "--speed".into(), "0".into()],
     }
+}
+
+fn cat_sidecar() -> SidecarSpec {
+    replay_sidecar(&fixture())
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -304,5 +311,45 @@ async fn exclusions_et_confidentialite() {
     c.save_settings(s).unwrap();
     assert!(c.wake_detect("Greffier, cherche le ticket APP-1").is_some());
     assert!(c.wake_detect("Scribe, cherche le ticket APP-1").is_none());
+    c.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn appel_teams_propose_sans_demarrer_et_arret_a_la_voix() {
+    // Petit rejeu : appel Teams, quelques phrases, puis « Scribe, arrête l'écoute. ».
+    let file = env().join("arret-voix.jsonl");
+    let lines = [
+        r#"{"type":"teams_call","active":true,"title":"Point rapide"}"#,
+        r#"{"type":"segment","ts":"2026-11-26T10:00:03+01:00","t0":1.0,"t1":3.0,"channel":"them","text":"On fait vite aujourd'hui.","private":false}"#,
+        r#"{"type":"segment","ts":"2026-11-26T10:00:06+01:00","t0":4.0,"t1":6.0,"channel":"me","text":"D'accord, on garde le verrou de créneau.","private":false}"#,
+        r#"{"type":"segment","ts":"2026-11-26T10:00:10+01:00","t0":8.0,"t1":10.0,"channel":"me","text":"Scribe, arrête l'écoute.","private":false}"#,
+        r#"{"type":"segment","ts":"2026-11-26T10:00:14+01:00","t0":12.0,"t1":14.0,"channel":"them","text":"Après l'arrêt : ne doit pas être enregistré.","private":false}"#,
+    ];
+    std::fs::write(&file, lines.join("\n") + "\n").unwrap();
+    let c = core("arret-voix", Some(SidecarSpec {
+        program: env!("CARGO_BIN_EXE_scribe").into(),
+        args: vec!["replay".into(), file.display().to_string(), "--speed".into(), "4".into()],
+    }));
+    let mut rx = c.subscribe();
+    wait_until("appel Teams annoncé", 20, || c.live_state().teams_call.active).await;
+    // Une notification propose de démarrer ; aucune réunion n'est créée.
+    let mut proposed = false;
+    while let Ok(ev) = rx.try_recv() {
+        if let scribe_core::events::CoreEvent::Notify { title, .. } = ev {
+            proposed |= title.contains("Appel Teams");
+        }
+    }
+    assert!(proposed, "une notification doit proposer de démarrer l'écoute");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(c.db().live_meeting().unwrap().is_none());
+
+    let m = c.start_meeting(None).await.unwrap();
+    assert_eq!(m.title.as_deref(), Some("Point rapide"));
+    wait_until("arrêt à la voix", 20, || c.db().get_meeting(&m.id).unwrap().unwrap().status != "live").await;
+    let reqs = c.db().requests(&m.id).unwrap();
+    assert!(reqs.iter().any(|r| r.intent == "stop" && r.status == "done"), "{reqs:?}");
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let segs = c.db().segments(&m.id, true, true).unwrap();
+    assert!(!segs.iter().any(|s| s.text.contains("ne doit pas")), "rien n'est enregistré après l'arrêt");
     c.shutdown();
 }

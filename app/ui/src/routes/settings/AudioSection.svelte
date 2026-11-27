@@ -4,19 +4,17 @@
 
   let { settings = $bindable() }: { settings: Settings } = $props();
   const SHORTCUTS = [
-    { id: 'toggle', label: 'Démarrer / arrêter' },
+    { id: 'toggle', label: 'Démarrer / arrêter l’écoute' },
     { id: 'aside', label: 'Aparté (maintenir)' },
     { id: 'quick_note', label: 'Note rapide' },
   ] as const;
 </script>
 
 <div class="field">
-  <div class="field-label">Teams</div>
+  <div class="field-label">Teams<span class="hint">L’écoute ne démarre et ne s’arrête jamais toute seule.</span></div>
   <div class="field-body">
-    <label class="check"><input type="checkbox" bind:checked={settings.audio.auto_detect_teams} /> Démarrer automatiquement quand un appel Teams commence</label>
-    <label class="row small muted">Fin de réunion après
-      <input class="input num" type="number" min="10" max="600" step="10" bind:value={settings.audio.end_grace_s} /> s sans micro utilisé par Teams
-    </label>
+    <label class="check"><input type="checkbox" bind:checked={settings.audio.auto_detect_teams} /> Proposer de démarrer l’écoute quand un appel Teams commence (notification seulement)</label>
+    <p class="small faint">La fin de l’appel Teams ne termine pas la réunion : arrêtez l’écoute avec le bouton, le raccourci, le menu de la barre d’état ou à la voix.</p>
   </div>
 </div>
 <div class="field">
@@ -42,8 +40,6 @@
 </div>
 
 <style>
-  .num { width: 76px; height: 24px; }
-  .row.small { gap: 6px; }
   input[type='range'] { width: 260px; accent-color: var(--brand); }
   .sc { display: grid; grid-template-columns: 170px 200px; align-items: center; gap: 10px; }
 </style>

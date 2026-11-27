@@ -10,6 +10,12 @@ Sommaire :
 4. Réglages (JSON en base, TOML en import/export)
 5. API de l'app : commandes Tauri et événements
 6. Fichiers d'exemple (`fixtures/`)
+7. Backend HTTP (`scribe serve`) : tests e2e et développement sans Tauri
+
+> **Règle produit** : l'écoute ne démarre **jamais** automatiquement et ne s'arrête **jamais**
+> automatiquement. Un appel Teams détecté donne au plus une notification qui propose de
+> démarrer ; l'arrêt se fait par l'utilisateur (menu de la barre d'état, raccourci, app) ou à
+> la voix (« Scribe, arrête l'écoute », intention `stop`).
 
 ---
 
@@ -106,10 +112,14 @@ inconnus (compatibilité ascendante).
 - `diarize` : le sidecar lit `them.wav` et répond par `diarization` (ou `error`).
   Le cœur attribue ensuite `Eux-1`, `Eux-2`… aux segments `them` selon le chevauchement.
 - Sans `start`, le sidecar ne capture rien mais continue de surveiller Teams et émet
-  `teams_call`.
+  `teams_call`. Le cœur n'en déduit **jamais** un démarrage : il met à jour
+  `LiveState.teams_call` et, si `audio.auto_detect_teams`, envoie une notification.
+- La fin de l'appel (`teams_call` avec `active: false`) n'arrête pas l'écoute.
 
-Simulateur : `scribe replay <fixture.jsonl> [--speed N]` parle exactement ce protocole
-(il rejoue un fichier d'exemple). Il permet de tester l'app et le cœur sans Mac.
+Simulateur : `scribe replay <fixture.jsonl> [--speed N] [--exit]` parle exactement ce protocole
+(il rejoue un fichier d'exemple). Comme le vrai sidecar, il annonce l'appel Teams tout de
+suite mais n'envoie les phrases qu'après `start` ; `stop` met le rejeu en pause. Il permet de
+tester l'app et le cœur sans Mac.
 
 ---
 
@@ -194,7 +204,8 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
       "check": ["vérifie", "confirme"],
       "note": ["note", "ajoute une action", "retiens"],
       "recap": ["résume", "récap", "récapitule"],
-      "cancel": ["annule"]
+      "cancel": ["annule"],
+      "stop": ["arrête l'écoute", "arrête d'écouter", "arrête la transcription", "termine la réunion", "fin de la réunion"]
     },
     "feedback": "system"
   },
@@ -213,6 +224,8 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
 ```
 
 - `voice.feedback` : `none | system | headset`.
+- `audio.auto_detect_teams` : proposer (notification) de démarrer l'écoute quand un appel
+  Teams commence. `audio.end_grace_s` : obsolète, ignoré.
 - `correlation.mode` : `off | on_demand | auto`.
 - Import/export TOML : mêmes sections, **sans** `profile.name`, `privacy.auto_export_dir`,
   ni dépôts (aucun chemin, aucune donnée personnelle).
@@ -239,7 +252,7 @@ type Segment = { id: number; meeting_id: string; seq: number; ts: string; t0: nu
 type Speaker = { label: string; display_name: string | null };
 type Note = { id: number; meeting_id: string; ts: string; text: string; source: "user" | "voice" };
 type Request = { id: string; meeting_id: string | null; created_at: string;
-  origin: "voice" | "text" | "hotkey" | "cli"; intent: "search" | "check" | "note" | "recap" | "cancel" | "history";
+  origin: "voice" | "text" | "hotkey" | "cli"; intent: "search" | "check" | "note" | "recap" | "cancel" | "stop" | "history";
   query: string; context_seconds: number | null; tier: "quick" | "search" | "summary";
   status: "queued" | "running" | "done" | "error" | "cancelled" | "refused";
   started_at: string | null; finished_at: string | null; error: string | null;
@@ -261,7 +274,8 @@ type SearchHit = { meeting_id: string; title: string | null; started_at: string;
 type LiveState = { state: "idle" | "listening" | "paused" | "processing";
   meeting: Meeting | null; levels: { me: number; them: number }; aside: boolean;
   sidecar: "running" | "starting" | "stopped" | "missing" | "error"; last_error: string | null;
-  pending_requests: number };
+  pending_requests: number;
+  teams_call: { active: boolean; title: string | null } };
 type AgentInfo = { id: string; name: string; support: "supported" | "experimental" | "generic";
   installed: boolean; version: string | null; error: string | null;
   capabilities: { resume_session: boolean; stream_json: boolean; read_only_files: boolean;
@@ -283,7 +297,7 @@ type Settings = /* section 4 */;
 | Commande | Arguments | Retour |
 |---|---|---|
 | `live_state` | — | `LiveState` |
-| `start_meeting` | `title?: string` | `Meeting` |
+| `start_meeting` | `title?: string` (sans titre : titre de la fenêtre Teams si un appel est en cours) | `Meeting` |
 | `stop_meeting` | — | `null` |
 | `set_aside` | `on: boolean` | `null` |
 | `set_live_confidential` | `on: boolean` | `null` |
@@ -330,6 +344,7 @@ type Settings = /* section 4 */;
 | `wake_test_record` | `seconds: number` | `{ text: string }` |
 | `doctor` | — | `DoctorItem[]` |
 | `delete_all_data` | — | `null` |
+| `log_ui_error` | `message` | `null` (consigné dans logs/scribe.log) |
 
 ### Événements (`listen`)
 
@@ -355,3 +370,19 @@ type Settings = /* section 4 */;
   intentions, phrase privée…).
 - `fixtures/agent-*.sh` : faux agents (scripts) qui imitent la sortie des CLI pour tester
   les adaptateurs sans abonnement.
+
+---
+
+## 7. Backend HTTP (`scribe serve`)
+
+`scribe serve --port 4180 --ui app/ui/dist` expose l'API du §5 sur `127.0.0.1` et sert
+l'interface sur la même origine. Ouvrir `http://127.0.0.1:4180/?backend=http`.
+
+- `POST /api/invoke/<commande>` : corps = arguments JSON en camelCase (vide = aucun) ;
+  200 → JSON du résultat (`null` si rien) ; 400 → `{"error": "…"}` ; 404 si commande inconnue.
+- `GET /api/events` : flux SSE ; `event:` = nom de l'événement du §5, `data:` = charge JSON.
+- Variables : `SCRIBE_HOME`, `SCRIBE_SIDECAR` (ex. `scribe replay fichier.jsonl --speed 20`).
+- `pick_folder` renvoie `null` (pas de sélecteur natif).
+
+Le répartiteur (`scribe_core::api::dispatch`) couvre exactement les commandes du §5 ; un test
+vérifie que chaque commande listée ici est connue.

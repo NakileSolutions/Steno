@@ -636,6 +636,16 @@ pub(crate) fn create_request(
                 None => finish(&mut r, "done", "Aucune demande en cours.".into(), "Aucune demande en cours.".into()),
             }
         }
+        Intent::Stop => {
+            let live = inner.db.live_meeting()?;
+            match live {
+                Some(_) => {
+                    inner.send_live(LiveCmd::StopRequested);
+                    finish(&mut r, "done", "⏹ Écoute arrêtée.".into(), "Écoute arrêtée. Le compte rendu est en préparation.".into());
+                }
+                None => finish(&mut r, "done", "Aucune écoute en cours.".into(), "Aucune écoute en cours.".into()),
+            }
+        }
         Intent::Note => {
             let Some(m) = &meeting else { bail!("aucune réunion en cours pour cette note") };
             let is_action = verb.map(|v| crate::text::normalize(v).contains("action")).unwrap_or(false)

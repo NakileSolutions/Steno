@@ -91,6 +91,7 @@ export const INTENT_LABEL: Record<string, string> = {
   note: 'Note',
   recap: 'Récap',
   cancel: 'Annulation',
+  stop: 'Arrêt de l’écoute',
   history: 'Historique',
 };
 export const ORIGIN_LABEL: Record<string, string> = {

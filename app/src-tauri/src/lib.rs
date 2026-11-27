@@ -72,37 +72,19 @@ fn forward_events(app: tauri::AppHandle, core: Core) {
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(_) => break,
             };
-            match ev {
-                CoreEvent::Live(st) => {
-                    if let Some(tray) = app.tray_by_id("scribe") {
-                        let tip = match (&st.meeting, st.state.as_str()) {
-                            (Some(m), _) => format!("Scribe — ● écoute : {}", m.title.clone().unwrap_or_default()),
-                            _ => "Scribe — en attente".to_string(),
-                        };
-                        let _ = tray.set_tooltip(Some(tip));
-                        #[cfg(target_os = "macos")]
-                        let _ = tray.set_title(if st.meeting.is_some() { Some("●") } else { None });
-                    }
-                    let mut st = st;
-                    st.pending_requests = core.db().count_active_requests().unwrap_or(0);
-                    let _ = app.emit("scribe://live", st);
-                }
-                CoreEvent::Segment(s) => {
-                    let _ = app.emit("scribe://segment", s);
-                }
-                CoreEvent::Request(r) => {
-                    let _ = app.emit("scribe://request", r);
-                }
-                CoreEvent::Report { meeting_id, version } => {
-                    let _ = app.emit("scribe://report", serde_json::json!({ "meeting_id": meeting_id, "version": version }));
-                }
-                CoreEvent::MeetingsChanged => {
-                    let _ = app.emit("scribe://meetings", ());
-                }
-                CoreEvent::Notify { title, body, route: _ } => {
+            match &ev {
+                CoreEvent::Live(st) => tray::refresh(&app, st),
+                CoreEvent::Notify { title, body, .. } => {
                     let _ = app.notification().builder().title(title).body(body).show();
                 }
                 CoreEvent::CommandDetected => play_feedback(&core),
+                _ => {}
+            }
+            if let Some((name, mut payload)) = ev.to_wire() {
+                if name == "scribe://live" {
+                    payload["pending_requests"] = core.db().count_active_requests().unwrap_or(0).into();
+                }
+                let _ = app.emit(name, payload);
             }
         }
     });

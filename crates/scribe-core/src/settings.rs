@@ -108,6 +108,10 @@ pub fn default_verbs() -> BTreeMap<String, Vec<String>> {
     m.insert("note".into(), v(&["note", "ajoute une action", "retiens"]));
     m.insert("recap".into(), v(&["résume", "récap", "récapitule"]));
     m.insert("cancel".into(), v(&["annule"]));
+    m.insert(
+        "stop".into(),
+        v(&["arrête l'écoute", "arrête d'écouter", "arrête la transcription", "termine la réunion", "fin de la réunion"]),
+    );
     m
 }
 
@@ -160,9 +164,13 @@ impl Default for Shortcuts {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct AudioSettings {
+    /// Proposer de démarrer l'écoute quand un appel Teams commence (notification seulement :
+    /// l'écoute ne démarre jamais toute seule).
     pub auto_detect_teams: bool,
     pub silence_ms: u32,
     pub vocabulary: Vec<String>,
+    /// Obsolète (l'écoute ne s'arrête plus à la fin de l'appel Teams) ; conservé pour la
+    /// compatibilité des réglages enregistrés.
     pub end_grace_s: u32,
     pub shortcuts: Shortcuts,
 }

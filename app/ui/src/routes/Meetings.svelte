@@ -3,7 +3,8 @@
   import { api, onEvent } from '../lib/api';
   import { router, href } from '../lib/router.svelte';
   import type { MeetingFilter, MeetingSummary } from '../lib/types';
-  import { dayLabel, debounce, duration, highlight, isoDate, time } from '../lib/format';
+  import { debounce, duration, highlight, isoDate, time } from '../lib/format';
+  import { groupByDay } from '../lib/group';
   import { toastError } from '../lib/ui.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import MeetingDetail from './MeetingDetail.svelte';
@@ -59,16 +60,7 @@
 
   onMount(() => onEvent('scribe://meetings', () => load()));
 
-  const groups = $derived.by(() => {
-    const out: { day: string; items: MeetingSummary[] }[] = [];
-    for (const m of list) {
-      const day = dayLabel(m.started_at);
-      const last = out.at(-1);
-      if (last && last.day === day) last.items.push(m);
-      else out.push({ day, items: [m] });
-    }
-    return out;
-  });
+  const groups = $derived(groupByDay(list));
 
   function listKeydown(e: KeyboardEvent) {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;

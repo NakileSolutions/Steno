@@ -371,9 +371,10 @@ function incident(): MeetingStore {
 
 // ---------- Réunion en direct ----------
 
-export const LIVE_ID = 'refinement-sprint-48';
+/** Titre de l'appel Teams simulé (proposé, jamais démarré automatiquement). */
+export const TEAMS_TITLE = 'Refinement ORION — sprint 48';
 
-/** Script joué en boucle par la réunion en direct simulée. */
+/** Script joué en boucle pendant l'écoute simulée (après « Démarrer l'écoute »). */
 export const LIVE_SCRIPT: [speaker: string, text: string][] = [
   ['Eux-1', 'On attaque le ticket APP-1260 : la validation des numéros de cadre dans ms-booking.'],
   ['Moi', 'Scribe, cherche la règle de validation du numéro de cadre dans ms-booking.'],
@@ -389,43 +390,8 @@ export const LIVE_SCRIPT: [speaker: string, text: string][] = [
   ['Eux-2', 'Vas-y, je te l’assigne.'],
 ];
 
-function live(): MeetingStore {
-  const start = new Date(Date.now() - 12 * 60 * 1000 - 20 * 1000);
-  const id = LIVE_ID;
-  const lines: Line[] = [
-    [4, 'Eux-1', 'Bonjour, on fait le refinement du sprint 48. Six tickets à voir.'],
-    [16, 'Moi', 'Salut. Je propose de commencer par ceux qui bloquent la mise en production de mardi.'],
-    [31, 'Eux-2', 'Alors APP-1255 en premier : le timeout vers ms-stations.'],
-    [48, 'Moi', 'On a déjà décidé ce matin de passer le batch en pagination par 500.'],
-    [65, 'Eux-1', 'Il reste à monter le délai d’attente du client à cinq secondes.'],
-    [80, 'Eux-2', 'Un point pour celui-là, c’est de la configuration.'],
-    [96, 'Moi', 'Ok, un point.'],
-  ];
-  return {
-    meeting: {
-      id, title: 'Refinement ORION — sprint 48', title_source: 'teams_window', started_at: iso(start), ended_at: null,
-      status: 'live', confidential: false, agent_provider: 'claude-code', correlation: 'on_demand',
-    },
-    segments: buildSegments(id, start, lines),
-    speakers: [{ label: 'Moi', display_name: null }, { label: 'Eux-1', display_name: 'Marie' }, { label: 'Eux-2', display_name: null }],
-    notes: [],
-    requests: [{
-      id: 'req-live-0', meeting_id: id, created_at: iso(plus(start, 70)), origin: 'text', intent: 'search',
-      query: 'Quel est le délai d’attente actuel du client ms-stations ?', context_seconds: 120, tier: 'search', status: 'done',
-      started_at: iso(plus(start, 71)), finished_at: iso(plus(start, 92)), error: null,
-      summary: '2 s, défini dans StationClient.java:48 (propriété address.client.timeout).',
-      answer_md: `Le délai est de **2 s**, défini par la propriété \`address.client.timeout\` lue dans \`StationClient.java:48\` (valeur par défaut, aucune surcharge en production).
-
-**Sources**
-- [StationClient.java:48](${GITLAB}/address/StationClient.java#L48)`,
-      tools_used: ['code.grep', 'code.read'],
-    }],
-    reports: [], refs: [], decisions: [], actions: [], drafts: [],
-  };
-}
-
 export function seedMeetings(): MeetingStore[] {
-  return [live(), daily(), archi(), oneOnOne(), incident()];
+  return [daily(), archi(), oneOnOne(), incident()];
 }
 
 /** Demandes faites hors réunion (historique). */
@@ -469,6 +435,7 @@ export function defaultSettings(): Settings {
         note: ['note', 'ajoute une action', 'retiens'],
         recap: ['résume', 'récap', 'récapitule'],
         cancel: ['annule'],
+        stop: ["arrête l'écoute", "arrête d'écouter", 'arrête la transcription', 'termine la réunion', 'fin de la réunion'],
       },
       feedback: 'system',
     },
@@ -476,7 +443,6 @@ export function defaultSettings(): Settings {
       auto_detect_teams: true,
       silence_ms: 1000,
       vocabulary: ['ms-booking', 'ms-stations', 'ms-pricing', 'ORION', 'Brindille'],
-      end_grace_s: 60,
       shortcuts: { toggle: 'Ctrl+Alt+S', aside: 'Ctrl+Alt+Space', quick_note: 'Ctrl+Alt+N' },
     },
     correlation: { mode: 'on_demand', budget: 30, exclude_words: ['1:1', 'RH', 'entretien', 'perso'] },

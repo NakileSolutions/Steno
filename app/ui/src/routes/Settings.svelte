@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '../lib/api';
+  import { setPrefs } from '../lib/prefs.svelte';
   import { router, setQuery } from '../lib/router.svelte';
   import { SETTINGS_SECTIONS } from '../lib/sections';
   import type { Settings } from '../lib/types';
@@ -40,6 +41,7 @@
     saving = true;
     try {
       const s = await api.saveSettings($state.snapshot(settings) as Settings);
+      setPrefs(s);
       settings = s;
       saved = JSON.stringify(s);
       toast('Réglages enregistrés.');
@@ -53,6 +55,7 @@
     if (saved) settings = JSON.parse(saved);
   }
   function replaced(s: Settings) {
+    setPrefs(s);
     settings = s;
     saved = JSON.stringify(s);
   }

@@ -276,6 +276,9 @@ mod tests {
         assert_eq!(r.verb.as_deref(), Some("ajoute une action"));
         assert_eq!(d.detect("Scribe, résume").unwrap().intent, Intent::Recap);
         assert_eq!(d.detect("Scribe annule").unwrap().intent, Intent::Cancel);
+        assert_eq!(d.detect("Scribe, arrête l'écoute.").unwrap().intent, Intent::Stop);
+        assert_eq!(d.detect("Scribe, termine la réunion").unwrap().intent, Intent::Stop);
+        assert_ne!(d.detect("Scribe, arrête de chercher").map(|x| x.intent), Some(Intent::Stop), "« arrête » seul n'arrête rien");
         assert_eq!(d.detect("Bon, Scribe, regarde le ticket APP-42").unwrap().intent, Intent::Search);
         assert_eq!(d.detect("Scribe, tu peux chercher le runbook de ms-pricing ?").unwrap().intent, Intent::Search);
         assert_eq!(d.detect("Scribe, vérifiez la config de prod").unwrap().intent, Intent::Check);

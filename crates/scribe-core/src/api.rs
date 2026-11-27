@@ -1,0 +1,178 @@
+//! Répartiteur générique de l'API de l'app (docs/contracts.md §5) : nom de commande + arguments
+//! JSON (camelCase, comme Tauri) → résultat JSON. Utilisé par `scribe serve` (backend HTTP des
+//! tests e2e et du développement sans Tauri). L'app Tauri expose les mêmes commandes, typées.
+
+use crate::core::Core;
+use crate::model::{ActionFilter, MeetingFilter, Repo};
+use crate::settings::Settings;
+use serde::de::DeserializeOwned;
+use serde_json::{json, Value};
+
+/// Commandes du contrat (l'ordre suit docs/contracts.md §5).
+pub const COMMANDS: &[&str] = &[
+    "live_state", "start_meeting", "stop_meeting", "set_aside", "set_live_confidential", "ask", "ask_history",
+    "cancel_request", "recent_requests", "list_meetings", "get_meeting", "get_transcript", "get_report_version",
+    "rename_meeting", "set_confidential", "delete_meeting", "rename_speaker", "add_note", "update_note",
+    "delete_note", "regenerate_report", "correlate", "export_meeting", "search", "list_actions",
+    "set_action_status", "list_decisions", "get_settings", "save_settings", "export_settings", "import_settings",
+    "detect_agents", "test_agent", "list_connectors", "refresh_connectors", "update_connector", "list_repos",
+    "add_repo", "update_repo", "remove_repo", "pick_folder", "check_wake_word", "generate_variants",
+    "check_variants", "wake_detect", "wake_test_record", "doctor", "delete_all_data", "log_ui_error",
+];
+
+struct Args(Value);
+
+impl Args {
+    fn get<T: DeserializeOwned>(&self, k: &str) -> Result<T, String> {
+        let v = self.0.get(k).cloned().unwrap_or(Value::Null);
+        serde_json::from_value(v).map_err(|e| format!("argument « {k} » invalide : {e}"))
+    }
+    fn opt<T: DeserializeOwned>(&self, k: &str) -> Result<Option<T>, String> {
+        match self.0.get(k) {
+            None | Some(Value::Null) => Ok(None),
+            Some(v) => serde_json::from_value(v.clone()).map(Some).map_err(|e| format!("argument « {k} » invalide : {e}")),
+        }
+    }
+    fn s(&self, k: &str) -> Result<String, String> {
+        self.get::<String>(k)
+    }
+}
+
+fn ok<T: serde::Serialize>(v: T) -> Result<Value, String> {
+    serde_json::to_value(v).map_err(|e| e.to_string())
+}
+
+fn e(err: anyhow::Error) -> String {
+    format!("{err:#}")
+}
+
+/// Exécute une commande. Erreur = message en français.
+pub async fn dispatch(core: &Core, cmd: &str, args: Value) -> Result<Value, String> {
+    let a = Args(if args.is_null() { json!({}) } else { args });
+    let db = core.db();
+    match cmd {
+        "live_state" => ok(core.live_state()),
+        "start_meeting" => ok(core.start_meeting(a.opt("title")?).await.map_err(e)?),
+        "stop_meeting" => ok(core.stop_meeting().await.map_err(e)?),
+        "set_aside" => {
+            core.set_aside(a.get("on")?);
+            ok(())
+        }
+        "set_live_confidential" => ok(core.set_live_confidential(a.get("on")?).map_err(e)?),
+        "ask" => ok(core.ask(&a.s("query")?, a.opt::<String>("meetingId")?.as_deref(), "text").map_err(e)?),
+        "ask_history" => ok(core.ask_history(&a.s("query")?, "text").map_err(e)?),
+        "cancel_request" => ok(core.cancel_request(&a.s("id")?).map_err(e)?),
+        "recent_requests" => ok(core.recent_requests(a.opt::<i64>("limit")?.unwrap_or(5).clamp(1, 200)).map_err(e)?),
+        "list_meetings" => ok(db.list_meetings(&a.opt::<MeetingFilter>("filter")?.unwrap_or_default()).map_err(e)?),
+        "get_meeting" => ok(db.meeting_detail(&a.s("id")?).map_err(e)?.ok_or("réunion introuvable")?),
+        "get_transcript" => ok(db.segments(&a.s("id")?, a.opt("includePrivate")?.unwrap_or(false), true).map_err(e)?),
+        "get_report_version" => {
+            ok(db.get_report_version(&a.s("id")?, a.get("version")?).map_err(e)?.ok_or("version introuvable")?)
+        }
+        "rename_meeting" => ok(core.rename_meeting(&a.s("id")?, &a.s("title")?).map_err(e)?),
+        "set_confidential" => ok(core.set_confidential(&a.s("id")?, a.get("on")?).map_err(e)?),
+        "delete_meeting" => ok(core.delete_meeting(&a.s("id")?).map_err(e)?),
+        "rename_speaker" => ok(db.rename_speaker(&a.s("meetingId")?, &a.s("label")?, &a.s("displayName")?).map_err(e)?),
+        "add_note" => ok(core.add_note(&a.s("meetingId")?, &a.s("text")?).map_err(e)?),
+        "update_note" => ok(db.update_note(a.get("id")?, &a.s("text")?).map_err(e)?),
+        "delete_note" => ok(db.delete_note(a.get("id")?).map_err(e)?),
+        "regenerate_report" => ok(core.regenerate_report(&a.s("id")?).map_err(e)?),
+        "correlate" => ok(core.correlate(&a.s("id")?).map_err(e)?),
+        "export_meeting" => ok(core.export_meeting(&a.s("id")?).map_err(e)?),
+        "search" => ok(db.search(&a.s("query")?, 100).map_err(e)?),
+        "list_actions" => ok(db.list_actions(&a.opt::<ActionFilter>("filter")?.unwrap_or_default()).map_err(e)?),
+        "set_action_status" => {
+            let st = a.s("status")?;
+            if st != "open" && st != "done" {
+                return Err("statut inconnu".into());
+            }
+            ok(db.set_action_status(a.get("id")?, &st).map_err(e)?)
+        }
+        "list_decisions" => ok(db.list_decisions(a.opt::<String>("since")?.as_deref()).map_err(e)?),
+        "get_settings" => ok(core.settings()),
+        "save_settings" => ok(core.save_settings(a.get::<Settings>("settings")?).map_err(e)?),
+        "export_settings" => ok(core.export_settings().map_err(e)?),
+        "import_settings" => ok(core.import_settings(&a.s("toml")?).map_err(e)?),
+        "detect_agents" => ok(core.detect_agents().await),
+        "test_agent" => {
+            let (okk, message, ms) = core.test_agent(&a.s("provider")?).await.map_err(e)?;
+            ok(json!({ "ok": okk, "message": message, "duration_ms": ms }))
+        }
+        "list_connectors" => ok(core.list_connectors().map_err(e)?),
+        "refresh_connectors" => ok(core.refresh_connectors().await.map_err(e)?),
+        "update_connector" => {
+            ok(db.update_connector(a.get("id")?, a.get("useLive")?, a.get("useCorrelation")?).map_err(e)?)
+        }
+        "list_repos" => ok(db.list_repos().map_err(e)?),
+        "add_repo" => {
+            let path = a.s("path")?;
+            let p = std::path::Path::new(&path);
+            if !p.is_dir() {
+                return Err(format!("dossier introuvable : {path}"));
+            }
+            let abs = p.canonicalize().map_err(|x| x.to_string())?;
+            let label = a
+                .opt::<String>("label")?
+                .filter(|l| !l.trim().is_empty())
+                .or_else(|| abs.file_name().map(|n| n.to_string_lossy().to_string()))
+                .unwrap_or_default();
+            ok(db.add_repo(&abs.display().to_string(), &label).map_err(e)?)
+        }
+        "update_repo" => ok(db.update_repo(&a.get::<Repo>("repo")?).map_err(e)?),
+        "remove_repo" => ok(db.remove_repo(a.get("id")?).map_err(e)?),
+        // Pas de sélecteur de dossier hors de l'app : l'interface propose la saisie du chemin.
+        "pick_folder" => ok(Value::Null),
+        "check_wake_word" => ok(core.check_wake_word(&a.s("word")?, a.opt("strict")?.unwrap_or(false)).map_err(e)?),
+        "generate_variants" => ok(core.generate_variants(&a.s("word")?)),
+        "check_variants" => ok(core.check_variants(&a.s("word")?, &a.get::<Vec<String>>("variants")?)),
+        "wake_detect" => ok(match core.wake_detect(&a.s("text")?) {
+            Some(d) => json!({ "detected": true, "intent": d.intent.as_str(), "query": d.query }),
+            None => json!({ "detected": false, "intent": null, "query": null }),
+        }),
+        "wake_test_record" => {
+            let secs: u32 = a.opt("seconds")?.unwrap_or(5);
+            let secs = secs.clamp(1, 60);
+            let text = tokio::time::timeout(std::time::Duration::from_secs(secs as u64 + 30), core.wake_test_record(secs))
+                .await
+                .map_err(|_| "le micro n'a rien renvoyé à temps".to_string())?
+                .map_err(e)?;
+            ok(json!({ "text": text }))
+        }
+        "doctor" => ok(crate::doctor::run(core, false).await),
+        "delete_all_data" => ok(core.delete_all_data().map_err(e)?),
+        "log_ui_error" => {
+            tracing::error!(target: "ui", "{}", a.s("message").unwrap_or_default());
+            ok(())
+        }
+        other => Err(format!("commande inconnue : {other}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn toutes_les_commandes_du_contrat_sont_connues() {
+        let core = Core::new(crate::Db::open_in_memory().unwrap(), Default::default()).unwrap();
+        // Le contrat (docs/contracts.md) doit lister chaque commande, et le répartiteur la connaître.
+        let contract = include_str!("../../../docs/contracts.md");
+        for c in COMMANDS {
+            if *c != "log_ui_error" {
+                assert!(contract.contains(&format!("`{c}`")), "{c} absente de docs/contracts.md");
+            }
+            // Arguments vides : erreur d'argument possible, mais jamais « commande inconnue ».
+            if matches!(*c, "delete_all_data" | "start_meeting" | "stop_meeting" | "wake_test_record" | "detect_agents" | "doctor" | "refresh_connectors" | "test_agent") {
+                continue;
+            }
+            if let Err(m) = dispatch(&core, c, json!({})).await {
+                assert!(!m.contains("commande inconnue"), "{c} : {m}");
+            }
+        }
+        assert!(dispatch(&core, "nope", json!({})).await.unwrap_err().contains("inconnue"));
+        let s = dispatch(&core, "get_settings", Value::Null).await.unwrap();
+        assert_eq!(s["voice"]["wake_word"], "Scribe");
+        let d = dispatch(&core, "wake_detect", json!({"text": "Scribe, arrête l'écoute"})).await.unwrap();
+        assert_eq!(d["intent"], "stop");
+    }
+}

@@ -35,6 +35,8 @@ pub enum Intent {
     Note,
     Recap,
     Cancel,
+    /// Arrêter l'écoute (« Scribe, arrête l'écoute »).
+    Stop,
     /// Question sur l'historique des réunions (écran Recherche, `scribe ask`).
     History,
 }
@@ -47,6 +49,7 @@ impl Intent {
             Intent::Note => "note",
             Intent::Recap => "recap",
             Intent::Cancel => "cancel",
+            Intent::Stop => "stop",
             Intent::History => "history",
         }
     }
@@ -57,18 +60,19 @@ impl Intent {
             "note" => Intent::Note,
             "recap" => Intent::Recap,
             "cancel" => Intent::Cancel,
+            "stop" => Intent::Stop,
             "history" => Intent::History,
             _ => return None,
         })
     }
-    pub fn all() -> [Intent; 5] {
-        [Intent::Search, Intent::Check, Intent::Note, Intent::Recap, Intent::Cancel]
+    pub fn all() -> [Intent; 6] {
+        [Intent::Search, Intent::Check, Intent::Note, Intent::Recap, Intent::Cancel, Intent::Stop]
     }
     /// Niveau de modèle utilisé pour cette intention.
     pub fn tier(&self) -> Tier {
         match self {
             Intent::Search | Intent::Check | Intent::History => Tier::Search,
-            Intent::Note | Intent::Recap | Intent::Cancel => Tier::Quick,
+            Intent::Note | Intent::Recap | Intent::Cancel | Intent::Stop => Tier::Quick,
         }
     }
 }

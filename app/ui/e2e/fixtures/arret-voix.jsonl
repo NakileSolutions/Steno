@@ -1,0 +1,9 @@
+{"type": "teams_call", "active": true, "title": "Point mise en production"}
+{"type": "state", "state": "listening"}
+{"type": "segment", "ts": "2026-11-27T14:00:03+01:00", "t0": 1.2, "t1": 4.0, "channel": "them", "text": "Bonjour, petit point rapide sur la mise en production de ms-booking.", "private": false}
+{"type": "segment", "ts": "2026-11-27T14:00:07+01:00", "t0": 5.1, "t1": 8.3, "channel": "me", "text": "Tout est prêt de mon côté, les tests de recette sont verts.", "private": false}
+{"type": "segment", "ts": "2026-11-27T14:00:11+01:00", "t0": 9.4, "t1": 12.6, "channel": "them", "text": "Parfait, on déploie mardi matin comme prévu.", "private": false}
+{"type": "segment", "ts": "2026-11-27T14:00:15+01:00", "t0": 13.7, "t1": 16.0, "channel": "them", "text": "Merci à tous, on peut s'arrêter là.", "private": false}
+{"type": "segment", "ts": "2026-11-27T14:00:18+01:00", "t0": 17.1, "t1": 19.0, "channel": "me", "text": "Scribe, arrête l'écoute.", "private": false}
+{"type": "segment", "ts": "2026-11-27T14:00:40+01:00", "t0": 38.0, "t1": 41.5, "channel": "them", "text": "Phrase dite après l'arrêt : elle ne doit jamais être transcrite.", "private": false}
+{"type": "segment", "ts": "2026-11-27T14:00:46+01:00", "t0": 44.0, "t1": 47.0, "channel": "me", "text": "Encore une phrase après l'arrêt.", "private": false}

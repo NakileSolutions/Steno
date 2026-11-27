@@ -47,7 +47,7 @@ export type Note = {
 };
 
 export type RequestStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled' | 'refused';
-export type Intent = 'search' | 'check' | 'note' | 'recap' | 'cancel' | 'history';
+export type Intent = 'search' | 'check' | 'note' | 'recap' | 'cancel' | 'stop' | 'history';
 export type Tier = 'quick' | 'search' | 'summary';
 
 export type Request = {
@@ -135,6 +135,8 @@ export type LiveState = {
   sidecar: 'running' | 'starting' | 'stopped' | 'missing' | 'error';
   last_error: string | null;
   pending_requests: number;
+  /** Appel Teams en cours (détecté par le sidecar). N'entraîne jamais de démarrage automatique. */
+  teams_call: { active: boolean; title: string | null };
 };
 
 export type AgentInfo = {
@@ -202,6 +204,7 @@ export type VoiceVerbs = {
   note: string[];
   recap: string[];
   cancel: string[];
+  stop: string[];
 };
 
 export type Settings = {
@@ -224,10 +227,12 @@ export type Settings = {
     feedback: 'none' | 'system' | 'headset';
   };
   audio: {
+    /** Proposer de démarrer l'écoute quand un appel Teams commence (notification seulement). */
     auto_detect_teams: boolean;
     silence_ms: number;
     vocabulary: string[];
-    end_grace_s: number;
+    /** Obsolète : la fin d'un appel Teams ne termine plus la réunion. Conservé tel quel s'il est présent. */
+    end_grace_s?: number;
     shortcuts: { toggle: string; aside: string; quick_note: string };
   };
   correlation: { mode: 'off' | 'on_demand' | 'auto'; budget: number; exclude_words: string[] };

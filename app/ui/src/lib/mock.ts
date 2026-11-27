@@ -8,13 +8,13 @@ import type {
   VariantCheck, WakeCheck, WakeDetect,
 } from './types';
 import {
-  LIVE_SCRIPT, defaultSettings, iso, nextIds, seedAgents, seedConnectors,
+  LIVE_SCRIPT, TEAMS_TITLE, defaultSettings, iso, nextIds, seedAgents, seedConnectors,
   seedHistoryRequests, seedMeetings, seedRepos, type MeetingStore,
 } from './mock-data';
+import { detectWake, fold } from './wake';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const clone = <T>(v: T): T => structuredClone(v);
-const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 const BANNED_VARIANTS: Record<string, string> = {
   script: 'Mot courant en réunion de dev (liste intégrée).',
@@ -55,14 +55,16 @@ export function createMockBackend(): Backend {
     return m;
   };
 
+  // L'écoute ne démarre jamais seule : un appel Teams est simplement signalé.
   const live: LiveState = {
-    state: 'listening',
-    meeting: clone(liveStore()!.meeting),
-    levels: { me: -60, them: -60 },
+    state: 'idle',
+    meeting: null,
+    levels: { me: -90, them: -90 },
     aside: false,
     sidecar: 'running',
     last_error: null,
     pending_requests: 0,
+    teams_call: { active: true, title: TEAMS_TITLE },
   };
   const emitLive = () => {
     live.pending_requests = allRequests().filter((r) => r.status === 'queued' || r.status === 'running').length;
@@ -104,33 +106,7 @@ export function createMockBackend(): Backend {
     return seg;
   }
 
-  function wakeDetect(text: string): WakeDetect {
-    const words = fold(text).replace(/[^\p{L}\p{N}\s'’-]/gu, ' ').split(/\s+/).filter(Boolean);
-    const wake = new Set([fold(settings.voice.wake_word), ...settings.voice.variants.map(fold)]);
-    const prefixes = settings.voice.prefixes.map(fold);
-    let idx = -1;
-    for (let i = 0; i < Math.min(2, words.length); i++) {
-      if (wake.has(words[i])) {
-        if (settings.voice.strict && !(i === 1 && prefixes.includes(words[0]))) continue;
-        idx = i;
-        break;
-      }
-    }
-    if (idx < 0) return { detected: false, intent: null, query: null };
-    const orig = text.replace(/[^\p{L}\p{N}\s'’-]/gu, ' ').split(/\s+/).filter(Boolean);
-    const rest = words.slice(idx + 1);
-    const restText = rest.join(' ');
-    for (const [intent, verbs] of Object.entries(settings.voice.verbs)) {
-      for (const v of verbs as string[]) {
-        const fv = fold(v);
-        if (restText === fv || restText.startsWith(fv + ' ')) {
-          const n = fv.split(' ').length;
-          return { detected: true, intent, query: orig.slice(idx + 1 + n).join(' ') || null };
-        }
-      }
-    }
-    return { detected: true, intent: 'search', query: orig.slice(idx + 1).join(' ') || null };
-  }
+  const wakeDetect = (text: string): WakeDetect => detectWake(text, settings.voice);
 
   function createRequest(query: string, meetingId: string | null, origin: Request['origin'], intent?: Request['intent']): Request {
     const q = query.trim();
@@ -150,6 +126,15 @@ export function createMockBackend(): Backend {
     const store = meetingId ? meetings.find((m) => m.meeting.id === meetingId) : undefined;
     if (store) store.requests.push(req);
     else historyRequests.push(req);
+
+    // Politique lecture seule : toute demande de publication est refusée.
+    if (/\b(poste|publie|envoie|partage)\b/i.test(q) && it !== 'note') {
+      req.status = 'refused';
+      req.error = 'Demande refusée : le Scribe ne publie rien à l’extérieur (lecture seule).';
+      req.finished_at = iso(new Date());
+      setTimeout(() => { emit('scribe://request', req); emitLive(); }, 50);
+      return clone(req);
+    }
 
     if (store?.meeting.confidential && it !== 'note') {
       req.status = 'refused';
@@ -193,21 +178,42 @@ export function createMockBackend(): Backend {
     return clone(req);
   }
 
-  const segTimer = () => {
-    const store = liveStore();
-    if (!store || live.state !== 'listening') return;
-    const [speaker, text] = LIVE_SCRIPT[scriptPos % LIVE_SCRIPT.length];
-    scriptPos++;
+  /** Une phrase entendue pendant l'écoute : transcrite, puis éventuellement commande vocale. */
+  function hear(store: MeetingStore, speaker: string, text: string) {
     speaking = { me: speaker === 'Moi', them: speaker !== 'Moi' };
     setTimeout(() => (speaking = { me: false, them: false }), 1600);
     const priv = live.aside && speaker === 'Moi';
     const seg = pushSegment(store, speaker, text, priv);
     const det = speaker === 'Moi' && !priv ? wakeDetect(text) : null;
+    if (det?.detected && det.intent === 'stop') {
+      // « Scribe, arrête l'écoute » : seule façon, avec le bouton et le raccourci, de terminer.
+      const now = iso(new Date());
+      const req: Request = {
+        id: `req-${++reqSeq}`, meeting_id: store.meeting.id, created_at: now, origin: 'voice', intent: 'stop',
+        query: text.replace(/^[^,]*,\s*/, '').replace(/[.!]+$/, ''), context_seconds: null, tier: 'quick',
+        status: 'done', started_at: now, finished_at: now, error: null, summary: 'Écoute arrêtée.',
+        answer_md: 'Écoute arrêtée à la voix. Le compte rendu est en préparation.', tools_used: [],
+      };
+      store.requests.push(req);
+      seg.request_id = req.id;
+      emit('scribe://segment', seg);
+      emit('scribe://request', req);
+      setTimeout(() => liveStore() === store && finishMeeting(store), 300);
+      return;
+    }
     if (det?.detected && det.query) {
       const req = createRequest(det.query, store.meeting.id, 'voice', det.intent as Request['intent']);
       seg.request_id = req.id;
     }
     emit('scribe://segment', seg);
+  }
+
+  const segTimer = () => {
+    const store = liveStore();
+    if (!store || live.state !== 'listening') return;
+    const [speaker, text] = LIVE_SCRIPT[scriptPos % LIVE_SCRIPT.length];
+    scriptPos++;
+    hear(store, speaker, text);
   };
   setInterval(segTimer, 2800);
 
@@ -356,7 +362,7 @@ export function createMockBackend(): Backend {
       const start = new Date();
       const id = `reunion-${start.getTime()}`;
       const meeting: Meeting = {
-        id, title: (a.title as string) || 'Réunion Teams', title_source: a.title ? 'user' : 'teams_window',
+        id, title: (a.title as string) || live.teams_call.title || 'Réunion', title_source: a.title ? 'user' : live.teams_call.active ? 'teams_window' : null,
         started_at: iso(start), ended_at: null, status: 'live', confidential: false,
         agent_provider: settings.agent.provider, correlation: settings.correlation.mode,
       };
@@ -690,6 +696,22 @@ export function createMockBackend(): Backend {
   };
 
   // Exposé pour le débogage dans la console du navigateur (mode faux backend uniquement).
-  (window as unknown as { __scribeMock?: unknown }).__scribeMock = { emit, live, get meetings() { return meetings; } };
+  (window as unknown as { __scribeMock?: unknown }).__scribeMock = {
+    emit,
+    live,
+    get meetings() { return meetings; },
+    /** Simule une phrase entendue (par défaut sur le micro) pendant l'écoute. */
+    say(text: string, speaker = 'Moi') {
+      const store = liveStore();
+      if (!store || live.state !== 'listening') return false;
+      hear(store, speaker, text);
+      return true;
+    },
+    /** Simule le début ou la fin d'un appel Teams (aucun effet sur l'écoute). */
+    teams(active: boolean, title: string | null = TEAMS_TITLE) {
+      live.teams_call = { active, title: active ? title : null };
+      emitLive();
+    },
+  };
   return backend;
 }

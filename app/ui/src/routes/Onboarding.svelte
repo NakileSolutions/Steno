@@ -2,6 +2,7 @@
   // Assistant de premier lancement (PLAN §14) : 6 étapes.
   import { onMount } from 'svelte';
   import { api } from '../lib/api';
+  import { setPrefs } from '../lib/prefs.svelte';
   import { navigate } from '../lib/router.svelte';
   import type { AgentInfo, Connector, DoctorItem, Repo, Settings, TestAgentResult, WakeCheck } from '../lib/types';
   import { debounce } from '../lib/format';
@@ -115,6 +116,7 @@
   async function persist() {
     if (!settings) return;
     settings = await api.saveSettings($state.snapshot(settings) as Settings);
+    setPrefs(settings);
   }
 
   async function next() {
@@ -170,7 +172,7 @@
 
         {#if STEPS[step].id === 'permissions'}
           <h1>Permissions macOS</h1>
-          <p class="lead">Le Scribe a besoin du micro, de l’audio du système (pour entendre Teams) et de l’accessibilité (pour lire le titre de la réunion).</p>
+          <p class="lead">Le Scribe a besoin du micro, de l’audio du système (pour entendre Teams) et de l’accessibilité (pour lire le titre de la réunion). Il n’écoute que lorsque vous démarrez l’écoute.</p>
           <ul class="doctor">
             {#each doctor as d (d.name)}
               <li class={d.status}>
@@ -232,7 +234,7 @@
 
         {:else if STEPS[step].id === 'wake'}
           <h1>Mot d’appel</h1>
-          <p class="lead">Pendant la réunion, dites « <strong>{settings.voice.wake_word || '…'}</strong>, cherche… » pour lancer une recherche. Seul votre micro peut le déclencher.</p>
+          <p class="lead">Pendant l’écoute, dites « <strong>{settings.voice.wake_word || '…'}</strong>, cherche… » pour lancer une recherche, et « <strong>{settings.voice.wake_word || '…'}</strong>, arrête l’écoute » pour terminer la réunion. Seul votre micro peut le déclencher.</p>
           <div class="row">
             <input class="input lg wake" bind:value={settings.voice.wake_word} aria-label="Mot d’appel" />
             <button class="btn" onclick={openWakeTest} disabled={!!wake?.errors.length}><Icon name="mic" size={14} />Tester…</button>

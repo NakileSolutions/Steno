@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { router, href, navigate } from '../lib/router.svelte';
   import { live, clock, STATE_LABEL } from '../lib/live.svelte';
+  import { isListening, teamsOffer } from '../lib/listening';
   import { recent, initRecent } from '../lib/meetings.svelte';
   import { api, isTauri } from '../lib/api';
   import { MAIN_SECTIONS, SETTINGS_SECTIONS } from '../lib/sections';
@@ -34,7 +35,8 @@
   const currentMeeting = $derived(section === 'meetings' ? router.route.parts[1] : undefined);
   const settingsSection = $derived(router.route.query.section ?? 'agent');
   const s = $derived(live.s);
-  const isLive = $derived(s.state === 'listening' || s.state === 'paused');
+  const isLive = $derived(isListening(s));
+  const offer = $derived(teamsOffer(s));
 
   onMount(initRecent);
 
@@ -85,6 +87,16 @@
           </span>
         {/if}
       </a>
+    {:else if offer}
+      <a class="live-card offer" href={href('/live')} title="Appel Teams détecté : {offer}. Le Scribe n’écoute pas encore.">
+        <Icon name="speaker" size={14} />
+        {#if !collapsed}
+          <span class="grow">
+            <span class="lc-state">Appel Teams détecté</span>
+            <span class="lc-title ellipsis">{offer}</span>
+          </span>
+        {/if}
+      </a>
     {/if}
 
     <div class="nav scroll">
@@ -132,9 +144,9 @@
     </div>
 
     <div class="foot">
-      <button class="start" class:stop={isLive} onclick={startStop} disabled={busy || s.state === 'processing'} title={isLive ? 'Arrêter la réunion' : 'Démarrer une réunion'}>
+      <button class="start" class:stop={isLive} onclick={startStop} disabled={busy || s.state === 'processing'} title={isLive ? 'Arrêter l’écoute' : 'Démarrer l’écoute'} aria-label={isLive ? 'Arrêter l’écoute' : 'Démarrer l’écoute'}>
         <Icon name={isLive ? 'stop' : 'play'} size={14} />
-        {#if !collapsed}<span>{isLive ? 'Arrêter la réunion' : 'Démarrer une réunion'}</span>{/if}
+        {#if !collapsed}<span>{isLive ? 'Arrêter l’écoute' : 'Démarrer l’écoute'}</span>{/if}
       </button>
     </div>
   </nav>
@@ -276,22 +288,29 @@
   .when { font-size: 11px; opacity: 0.75; flex: none; }
 
   .foot { flex: none; padding-top: 10px; border-top: 1px solid var(--side-line); }
+  .live-card.offer { color: var(--side-text); border-color: rgba(159, 180, 234, 0.28); background: rgba(159, 180, 234, 0.1); }
+  .live-card.offer :global(.icon) { color: #b9c8f0; }
+  .live-card.offer:hover { background: rgba(159, 180, 234, 0.15); }
+
+  /* « Démarrer l'écoute » : bien visible quand rien n'écoute. */
   .start {
     width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 7px;
-    height: 30px;
-    border-radius: 7px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    background: rgba(255, 255, 255, 0.06);
-    color: var(--side-text);
+    height: 34px;
+    border-radius: 8px;
+    border: 1px solid #f1f0ec;
+    background: #f1f0ec;
+    color: #1c202b;
     font: inherit;
-    font-weight: 500;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   }
-  .start:hover:not(:disabled) { background: rgba(255, 255, 255, 0.11); }
-  .start.stop { border-color: rgba(232, 103, 94, 0.5); color: #ffb3ad; }
+  .start:hover:not(:disabled) { background: #ffffff; }
+  .start.stop { border-color: rgba(232, 103, 94, 0.5); background: rgba(232, 103, 94, 0.1); color: #ffb3ad; box-shadow: none; font-weight: 500; }
+  .start.stop:hover:not(:disabled) { background: rgba(232, 103, 94, 0.16); }
   .start:disabled { opacity: 0.5; }
 
   .content { min-width: 0; min-height: 0; height: 100%; overflow: hidden; background: var(--bg); }

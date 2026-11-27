@@ -1,5 +1,9 @@
 // Couche d'accès au backend : commandes Tauri (docs/contracts.md §5) et événements.
-// Hors de Tauri (navigateur), bascule automatiquement sur le faux backend `mock.ts`.
+// Trois modes :
+//  - Tauri (l'app) : `invoke` / `listen` de Tauri ;
+//  - HTTP (`?backend=http` dans l'URL, servi par `scribe serve`) : POST /api/invoke/<commande>
+//    et un flux SSE /api/events, même origine ; les opérations de fenêtre sont sans effet ;
+//  - sinon (navigateur seul) : le faux backend en mémoire `mock.ts`.
 
 import type {
   Action, ActionFilter, AgentInfo, Connector, Decision, DoctorItem, EventMap, EventName,
@@ -21,6 +25,104 @@ export interface Backend {
 }
 
 export const isTauri: boolean = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+/** Mode backend HTTP (`?backend=http`) : tests e2e réels et développement sans Tauri. */
+export const isHttp: boolean =
+  !isTauri && typeof location !== 'undefined' && new URLSearchParams(location.search).get('backend') === 'http';
+
+/** Message d'erreur d'une réponse HTTP en échec : `{"error": "…"}`, sinon le texte brut ou le statut. */
+export function httpErrorMessage(status: number, body: string): string {
+  try {
+    const j = JSON.parse(body) as unknown;
+    if (j && typeof j === 'object' && typeof (j as { error?: unknown }).error === 'string') return (j as { error: string }).error;
+    if (typeof j === 'string' && j) return j;
+  } catch {
+    // Corps non JSON.
+  }
+  return body.trim() || `Erreur ${status} du serveur Scribe.`;
+}
+
+export function httpBackend(base = ''): Backend {
+  // Commandes traitées dans la page : pas de boîte de dialogue native hors de Tauri.
+  const local: Record<string, () => unknown> = { pick_folder: () => null };
+
+  // Une seule connexion SSE, ouverte au premier abonnement ; un écouteur par nom d'événement.
+  const subs = new Map<string, Set<(p: unknown) => void>>();
+  let es: EventSource | null = null;
+  let lostOnce = false;
+  const dispatch = (name: string, payload: unknown) => {
+    subs.get(name)?.forEach((cb) => {
+      try {
+        cb(payload);
+      } catch (e) {
+        console.error(e);
+      }
+    });
+  };
+  const attach = (name: string) => {
+    es?.addEventListener(name, (e) => {
+      let payload: unknown = null;
+      try {
+        payload = JSON.parse((e as MessageEvent<string>).data || 'null');
+      } catch {
+        return;
+      }
+      dispatch(name, payload);
+    });
+  };
+  const ensureSource = () => {
+    if (es) return;
+    es = new EventSource(`${base}/api/events`);
+    es.addEventListener('error', () => (lostOnce = true));
+    es.addEventListener('open', () => {
+      if (!lostOnce) return;
+      // Reconnexion : des événements ont pu être perdus, on resynchronise l'essentiel.
+      backend.invoke<LiveState>('live_state').then((s) => dispatch('scribe://live', s)).catch(() => {});
+      dispatch('scribe://meetings', null);
+    });
+    for (const name of subs.keys()) attach(name);
+  };
+
+  const backend: Backend = {
+    async invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+      if (cmd in local) return local[cmd]() as T;
+      let res: Response;
+      try {
+        res = await fetch(`${base}/api/invoke/${encodeURIComponent(cmd)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(args ?? {}),
+        });
+      } catch {
+        throw new Error('Serveur Scribe injoignable.');
+      }
+      const text = await res.text();
+      if (!res.ok) throw new Error(httpErrorMessage(res.status, text));
+      return (text ? JSON.parse(text) : null) as T;
+    },
+    async listen(name, cb) {
+      let set = subs.get(name);
+      if (!set) {
+        subs.set(name, (set = new Set()));
+        if (es) attach(name);
+      }
+      ensureSource();
+      const fn = cb as (p: unknown) => void;
+      set.add(fn);
+      return () => set!.delete(fn);
+    },
+    // Une seule page dans le navigateur : « ouvrir la fenêtre principale » revient à y naviguer.
+    async openMain(route) {
+      if (route) location.hash = '#' + route;
+      else if (location.hash.startsWith('#/tray')) location.hash = '#/meetings';
+    },
+    async hideCurrent() {},
+    async openExternal(url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    },
+  };
+  return backend;
+}
 
 async function tauriBackend(): Promise<Backend> {
   const core = await import('@tauri-apps/api/core');
@@ -57,7 +159,9 @@ async function tauriBackend(): Promise<Backend> {
 
 const backendPromise: Promise<Backend> = isTauri
   ? tauriBackend()
-  : import('./mock').then((m) => m.createMockBackend());
+  : isHttp
+    ? Promise.resolve(httpBackend())
+    : import('./mock').then((m) => m.createMockBackend());
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const b = await backendPromise;

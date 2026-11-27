@@ -175,7 +175,7 @@ CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);   -- JSON
 Uniquement audio → segments de texte. Aucune logique métier, aucun accès à la base.
 
 ### 4.2 Fonctions
-1. **Détection d'appel Teams** : le processus Teams utilise le micro (`kAudioProcessPropertyIsRunningInput`, interrogé périodiquement) → événement `teams_call`. Titre lu dans la fenêtre de réunion via l'API d'accessibilité (`AXTitle`).
+1. **Détection d'appel Teams** (sert au titre de la réunion et à **proposer** de démarrer par une notification ; l'écoute ne démarre **jamais** toute seule) : le processus Teams utilise le micro (`kAudioProcessPropertyIsRunningInput`, interrogé périodiquement) → événement `teams_call`. Titre lu dans la fenêtre de réunion via l'API d'accessibilité (`AXTitle`).
 2. **Capture** de deux flux séparés, rééchantillonnés en 16 kHz mono : micro (voice processing activé, donc annulation d'écho) et tap sur l'arbre de processus Teams.
 3. **VAD + ASR** : un énoncé est clos après 0,8 à 1,2 s de silence ou 25 s au maximum ; transcription Parakeet v3 ; **< 3 s** entre la fin de la phrase et l'émission du segment.
 4. **Vocabulaire** : reçu au démarrage (mot d'appel, noms de services) ; injecté si le moteur le permet, sinon correction par dictionnaire après coup.
@@ -303,6 +303,7 @@ Les options de ces CLI évoluent vite : l'agent qui implémente les **vérifie s
   - `note|ajoute une action|retiens` → `note` (niveau `quick`, aucune recherche)
   - `résume|récap` → `recap`
   - `annule` → `cancel` (dernière demande en cours)
+  - `arrête l'écoute|termine la réunion|fin de la réunion` → `stop` (arrête l'écoute et lance le compte rendu)
   - Les verbes sont modifiables dans les réglages (fichier de grammaire en base).
 - Fin de commande : on fusionne les phrases `me` qui se suivent à moins de 2 s d'écart, jusqu'à 1,5 s de silence.
 - **Jamais de synthèse vocale dans l'audio de Teams.**
@@ -323,7 +324,7 @@ Les options de ces CLI évoluent vite : l'agent qui implémente les **vérifie s
 ## 7. Compte rendu et corrélation
 
 ### 7.1 Compte rendu (fin de réunion, toujours, sauf réunion confidentielle)
-Déclenché quand la réunion passe à `ended` : Teams n'utilise plus le micro depuis 60 s, ou arrêt manuel.
+Déclenché quand la réunion passe à `ended`, c'est-à-dire **uniquement à l'arrêt demandé par l'utilisateur** (menu de la barre d'état, raccourci, app, ou « Scribe, arrête l'écoute »). La fin de l'appel Teams n'arrête pas l'écoute.
 1. Diarisation hors ligne du canal `them` (Eux-1, Eux-2…). Claude propose des noms quand ils sont prononcés (« merci Marie ») ; l'utilisateur valide dans l'app.
 2. Agent, niveau `summary`, **sans outils externes** (rapide, ne consomme pas d'appels de recherche) :
    ```
@@ -356,7 +357,7 @@ Déclenché quand la réunion passe à `ended` : Teams n'utilise plus le micro d
 ## 8. App de bureau (Tauri 2)
 
 ### 8.1 Barre de menu (toujours présente)
-État (● écoute / pause / traitement), niveaux micro et Teams, démarrer/arrêter, « Réunion confidentielle », champ de demande rapide, 5 dernières réponses, « Ouvrir Scribe ».
+Icône dans la barre d'état macOS (à côté de l'heure), menu natif au clic : état (« ● Écoute en cours — titre » / « Appel Teams détecté : titre » / « En attente »), **Démarrer / Arrêter l'écoute**, « Réunion confidentielle », « Demande rapide… » (panneau : champ de demande, 5 dernières réponses), « Voir la transcription en direct », « Ouvrir Scribe », « Réglages… », « Quitter ». Un « ● » s'affiche à côté de l'icône pendant l'écoute.
 
 ### 8.2 Fenêtre principale
 - **Réunions** : liste par date avec recherche plein texte (FTS5 sur transcriptions et comptes rendus), filtres (période, corrélée ou non, avec actions ouvertes).

@@ -2,14 +2,23 @@
 
 export type Route = { path: string; parts: string[]; query: Record<string, string> };
 
-function parse(): Route {
-  const raw = decodeURI(location.hash.replace(/^#/, '')) || '/meetings';
+/** Analyse un hash (`#/meetings/abc?tab=report`) ; vide → `/meetings`. */
+export function parseHash(hash: string): Route {
+  let raw = hash.replace(/^#/, '');
+  try {
+    raw = decodeURI(raw);
+  } catch {
+    // Hash mal encodé : on le garde tel quel.
+  }
+  raw ||= '/meetings';
   const [p, q = ''] = raw.split('?');
   const path = p.startsWith('/') ? p : '/' + p;
   const query: Record<string, string> = {};
   new URLSearchParams(q).forEach((v, k) => (query[k] = v));
   return { path, parts: path.split('/').filter(Boolean), query };
 }
+
+const parse = () => parseHash(location.hash);
 
 export const router = $state<{ route: Route }>({ route: parse() });
 

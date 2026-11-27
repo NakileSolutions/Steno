@@ -27,6 +27,8 @@ pub enum LiveCmd {
     Stop { reply: oneshot::Sender<Result<()>> },
     Aside(bool),
     NextConfidential(bool),
+    /// Arrêt demandé à la voix ou par une demande tapée (« arrête l'écoute »).
+    StopRequested,
     SettingsChanged,
     WakeTest { seconds: u32, reply: oneshot::Sender<Result<String>> },
     Diarize { meeting_id: String, reply: oneshot::Sender<Result<Vec<Turn>>> },
@@ -52,7 +54,6 @@ struct Session {
     sidecar: Option<SidecarProcess>,
     events: Option<mpsc::UnboundedReceiver<SidecarEvent>>,
     meeting: Option<Meeting>,
-    from_teams: bool,
     capturing: bool,
     detector: Detector,
     assembler: CommandAssembler,
@@ -63,6 +64,7 @@ struct Session {
     aside_flush_at: Option<Instant>,
     end_at: Option<Instant>,
     teams_active: bool,
+    teams_title: Option<String>,
     next_confidential: bool,
     wake_waiters: Vec<oneshot::Sender<Result<String>>>,
     diarize_waiters: HashMap<String, oneshot::Sender<Result<Vec<Turn>>>>,
@@ -82,7 +84,6 @@ pub fn spawn(inner: Arc<Inner>) -> LiveHandle {
         sidecar: None,
         events: None,
         meeting: None,
-        from_teams: false,
         capturing: false,
         detector,
         assembler: CommandAssembler::new(),
@@ -93,6 +94,7 @@ pub fn spawn(inner: Arc<Inner>) -> LiveHandle {
         aside_flush_at: None,
         end_at: None,
         teams_active: false,
+        teams_title: None,
         next_confidential: false,
         wake_waiters: vec![],
         diarize_waiters: HashMap::new(),
@@ -235,7 +237,8 @@ impl Session {
             started_at: now.to_rfc3339_opts(chrono::SecondsFormat::Secs, false),
             ended_at: None,
             status: "live".into(),
-            confidential: std::mem::take(&mut self.next_confidential),
+            // Réunion exclue (Réglages → Confidentialité) : écoute possible, mais aucune IA.
+            confidential: std::mem::take(&mut self.next_confidential) || self.title_excluded(title.as_deref()),
             agent_provider: None,
             agent_session_id: None,
             correlation: Some(s.correlation.mode.clone()),
@@ -307,8 +310,13 @@ impl Session {
                 let r = match &self.meeting {
                     Some(m) => Ok(m.clone()),
                     None => {
-                        self.from_teams = false;
-                        self.create_meeting(title.filter(|t| !t.trim().is_empty()), "user")
+                        let given = title.filter(|t| !t.trim().is_empty());
+                        let (t, src) = match given {
+                            Some(t) => (Some(t), "user"),
+                            None if self.teams_active => (self.teams_title.clone(), "teams_window"),
+                            None => (None, "inferred"),
+                        };
+                        self.create_meeting(t, src)
                     }
                 };
                 let _ = reply.send(r);
@@ -328,6 +336,12 @@ impl Session {
                 self.inner.set_live_state(|s| s.aside = on);
             }
             LiveCmd::NextConfidential(on) => self.next_confidential = on,
+            LiveCmd::StopRequested => {
+                if self.meeting.is_some() {
+                    // Laisse le temps à la phrase en cours d'être enregistrée.
+                    self.end_at = Some(Instant::now() + Duration::from_millis(300));
+                }
+            }
             LiveCmd::SettingsChanged => {
                 self.detector = Detector::new(&self.inner.settings().voice);
             }
@@ -444,32 +458,48 @@ impl Session {
         }
     }
 
+    /// Appel Teams détecté ou terminé. **Jamais** de démarrage ni d'arrêt automatique de
+    /// l'écoute : au plus une notification qui propose de démarrer.
     async fn on_teams(&mut self, active: bool, title: Option<String>) {
         let s = self.inner.settings();
+        let title = title.filter(|t| !t.trim().is_empty());
+        let was_active = self.teams_active;
         self.teams_active = active;
         if active {
-            self.end_at = None;
-            match &self.meeting {
-                Some(m) => {
-                    if let Some(t) = title.filter(|t| !t.trim().is_empty()) {
-                        let _ = self.inner.db.set_meeting_title_auto(&m.id, &t, "teams_window");
+            if title.is_some() {
+                self.teams_title = title.clone();
+            }
+        } else {
+            self.teams_title = None;
+        }
+        let (a, t) = (self.teams_active, self.teams_title.clone());
+        self.inner.set_live_state(|st| st.teams_call = crate::events::TeamsCall { active: a, title: t });
+        match &self.meeting {
+            Some(m) if active => {
+                // Le titre de la fenêtre Teams remplace un titre déduit (jamais celui saisi).
+                if let Some(t) = &title {
+                    if m.title_source.as_deref() != Some("user") {
+                        let _ = self.inner.db.set_meeting_title_auto(&m.id, t, "teams_window");
+                        if let Some(mm) = &mut self.meeting {
+                            mm.title = Some(t.clone());
+                            mm.title_source = Some("teams_window".into());
+                        }
                         self.inner.emit(CoreEvent::MeetingsChanged);
                     }
                 }
-                None if s.audio.auto_detect_teams => {
-                    if self.title_excluded(title.as_deref()) {
-                        tracing::info!("réunion exclue par les réglages : non enregistrée");
-                        return;
-                    }
-                    self.from_teams = true;
-                    if let Err(e) = self.create_meeting(title.filter(|t| !t.trim().is_empty()), "teams_window") {
-                        tracing::error!("réunion non créée : {e:#}");
-                    }
-                }
-                None => {}
             }
-        } else if self.meeting.is_some() && self.from_teams {
-            self.end_at = Some(Instant::now() + Duration::from_secs(s.audio.end_grace_s as u64));
+            None if active && !was_active && s.audio.auto_detect_teams && !self.title_excluded(title.as_deref()) => {
+                let shortcut = s.audio.shortcuts.toggle.clone();
+                self.inner.emit(CoreEvent::Notify {
+                    title: "Appel Teams détecté".into(),
+                    body: format!(
+                        "{}Démarrer l'écoute : icône Scribe dans la barre de menus ou {shortcut}.",
+                        title.as_deref().map(|t| format!("« {t} ». ")).unwrap_or_default()
+                    ),
+                    route: Some("/live".into()),
+                });
+            }
+            _ => {}
         }
     }
 

@@ -7,6 +7,7 @@
   import { toastError } from '../lib/ui.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import RequestCard from '../lib/components/RequestCard.svelte';
+  import { groupHits } from '../lib/group';
 
   let query = $state(router.route.query.q ?? '');
   let hits = $state<SearchHit[]>([]);
@@ -49,15 +50,7 @@
     }
   }
 
-  const groups = $derived.by(() => {
-    const map = new Map<string, { id: string; title: string | null; started_at: string; hits: SearchHit[] }>();
-    for (const h of hits) {
-      let g = map.get(h.meeting_id);
-      if (!g) map.set(h.meeting_id, (g = { id: h.meeting_id, title: h.title, started_at: h.started_at, hits: [] }));
-      g.hits.push(h);
-    }
-    return [...map.values()];
-  });
+  const groups = $derived(groupHits(hits));
 </script>
 
 <div class="page scroll">

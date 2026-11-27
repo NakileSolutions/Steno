@@ -4,6 +4,7 @@
 mod init;
 mod mcp;
 mod replay;
+mod serve;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -99,6 +100,14 @@ enum Cmd {
         /// Commande du sidecar (ex. : --sidecar scribe --sidecar replay --sidecar fichier.jsonl).
         #[arg(long)]
         sidecar: Vec<String>,
+    },
+    /// Sert l'API de l'app en HTTP (+ l'interface web) : tests e2e et développement sans Tauri.
+    Serve {
+        #[arg(long, default_value_t = 4180)]
+        port: u16,
+        /// Dossier de l'interface compilée (app/ui/dist).
+        #[arg(long)]
+        ui: Option<PathBuf>,
     },
     /// Crochet « avant outil » des agents (lit l'appel sur stdin ; code 2 = refusé).
     #[command(hide = true)]
@@ -303,6 +312,16 @@ async fn main() -> Result<()> {
             }
         }
         Cmd::Simulate { file, speed, timeout } => simulate(file, speed, timeout).await?,
+        Cmd::Serve { port, ui } => {
+            // Sidecar : SCRIBE_SIDECAR (ex. « scribe replay fichier.jsonl --speed 20 »), sinon aucun.
+            let spec = std::env::var("SCRIBE_SIDECAR").ok().and_then(|c| {
+                let parts: Vec<String> = c.split_whitespace().map(String::from).collect();
+                parts.split_first().map(|(p, a)| SidecarSpec { program: p.clone(), args: a.to_vec() })
+            });
+            let core = open_core(spec)?;
+            core.start_background();
+            serve::run(core, port, ui).await?;
+        }
         Cmd::Daemon { sidecar } => {
             let spec = (!sidecar.is_empty()).then(|| SidecarSpec { program: sidecar[0].clone(), args: sidecar[1..].to_vec() });
             let core = open_core(spec)?;
@@ -356,6 +375,13 @@ async fn simulate(file: PathBuf, speed: f64, timeout: u64) -> Result<()> {
     let mut rx = core.subscribe();
     core.start_background();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout);
+    // L'écoute ne démarre jamais seule : on la démarre comme le ferait l'utilisateur.
+    while core.live_state().sidecar != "running" && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let m = core.start_meeting(None).await?;
+    eprintln!("Écoute démarrée : {}", m.title.clone().unwrap_or_default());
     let mut meeting: Option<String> = None;
     let mut last_segment = tokio::time::Instant::now();
     let mut seen_segments = 0usize;

@@ -2,6 +2,8 @@
   import { onMount, tick } from 'svelte';
   import { api, onEvent } from '../lib/api';
   import { live, clock, STATE_LABEL } from '../lib/live.svelte';
+  import { isListening, teamsOffer } from '../lib/listening';
+  import { stopHint } from '../lib/prefs.svelte';
   import { href } from '../lib/router.svelte';
   import type { Request, Segment, Speaker } from '../lib/types';
   import { duration, timeS } from '../lib/format';
@@ -13,7 +15,8 @@
 
   const s = $derived(live.s);
   const meeting = $derived(s.meeting);
-  const active = $derived(s.state === 'listening' || s.state === 'paused');
+  const active = $derived(isListening(s));
+  const offer = $derived(teamsOffer(s));
 
   let segments = $state<Segment[]>([]);
   let speakers = $state<Speaker[]>([]);
@@ -153,7 +156,7 @@
             <input type="checkbox" checked={meeting.confidential} onchange={(e) => setConf(e.currentTarget.checked)} />
             <Icon name="lock" size={13} /> Confidentielle
           </label>
-          <button class="btn danger" onclick={stop} disabled={busy}><Icon name="stop" size={13} />Arrêter</button>
+          <button class="btn danger" onclick={stop} disabled={busy}><Icon name="stop" size={13} />Arrêter l’écoute</button>
         {/if}
       </div>
       {#if active}
@@ -180,6 +183,7 @@
           </button>
         </div>
       {/if}
+      {#if active}<p class="stophint tiny"><Icon name="info" size={12} />{stopHint()}</p>{/if}
       {#if s.last_error}<p class="err small">{s.last_error}</p>{/if}
     </header>
 
@@ -232,19 +236,33 @@
   </div>
 {:else}
   <div class="idle">
-    <div class="empty">
-      <Icon name="live" size={34} stroke={1.3} />
+    <div class="hero">
       {#if s.state === 'processing'}
+        <span class="hic"><Icon name="live" size={30} stroke={1.3} /></span>
         <h2>Compte rendu en préparation…</h2>
+        <p class="small muted">L’écoute est arrêtée. Le compte rendu apparaîtra dans « Réunions ».</p>
+      {:else if offer}
+        <div class="teams-offer big" role="status">
+          <span class="to-ic"><Icon name="speaker" size={18} /></span>
+          <div class="grow">
+            <p class="to-title">Appel Teams détecté : <strong>{offer}</strong></p>
+            <p class="to-sub">Le Scribe n’écoute pas encore : rien n’est transcrit tant que vous ne l’avez pas décidé.</p>
+          </div>
+        </div>
+        <button class="btn primary go" onclick={start} disabled={busy}><Icon name="play" size={15} />Démarrer l’écoute</button>
       {:else}
-        <h2>Aucune réunion en cours</h2>
-        <p class="small">Le Scribe démarre seul quand Teams utilise le micro. Vous pouvez aussi démarrer manuellement.</p>
-        <form class="row start" onsubmit={(e) => { e.preventDefault(); start(); }}>
-          <input class="input" bind:value={newTitle} placeholder="Titre (facultatif)" aria-label="Titre de la réunion" />
-          <button class="btn primary" disabled={busy}><Icon name="play" size={13} />Démarrer</button>
+        <span class="hic"><Icon name="live" size={30} stroke={1.3} /></span>
+        <h2>Le Scribe n’écoute pas</h2>
+        <p class="small muted">L’écoute démarre et s’arrête uniquement sur votre demande.</p>
+        <form class="start" onsubmit={(e) => { e.preventDefault(); start(); }}>
+          <input class="input lg" bind:value={newTitle} placeholder="Titre de la réunion (facultatif)" aria-label="Titre de la réunion" />
+          <button class="btn primary go" disabled={busy}><Icon name="play" size={15} />Démarrer l’écoute</button>
         </form>
-        <a class="small faint" href={href('/meetings')}>Voir les réunions passées</a>
       {/if}
+      {#if s.state !== 'processing'}
+        <p class="tiny faint howto">Pour arrêter ensuite : le bouton « Arrêter l’écoute », le raccourci, le menu de la barre d’état, ou à la voix.</p>
+      {/if}
+      <a class="small faint" href={href('/meetings')}>Voir les réunions passées</a>
     </div>
   </div>
 {/if}
@@ -299,6 +317,17 @@
   .feed { flex: 1; min-height: 0; padding: 12px 16px 20px; display: flex; flex-direction: column; gap: 10px; }
   .none { text-align: center; padding: 20px 0; }
 
-  .idle { height: 100%; display: grid; place-items: center; }
-  .start { margin-top: 8px; width: 360px; }
+  .stophint { display: flex; align-items: center; gap: 6px; color: var(--text-3); margin-top: -4px; }
+
+  .idle { height: 100%; display: grid; place-items: center; padding: 24px; }
+  .hero { width: 440px; max-width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; color: var(--text-2); }
+  .hero h2 { color: var(--text); font-size: 18px; }
+  .hic { width: 60px; height: 60px; border-radius: 16px; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); color: var(--text-2); margin-bottom: 4px; }
+  .teams-offer.big { width: 100%; padding: 14px 16px; }
+  .teams-offer.big .to-ic { width: 34px; height: 34px; border-radius: 9px; }
+  .teams-offer.big .to-title { font-size: 14.5px; }
+  .teams-offer.big .to-sub { font-size: 12.5px; margin-top: 3px; }
+  .start { width: 100%; display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+  .go { height: 40px; width: 100%; font-size: 14px; font-weight: 600; border-radius: 9px; }
+  .howto { max-width: 380px; line-height: 1.5; }
 </style>

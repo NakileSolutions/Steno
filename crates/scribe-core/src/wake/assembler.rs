@@ -2,6 +2,7 @@
 //! d'écart, jusqu'à 1,5 s de silence (PLAN §6.3).
 
 use super::{Detection, Detector};
+use crate::model::Intent;
 use std::time::{Duration, Instant};
 
 pub const MERGE_GAP_S: f64 = 2.0;
@@ -80,6 +81,12 @@ impl CommandAssembler {
                 last_t1: u.t1,
                 last_arrival: now,
             });
+            // « arrête l'écoute », « annule » : rien à attendre, on agit tout de suite.
+            if matches!(det.detect(&u.text).map(|d| d.intent), Some(Intent::Stop | Intent::Cancel)) {
+                if let Some(a) = self.finalize(det) {
+                    out.push(a);
+                }
+            }
         }
         out
     }
@@ -113,7 +120,6 @@ impl CommandAssembler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Intent;
     use crate::settings::VoiceSettings;
 
     fn u(id: i64, t0: f64, t1: f64, text: &str) -> Utterance {
@@ -145,6 +151,16 @@ mod tests {
         assert!(a.tick(&det, t + Duration::from_millis(500)).is_none());
         let r = a.tick(&det, t + FLUSH_AFTER).unwrap();
         assert_eq!(r.detection.unwrap().intent, Intent::Check);
+    }
+
+    #[test]
+    fn arret_immediat() {
+        let det = Detector::new(&VoiceSettings::default());
+        let mut a = CommandAssembler::new();
+        let out = a.push_me(&det, &u(1, 0.0, 2.0, "Scribe, arrête l'écoute."), Instant::now());
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].detection.as_ref().unwrap().intent, Intent::Stop);
+        assert!(!a.is_pending());
     }
 
     #[test]
