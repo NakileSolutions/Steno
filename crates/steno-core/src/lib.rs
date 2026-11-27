@@ -26,6 +26,7 @@ pub mod report;
 pub mod settings;
 pub mod sidecar;
 pub mod text;
+pub mod updates;
 pub mod wake;
 
 pub use crate::core::Core;

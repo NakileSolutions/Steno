@@ -8,6 +8,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'audio', label: 'Audio & transcription', icon: 'wave' },
   { id: 'permissions', label: 'Permissions macOS', icon: 'lock' },
   { id: 'privacy', label: 'Confidentialité', icon: 'shield' },
+  { id: 'updates', label: 'Mises à jour', icon: 'download' },
   { id: 'profile', label: 'Profil', icon: 'user' },
   { id: 'import', label: 'Import / export', icon: 'swap' },
 ] as const;

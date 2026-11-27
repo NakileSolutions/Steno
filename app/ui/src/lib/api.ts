@@ -9,7 +9,7 @@ import type {
   Action, ActionFilter, AgentInfo, AudioDevices, Connector, Decision, DoctorItem, EventMap, EventName,
   LiveState, Meeting, MeetingDetail, MeetingFilter, MeetingSummary, ModelInfo, Note, Repo, Report,
   Permissions, PermissionKind, Request, SearchHit, Segment, Settings, TestAgentResult, VariantCheck, WakeCheck, WakeDetect,
-  ContextFile, MeetingContext, ReportTemplate,
+  ContextFile, MeetingContext, ReportTemplate, UpdateStatus,
 } from './types';
 import { normalizeLiveState, normalizeSettings } from './listening';
 
@@ -316,4 +316,10 @@ export const api = {
   openPermissionSettings: (kind: PermissionKind) => call<null>('open_permission_settings', { kind }),
   completeOnboarding: () => call<null>('complete_onboarding'),
   deleteSegment: (id: number) => call<null>('delete_segment', { id }),
+
+  // Mises à jour
+  getUpdateStatus: () => call<UpdateStatus>('get_update_status'),
+  checkUpdate: () => call<UpdateStatus>('check_update'),
+  installUpdate: () => call<null>('install_update'),
+  restartApp: () => call<null>('restart_app'),
 };

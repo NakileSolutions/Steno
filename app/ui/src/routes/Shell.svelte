@@ -6,6 +6,7 @@
   import { prefs } from '../lib/prefs.svelte';
   import { recent, initRecent } from '../lib/meetings.svelte';
   import { markOpened } from '../lib/opened.svelte';
+  import { updates, initUpdates, updateBadge } from '../lib/updates.svelte';
   import { api, isTauri } from '../lib/api';
   import { MAIN_SECTIONS, SETTINGS_SECTIONS } from '../lib/sections';
   import { clockDuration, relDay } from '../lib/format';
@@ -134,6 +135,17 @@
       toastError(e);
     } finally {
       busy = false;
+    }
+  }
+
+  // ---- Mises à jour : signalées en bas de la barre latérale ----
+  initUpdates();
+  const badge = $derived(updateBadge(updates.status));
+  async function restart() {
+    try {
+      await api.restartApp();
+    } catch (e) {
+      toastError(e);
     }
   }
 </script>
@@ -270,6 +282,16 @@
     </div>
 
     <div class="foot">
+      {#if badge}
+        {#if badge.kind === 'installed'}
+          <button class="upd installed" onclick={restart} title="Redémarrer Sténo pour utiliser la nouvelle version"><Icon name="refresh" size={13} /><span class="ellipsis">{badge.label}</span></button>
+        {:else}
+          <a class="upd {badge.kind}" href={href('/settings?section=updates')}>
+            {#if badge.kind === 'installing'}<span class="spin" aria-hidden="true"></span>{:else}<Icon name="download" size={13} />{/if}
+            <span class="ellipsis">{badge.label}</span>
+          </a>
+        {/if}
+      {/if}
       <button class="start" class:stop={isLive} onclick={startStop} disabled={busy || s.state === 'processing'} title={isLive ? 'Arrêter l’écoute' : 'Démarrer l’écoute'} aria-label={isLive ? 'Arrêter l’écoute' : 'Démarrer l’écoute'}>
         {#if isLive}<span class="stopsq" aria-hidden="true"></span>{:else}<Icon name="play" size={14} stroke={2} />{/if}
         <span>{isLive ? 'Arrêter l’écoute' : 'Démarrer l’écoute'}</span>
@@ -542,7 +564,28 @@
   .subitem.active { color: #fff; background: rgba(255, 255, 255, 0.08); }
   .when { font-size: 11px; color: var(--side-text-3); flex: none; }
 
-  .foot { flex: none; padding-top: 12px; }
+  .foot { flex: none; padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .upd {
+    all: unset;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    padding: 7px 10px;
+    border-radius: 9px;
+    font-size: var(--fs-meta);
+    font-weight: 550;
+    cursor: pointer;
+    color: #dfe3ff;
+    background: rgba(124, 137, 255, 0.16);
+    box-shadow: inset 0 0 0 1px rgba(124, 137, 255, 0.3);
+  }
+  .upd:hover { background: rgba(124, 137, 255, 0.24); }
+  .upd:focus-visible { outline: 2px solid var(--focus); }
+  .upd.installed { color: #d9f7e4; background: rgba(52, 199, 120, 0.18); box-shadow: inset 0 0 0 1px rgba(52, 199, 120, 0.35); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .upd .spin { width: 11px; height: 11px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; flex: none; }
 
   /* « Démarrer l'écoute » : l'action principale, bien visible quand rien n'écoute. */
   .start {

@@ -167,6 +167,31 @@ pub fn delete_context_file(st: State<'_, AppState>, file_id: i64) -> R<()> {
 }
 
 #[tauri::command]
+pub fn get_update_status(st: State<'_, AppState>) -> steno_core::updates::UpdateStatus {
+    st.core.update_status()
+}
+
+#[tauri::command]
+pub async fn check_update(st: State<'_, AppState>) -> R<steno_core::updates::UpdateStatus> {
+    st.core.check_update().await.map_err(er)
+}
+
+#[tauri::command]
+pub fn install_update(st: State<'_, AppState>) -> R<()> {
+    st.core.install_update().map_err(er)
+}
+
+/// Redémarre l'app (nouvelle version installée par `make install`).
+#[tauri::command]
+pub fn restart_app(app: AppHandle, st: State<'_, AppState>) -> R<()> {
+    if st.core.db().live_meeting().map_err(er)?.is_some() {
+        return Err("une réunion est en cours : redémarrez après la réunion".into());
+    }
+    st.core.shutdown();
+    app.restart();
+}
+
+#[tauri::command]
 pub fn report_now(st: State<'_, AppState>, id: String) -> R<()> {
     st.core.report_now(&id).map_err(er)
 }

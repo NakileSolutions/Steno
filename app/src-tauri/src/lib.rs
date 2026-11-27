@@ -59,6 +59,8 @@ fn complete_path() {
     let extra = [
         format!("{home}/.local/bin"),
         "/opt/homebrew/bin".into(),
+        // Rust installé par Homebrew (rustup, formule « keg-only ») : utile aux mises à jour.
+        "/opt/homebrew/opt/rustup/bin".into(),
         "/opt/homebrew/sbin".into(),
         "/usr/local/bin".into(),
         format!("{home}/.npm-global/bin"),
@@ -240,6 +242,10 @@ pub fn run() {
             commands::delete_context_file,
             commands::list_report_templates,
             commands::report_now,
+            commands::get_update_status,
+            commands::check_update,
+            commands::install_update,
+            commands::restart_app,
             commands::correlate,
             commands::export_meeting,
             commands::search,

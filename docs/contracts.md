@@ -286,7 +286,9 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
   "report": { "default_template": "standard",   // format utilisé quand la réunion n'en choisit pas
               "ask_context_on_stop": false,      // fenêtre de contexte à l'arrêt (sinon arrêt en un clic)
               "context_delay_s": 60,             // délai avant la rédaction pour ajouter du contexte (0 = immédiat)
-              "templates": [ { "id": "perso-note-comex", "name": "Note COMEX", "instructions": "…" } ] }
+              "templates": [ { "id": "perso-note-comex", "name": "Note COMEX", "instructions": "…" } ] },
+  "updates": { "check": true,           // vérifier les nouvelles versions (démarrage puis toutes les 6 h)
+               "auto_install": false }  // installer automatiquement hors réunion (redémarrage manuel)
 }
 ```
 
@@ -411,6 +413,10 @@ type Settings = /* section 4 */;
 | `add_context_file` | `id, name, data` (contenu en base64, 20 Mo max) | `ContextFile` `{id, meeting_id, name, kind, size, chars, truncated, added_at}` : texte extrait à l'ajout (PDF, xlsx/xls/ods, csv, docx/doc/rtf/odt/html via `textutil`, md/txt/json…), 60 000 caractères gardés |
 | `delete_context_file` | `fileId` | `null` (comme toute modification du contexte : repousse d'au moins 30 s une rédaction en attente) |
 | `report_now` | `id` | `null` : la rédaction part sans attendre la fin du délai de contexte |
+| `get_update_status` | — | `UpdateStatus` `{current, latest, available, url, notes, published_at, checked_at, state, message, source_dir, can_install, log_path}` ; `state` : `idle \| checking \| installing \| installed \| error` |
+| `check_update` | — | `UpdateStatus` après lecture de la dernière version publiée (API GitHub publique, sans authentification) |
+| `install_update` | — | `null` : lance en arrière-plan la mise à jour des sources (tag `v<version>`, avance rapide sur `main` ou tag détaché) puis `make install` ; refusé pendant une réunion, si les sources ont des modifications ou sont sur une autre branche. Avancement par `steno://update` |
+| `restart_app` | — | (app uniquement) redémarre Sténo après une mise à jour ; refusé pendant une réunion |
 | `list_report_templates` | — | `Template[]` `{id, name, description, instructions, builtin}` : formats intégrés (`standard`, `daily`, `client`, `atelier`, `arbitrage`, `mail`, `slack`) puis formats perso (`report.templates`) |
 | `correlate` | `id` | `null` |
 | `export_meeting` | `id, format?: "markdown" \| "txt" \| "srt" \| "vtt"` | `string` (markdown complet par défaut ; `txt`/`srt`/`vtt` : transcription seule) |
@@ -463,6 +469,7 @@ type Settings = /* section 4 */;
 | `steno://request` | `Request` (création et chaque changement de statut) |
 | `steno://report` | `{ meeting_id: string, version: number }` |
 | `steno://meetings` | `null` (la liste a changé) |
+| `steno://update` | `UpdateStatus` (nouvelle version, installation en cours, terminée ou en échec) |
 | `steno://navigate` | `{ route: string }` (ex. `"/meetings/<id>?tab=requests&request=<rid>"`) |
 
 ---
