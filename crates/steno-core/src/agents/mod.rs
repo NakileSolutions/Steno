@@ -9,6 +9,7 @@ mod gemini;
 mod grok;
 mod opencode;
 pub mod process;
+pub mod skill;
 
 use crate::model::Tier;
 use crate::policy::ReadOnlyPolicy;
@@ -127,6 +128,8 @@ pub struct RunRequest {
     pub run_id: String,
     /// Exécutable qui sait répondre à `policy-hook <fichier>`.
     pub hook_exe: Option<PathBuf>,
+    /// Laisser l'agent utiliser les skills de l'utilisateur (recherches seulement).
+    pub skills: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -244,6 +247,7 @@ pub fn write_run_policy(req: &RunRequest) -> Result<ReadOnlyPolicy> {
         allowed_mcp_servers: servers,
         max_tool_calls: req.max_tool_calls,
         counter_file: Some(counter),
+        allow_skills: req.skills && tools_enabled,
     };
     p.write_to(&policy_file(&req.run_dir, &req.run_id))?;
     Ok(p)

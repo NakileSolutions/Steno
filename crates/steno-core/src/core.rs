@@ -168,6 +168,7 @@ impl Inner {
         let key = meeting.map(|m| m.id.clone()).unwrap_or_else(|| "_global".into());
         let run_dir = crate::paths::runs_dir().join(&key);
         let instructions = crate::instructions::build(&s);
+        let prompt = crate::instructions::expand(&prompt, &s);
         let mut base_policy = ReadOnlyPolicy::no_tools();
         base_policy.readable_dirs = vec![run_dir.clone()];
         agents::prepare_run_dir(adapter.as_ref(), &run_dir, &instructions, &base_policy).await?;
@@ -207,6 +208,7 @@ impl Inner {
             allow_api_key: s.agent.allow_api_key,
             run_id: uuid::Uuid::new_v4().simple().to_string()[..12].to_string(),
             hook_exe: self.hook_exe.clone(),
+            skills: s.agent.use_skills,
         };
         let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
         tokio::spawn(async move {
@@ -662,6 +664,9 @@ impl Core {
         let m = self.inner.db.get_meeting(id)?.context("réunion introuvable")?;
         let mut c = self.inner.db.meeting_context(id)?;
         c.report_at = crate::report::report_at(&self.inner, &m)?;
+        if c.template.is_none() {
+            c.inherited_template = crate::report::inherited_template(&self.inner, &m)?;
+        }
         Ok(c)
     }
 
@@ -716,6 +721,20 @@ impl Core {
     }
 
     /// Modèles de compte rendu (intégrés puis perso).
+    /// Skill « Sténo » et serveur MCP dans les agents de l'utilisateur.
+    pub async fn steno_skill_status(&self) -> agents::skill::SkillStatus {
+        agents::skill::status().await
+    }
+
+    pub async fn install_steno_skill(&self) -> Result<agents::skill::SkillStatus> {
+        agents::skill::install().await
+    }
+
+    /// Propose un format de compte rendu à partir d'un exemple collé (non enregistré).
+    pub async fn template_from_example(&self, example: &str) -> Result<crate::report::TemplateDraft> {
+        crate::report::template_from_example(&self.inner, example).await
+    }
+
     pub fn report_templates(&self) -> Vec<crate::report::Template> {
         crate::report::templates(&self.settings())
     }
@@ -801,6 +820,7 @@ impl Core {
                     allow_api_key: s.agent.allow_api_key,
                     run_id: "test".into(),
                     hook_exe: self.inner.hook_exe.clone(),
+                    skills: false,
                 },
                 tx,
                 CancellationToken::new(),

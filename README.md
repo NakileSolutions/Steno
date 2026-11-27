@@ -31,7 +31,8 @@ lit, vous publiez.
 - **Intervenants** : identification en fin de réunion (« Intervenant 1, 2… »), renommables.
 - **Commandes vocales** : « *OK Sténo, cherche les erreurs Datadog sur ms-booking depuis
   hier* », reconnues même en pleine phrase, ou en aparté (⌃⌥Espace maintenu). Réponse courte
-  en notification, réponse complète et sourcée dans l'app.
+  en notification, réponse complète et sourcée dans l'app. Avec Claude Code, l'agent peut
+  s'appuyer sur **vos skills** (Jira, Datadog, code…), toujours en lecture seule.
 - **Compte rendu** : décisions, actions qui / quoi / échéance, questions ouvertes, points
   techniques, vos notes. Les apartés n'y figurent jamais.
 - **Contexte et documents** : texte libre et documents joints (PDF, Excel, CSV, Word,
@@ -42,13 +43,18 @@ lit, vous publiez.
   guidée par l'IA (quelques questions, puis un contexte rédigé). Démarrer l'écoute à l'heure
   prévue reprend la réunion préparée.
 - **Formats de sortie** : standard, daily, point client, atelier, arbitrage, mail de synthèse,
-  message Slack/Teams, et vos propres formats enregistrés sur le Mac.
+  message Slack/Teams, et vos propres formats enregistrés sur le Mac, écrits à la main ou
+  déduits d'un compte rendu que vous aimez. Une réunion récurrente reprend le format choisi
+  la dernière fois.
 - **Corrélation** (désactivée, à la demande ou automatique) : le compte rendu est croisé avec
   vos dépôts et connecteurs.
 - **Exports** : copie mise en forme pour Teams/Slack/mail, Markdown, PDF, transcription
   `.txt`, sous-titres `.srt` / `.vtt`.
 - **Historique** : recherche plein texte, décisions et actions, questions en langage naturel,
   et serveur MCP `steno mcp` (lecture seule) pour vos agents.
+- **Sténo dans votre agent** : un skill et le serveur MCP installés en un clic dans Claude
+  Code, Codex… (« *refais le compte rendu d'hier au format client* », « *quelles sont mes
+  actions ouvertes ?* »).
 - Interface et comptes rendus en **français ou en anglais** (automatique selon macOS) ;
   thème clair, sombre ou automatique.
 
@@ -94,9 +100,11 @@ version publiée puis relance `make install` ; il ne reste qu'à redémarrer. L'
 | Fenêtre | Réunions (compte rendu, transcription, demandes, notes, contexte), En direct, Recherche, Décisions & actions, Réglages |
 | Voix | « *OK Sténo, cherche / vérifie / note / résume / annule…* », « *OK Sténo, arrête l'écoute* » (mot d'appel et verbes réglables) |
 | Raccourcis | ⌃⌥S démarrer/arrêter · ⌃⌥Espace aparté (maintenir) · ⌃⌥N note rapide |
-| CLI | `steno ask "qu'a-t-on décidé sur l'export ?"` · `steno export <id>` · `steno doctor` · `steno mcp` |
+| CLI | `steno ask "qu'a-t-on décidé sur l'export ?"` · `steno export <id>` · `steno doctor` · `steno mcp` · `steno skill install` |
 
-Donner à un agent l'accès aux réunions, en lecture seule : `claude mcp add steno -- steno mcp`.
+Donner à votre agent l'accès aux réunions, en lecture seule : `steno skill install` (ou
+Réglages → Agent → « Sténo dans votre agent »). Le skill est copié dans `~/.claude/skills` et
+`~/.agents/skills`, et le serveur MCP `steno` est déclaré dans Claude Code et Codex.
 
 ## Confidentialité
 

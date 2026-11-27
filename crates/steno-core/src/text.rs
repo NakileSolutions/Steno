@@ -7,6 +7,18 @@ pub fn normalize(s: &str) -> String {
     normalize_keep(s, "")
 }
 
+/// Clé de comparaison d'un titre de réunion récurrente : partie avant un éventuel ` | `
+/// (suffixe de l'app de visio), normalisée, sans les mots qui contiennent des chiffres
+/// (dates, numéros). « Daily équipe 12/11 | Microsoft Teams » → « daily equipe ».
+pub fn title_key(title: &str) -> String {
+    let head = title.split('|').next().unwrap_or("");
+    normalize(head)
+        .split_whitespace()
+        .filter(|w| !w.chars().any(|c| c.is_ascii_digit()))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Comme `normalize`, en gardant certains caractères de ponctuation (ex. `":"`).
 pub fn normalize_keep(s: &str, keep: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -176,6 +188,14 @@ pub fn slugify(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn cle_de_titre() {
+        assert_eq!(super::title_key("Daily équipe 12/11 | Microsoft Teams"), "daily equipe");
+        assert_eq!(super::title_key("DAILY  Équipe"), "daily equipe");
+        assert_eq!(super::title_key("2026-11-27"), "");
+    }
+
     use super::*;
 
     #[test]

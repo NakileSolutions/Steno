@@ -6,7 +6,7 @@ import type {
   Action, ActionFilter, DoctorItem, EventMap, EventName, LiveState, Meeting, MeetingDetail,
   MeetingFilter, MeetingSummary, Note, Repo, Request, SearchHit, Segment, Settings,
   PermissionKind, PermissionValue, VariantCheck, WakeCheck, WakeDetect,
-  ContextFile, MeetingContext, ReportTemplate, UpdateStatus, Participant, UpcomingEvent,
+  ContextFile, MeetingContext, ReportTemplate, SkillStatus, UpdateStatus, Participant, UpcomingEvent,
 } from './types';
 import {
   LIVE_SCRIPT, TEAMS_TITLE, defaultSettings, iso, nextIds, seedAgents, seedAudioDevices, seedConnectors,
@@ -14,6 +14,16 @@ import {
 } from './mock-data';
 import { detectWake, fold } from './wake';
 import { effortLabel, normalizeAgentSettings } from './agents';
+
+// Skill « Sténo » simulé : pas encore installé.
+const skillStatus: SkillStatus = {
+  targets: [
+    { agents: 'Claude Code', path: '~/.claude/skills/steno', state: 'missing' },
+    { agents: 'Codex, Gemini CLI, OpenCode…', path: '~/.agents/skills/steno', state: 'missing' },
+  ],
+  mcp: [{ agent: 'Claude Code', registered: false }],
+  cli: '~/.local/bin/steno',
+};
 
 // Réglages simulés conservés dans l'onglet (rechargement de la page) ; jamais requis.
 const SETTINGS_KEY = 'steno-mock-settings';
@@ -989,6 +999,20 @@ export function createMockBackend(): Backend {
       return null;
     },
     list_report_templates: () => templatesList(),
+    steno_skill_status: () => clone(skillStatus),
+    install_steno_skill: () => {
+      for (const t of skillStatus.targets) t.state = 'current';
+      for (const m of skillStatus.mcp) m.registered = true;
+      return clone(skillStatus);
+    },
+    template_from_example: (a) => {
+      if (String(a.example ?? '').trim().length < 40) throw 'Exemple trop court : collez un compte rendu complet.';
+      return {
+        name: 'Note de synthèse',
+        instructions:
+          'Commence par « ## En bref » (3 puces). Puis « ## Décisions » et « ## Actions » (`**Qui** — quoi — échéance`). Ton direct, 20 lignes au plus.',
+      };
+    },
     delete_segment: (a) => {
       const id = Number(a.id);
       const s = meetings.find((x) => x.segments.some((g) => g.id === id));

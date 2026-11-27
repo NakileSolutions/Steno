@@ -130,6 +130,7 @@ mod tests {
                     allow_api_key: false,
                     run_id: "t".into(),
                     hook_exe: None,
+                    skills: false,
                 },
                 tx,
                 CancellationToken::new(),

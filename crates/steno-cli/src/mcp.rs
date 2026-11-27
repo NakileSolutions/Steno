@@ -26,7 +26,9 @@ fn tools() -> Value {
          "inputSchema": s(json!({"since": {"type": "string", "description": "date ISO"}}), &[]), "annotations": {"readOnlyHint": true}},
         {"name": "list_actions", "description": "Actions décidées en réunion (qui / quoi / échéance).",
          "inputSchema": s(json!({"status": {"type": "string", "enum": ["open", "done"]}, "owner": {"type": "string"}}), &[]),
-         "annotations": {"readOnlyHint": true}}
+         "annotations": {"readOnlyHint": true}},
+        {"name": "list_report_templates", "description": "Formats de compte rendu de l'utilisateur (prédéfinis puis perso) : nom, description et consignes de rédaction, pour réécrire un compte rendu dans le format voulu.",
+         "inputSchema": s(json!({}), &[]), "annotations": {"readOnlyHint": true}}
     ])
 }
 
@@ -95,6 +97,10 @@ pub fn call_tool(db: &Db, name: &str, a: &Value) -> Result<Value> {
             owner: arg(a, "owner").map(String::from),
             ..Default::default()
         })?)?,
+        "list_report_templates" => {
+            let s = steno_core::settings::Settings::load(db)?;
+            json!({"default": s.report.default_template, "templates": steno_core::report::templates(&s)})
+        }
         other => anyhow::bail!("outil inconnu : {other}"),
     })
 }
@@ -170,7 +176,12 @@ mod tests {
         assert_eq!(r["result"]["protocolVersion"], "2025-03-26");
         assert!(handle(&db, &json!({"jsonrpc":"2.0","method":"notifications/initialized"})).is_none());
         let r = handle(&db, &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"})).unwrap();
-        assert_eq!(r["result"]["tools"].as_array().unwrap().len(), 6);
+        assert_eq!(r["result"]["tools"].as_array().unwrap().len(), 7);
+        let r = handle(&db, &json!({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"list_report_templates","arguments":{}}})).unwrap();
+        assert_eq!(r["result"]["isError"], false);
+        let tpl = &r["result"]["structuredContent"];
+        assert_eq!(tpl["default"], "standard");
+        assert!(tpl["templates"].as_array().unwrap().iter().any(|t| t["id"] == "mail" && t["instructions"].as_str().unwrap().len() > 20));
         let r = handle(&db, &json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_actions","arguments":{}}})).unwrap();
         assert_eq!(r["result"]["isError"], false);
         let r = handle(&db, &json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_report","arguments":{"id":"x"}}})).unwrap();

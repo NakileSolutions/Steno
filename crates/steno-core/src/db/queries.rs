@@ -529,7 +529,14 @@ impl Db {
                     })
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
-            Ok(crate::context::MeetingContext { meeting_id: meeting_id.into(), text, template, files, report_at: None })
+            Ok(crate::context::MeetingContext {
+                meeting_id: meeting_id.into(),
+                text,
+                template,
+                files,
+                report_at: None,
+                inherited_template: None,
+            })
         })
     }
 
@@ -644,6 +651,27 @@ impl Db {
             Ok(c.query_row("SELECT updated_at FROM meeting_context WHERE meeting_id=?1", [meeting_id], |r| r.get(0))
                 .optional()?
                 .flatten())
+        })
+    }
+
+    /// Format choisi explicitement pour la réunion la plus récente du même titre (titre
+    /// normalisé : casse, chiffres et ponctuation ignorés ; titres déduits exclus).
+    pub fn template_for_title(&self, title: &str, exclude_meeting: &str) -> Result<Option<String>> {
+        let key = crate::text::title_key(title);
+        if key.is_empty() {
+            return Ok(None);
+        }
+        self.with(|c| {
+            let mut st = c.prepare(
+                "SELECT m.title, mc.template FROM meetings m JOIN meeting_context mc ON mc.meeting_id = m.id \
+                 WHERE mc.template IS NOT NULL AND mc.template <> '' AND m.id <> ?1 AND m.title IS NOT NULL \
+                 AND COALESCE(m.title_source, '') IN ('user', 'calendar', 'call_window') \
+                 ORDER BY m.started_at DESC LIMIT 500",
+            )?;
+            let rows = st
+                .query_map([exclude_meeting], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(rows.into_iter().find(|(t, _)| crate::text::title_key(t) == key).map(|(_, tpl)| tpl))
         })
     }
 
@@ -1602,6 +1630,25 @@ mod tests {
             private,
             is_echo: false,
         }
+    }
+
+    #[test]
+    fn format_repris_des_reunions_du_meme_titre() {
+        let db = Db::open_in_memory().unwrap();
+        let mut old = meeting("m1", "Daily équipe 12/11");
+        old.started_at = "2026-11-12T09:30:00+01:00".into();
+        db.insert_meeting(&old).unwrap();
+        db.set_meeting_context("m1", "", Some("daily")).unwrap();
+        let mut guess = meeting("m2", "Daily équipe");
+        guess.title_source = Some("inferred".into());
+        guess.started_at = "2026-11-20T09:30:00+01:00".into();
+        db.insert_meeting(&guess).unwrap();
+        db.set_meeting_context("m2", "", Some("mail")).unwrap();
+        db.insert_meeting(&meeting("m3", "DAILY Équipe 19/11 | Microsoft Teams")).unwrap();
+        // Le titre déduit (m2) ne compte pas ; m1 donne « daily ».
+        assert_eq!(db.template_for_title("DAILY Équipe 19/11 | Microsoft Teams", "m3").unwrap().as_deref(), Some("daily"));
+        assert_eq!(db.template_for_title("Point client", "m3").unwrap(), None);
+        assert_eq!(db.template_for_title("27/11", "m3").unwrap(), None);
     }
 
     #[test]

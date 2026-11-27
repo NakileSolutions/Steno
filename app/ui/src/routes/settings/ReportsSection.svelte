@@ -5,6 +5,7 @@
   import type { ReportTemplate, Settings } from '../../lib/types';
   import Icon from '../../lib/components/Icon.svelte';
   import { t } from '../../lib/i18n.svelte';
+  import { toastError } from '../../lib/ui.svelte';
 
   let { settings = $bindable() }: { settings: Settings } = $props();
   let builtins = $state<ReportTemplate[]>([]);
@@ -18,6 +19,23 @@
 
   function add() {
     settings.report.templates.push({ id: '', name: '', instructions: '' });
+  }
+  // Format déduit d'un compte rendu collé : l'agent propose nom et consignes, à relire.
+  let fromExample = $state(false);
+  let example = $state('');
+  let deducing = $state(false);
+  async function deduce() {
+    deducing = true;
+    try {
+      const d = await api.templateFromExample(example);
+      settings.report.templates.push({ id: '', name: d.name, instructions: d.instructions });
+      fromExample = false;
+      example = '';
+    } catch (e) {
+      toastError(e);
+    } finally {
+      deducing = false;
+    }
   }
   function remove(i: number) {
     const [tp] = settings.report.templates.splice(i, 1);
@@ -74,7 +92,20 @@
         <textarea class="input" rows="3" bind:value={tp.instructions} placeholder={t('Consignes : structure, sections, ton, longueur… Ex. « Trois puces au plus, ton exécutif, chiffres en gras ».')} aria-label={t('Consignes du format {name}', { name: tp.name })}></textarea>
       </div>
     {/each}
-    <button class="btn sm" onclick={add}><Icon name="plus" size={14} />{t('Nouveau format')}</button>
+    {#if fromExample}
+      <div class="tpl">
+        <textarea class="input" rows="6" bind:value={example} placeholder={t('Collez ici un compte rendu dont vous aimez la forme : l’IA en déduit la structure, le ton et la longueur, sans reprendre son contenu.')} aria-label={t('Compte rendu d’exemple')}></textarea>
+        <div class="row">
+          <button class="btn sm primary" onclick={deduce} disabled={deducing || example.trim().length < 40}>{deducing ? t('Analyse…') : t('Proposer le format')}</button>
+          <button class="btn sm ghost" onclick={() => (fromExample = false)} disabled={deducing}>{t('Annuler')}</button>
+        </div>
+      </div>
+    {/if}
+    <div class="row">
+      <button class="btn sm" onclick={add}><Icon name="plus" size={14} />{t('Nouveau format')}</button>
+      {#if !fromExample}<button class="btn sm" onclick={() => (fromExample = true)}><Icon name="agent" size={14} />{t('À partir d’un exemple')}</button>{/if}
+    </div>
+    <p class="faint small">{t('Une réunion sans format choisi reprend celui de la dernière réunion du même titre (ex. chaque « Daily équipe »), sinon le format par défaut.')}</p>
     <p class="faint small">{t('Prédéfinis : {list}.', { list: builtins.map((tp) => tp.name).join(', ') })}</p>
   </div>
 </div>

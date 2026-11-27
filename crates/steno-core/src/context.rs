@@ -66,6 +66,10 @@ pub struct MeetingContext {
     /// délai laissé après la réunion pour ajouter du contexte.
     #[serde(default)]
     pub report_at: Option<String>,
+    /// Format repris de la dernière réunion du même titre quand aucun n'est choisi ici
+    /// (prime sur le format par défaut des réglages).
+    #[serde(default)]
+    pub inherited_template: Option<String>,
 }
 
 fn extension(name: &str) -> String {

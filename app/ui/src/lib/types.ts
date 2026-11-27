@@ -273,6 +273,8 @@ export type Settings = {
     timeouts_s: { quick: number; search: number; summary: number };
     live_tool_budget: number;
     live_context_seconds: number;
+    /** Recherches : l'agent peut utiliser les skills de l'utilisateur (Claude Code). */
+    use_skills: boolean;
   };
   voice: {
     wake_word: string;
@@ -324,6 +326,14 @@ export type ReportSettings = { default_template: string; ask_context_on_stop: bo
 
 /** Format de compte rendu : intégré (`builtin`) ou perso. */
 export type ReportTemplate = { id: string; name: string; description: string; instructions: string; builtin: boolean };
+/** Skill « Sténo » et serveur MCP dans les agents de l'utilisateur. */
+export type SkillStatus = {
+  targets: { agents: string; path: string; state: 'missing' | 'current' | 'outdated' }[];
+  mcp: { agent: string; registered: boolean }[];
+  cli: string | null;
+};
+/** Format proposé par l'agent à partir d'un exemple. */
+export type TemplateDraft = { name: string; instructions: string };
 
 export type ContextFile = {
   id: number;
@@ -344,6 +354,8 @@ export type MeetingContext = {
   files: ContextFile[];
   /** Heure (UTC) de départ de la rédaction si elle attend encore le délai de contexte. */
   report_at?: string | null;
+  /** Format repris de la dernière réunion du même titre quand aucun n'est choisi ici. */
+  inherited_template?: string | null;
 };
 
 export type MeetingFilter = {

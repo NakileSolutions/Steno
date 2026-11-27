@@ -9,7 +9,7 @@ import type {
   Action, ActionFilter, AgentInfo, AudioDevices, Connector, Decision, DoctorItem, EventMap, EventName,
   LiveState, Meeting, MeetingDetail, MeetingFilter, MeetingSummary, ModelInfo, Note, Repo, Report,
   Permissions, PermissionKind, Request, SearchHit, Segment, Settings, TestAgentResult, VariantCheck, WakeCheck, WakeDetect,
-  ContextFile, MeetingContext, ReportTemplate, UpdateStatus, Participant, PrepAnswer, Upcoming,
+  ContextFile, MeetingContext, ReportTemplate, TemplateDraft, SkillStatus, UpdateStatus, Participant, PrepAnswer, Upcoming,
 } from './types';
 import { normalizeLiveState, normalizeSettings } from './listening';
 import { t } from './i18n.svelte';
@@ -254,6 +254,11 @@ export const api = {
     call<ContextFile>('add_context_file', { id, name: file.name, data: await fileBase64(file) }),
   deleteContextFile: (fileId: number) => call<null>('delete_context_file', { fileId }),
   listReportTemplates: () => call<ReportTemplate[]>('list_report_templates'),
+  stenoSkillStatus: () => call<SkillStatus>('steno_skill_status'),
+  /** Copie le skill « Sténo » dans les agents présents et déclare le serveur MCP `steno`. */
+  installStenoSkill: () => call<SkillStatus>('install_steno_skill'),
+  /** Format proposé par l'agent à partir d'un compte rendu collé (à relire, non enregistré). */
+  templateFromExample: (example: string) => call<TemplateDraft>('template_from_example', { example }),
   /** La rédaction du compte rendu part sans attendre la fin du délai de contexte. */
   reportNow: (id: string) => call<null>('report_now', { id }),
   correlate: (id: string) => call<null>('correlate', { id }),

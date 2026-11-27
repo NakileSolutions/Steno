@@ -9,6 +9,10 @@
   lance jamais de recherche sur tout un dossier parent ;
 - préfère un accès ciblé (`Read` d'un fichier connu, `Glob` sur un chemin précis) à une
   recherche large ; une question simple se règle en 1 à 3 appels.
+- si l'un de tes **skills** couvre clairement la source (Jira, Confluence, Datadog, code…),
+  charge-le avant de chercher : il connaît les bonnes requêtes et t'évite des essais. Ignore
+  les skills qui publient, modifient ou configurent quelque chose, et ceux qui ne
+  correspondent pas nettement à la demande.
 
 1. **Extraire les entités** de la demande et du contexte récent : clés de tickets (motif
    `{{JIRA}}`), noms de services (`ms-*`…), fonctions, endpoints, environnements (prod,

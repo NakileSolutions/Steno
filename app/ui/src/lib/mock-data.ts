@@ -475,6 +475,7 @@ export function defaultSettings(): Settings {
       timeouts_s: { quick: 90, search: 240, summary: 300 },
       live_tool_budget: 15,
       live_context_seconds: 120,
+      use_skills: true,
     },
     voice: {
       wake_word: 'Sténo',
