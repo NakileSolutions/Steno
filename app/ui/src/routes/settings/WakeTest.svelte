@@ -4,6 +4,7 @@
   import type { Settings, VariantCheck } from '../../lib/types';
   import { toastError } from '../../lib/ui.svelte';
   import Icon from '../../lib/components/Icon.svelte';
+  import { t, tn } from '../../lib/i18n.svelte';
 
   let {
     settings = $bindable(),
@@ -92,18 +93,18 @@
 
 <dialog bind:this={el} oncancel={(e) => { e.preventDefault(); onclose(); }} aria-labelledby="wt-title">
   <header class="row">
-    <h2 id="wt-title" class="grow">Tester le mot d’appel « {word} »</h2>
-    <button class="btn ghost sm icon" onclick={onclose} aria-label="Fermer"><Icon name="x" size={14} /></button>
+    <h2 id="wt-title" class="grow">{t('Tester le mot d’appel « {word} »', { word })}</h2>
+    <button class="btn ghost sm icon" onclick={onclose} aria-label={t('Fermer')}><Icon name="x" size={14} /></button>
   </header>
 
-  <ol class="steps" aria-label="Étapes">
-    <li class:cur={step === 'record'} class:ok={step !== 'record'}>1. Cinq essais</li>
-    <li class:cur={step === 'trap'} class:ok={step === 'result'}>2. Texte piège</li>
-    <li class:cur={step === 'result'}>3. Résultat</li>
+  <ol class="steps" aria-label={t('Étapes')}>
+    <li class:cur={step === 'record'} class:ok={step !== 'record'}>1. {t('Cinq essais')}</li>
+    <li class:cur={step === 'trap'} class:ok={step === 'result'}>2. {t('Texte piège')}</li>
+    <li class:cur={step === 'result'}>3. {t('Résultat')}</li>
   </ol>
 
   {#if step === 'record'}
-    <p>Dites à voix normale, comme en réunion :</p>
+    <p>{t('Dites à voix normale, comme en réunion :')}</p>
     <p class="say">« {phrase} »</p>
     <ul class="attempts">
       {#each Array(5) as _, i}
@@ -112,9 +113,9 @@
           <span class="n">{i + 1}</span>
           {#if a}
             <span class="grow ellipsis">« {a.text} »</span>
-            <span class="badge {a.detected ? 'ok' : 'err'}">{a.detected ? 'Détecté' : 'Raté'}</span>
+            <span class="badge {a.detected ? 'ok' : 'err'}">{a.detected ? t('Détecté') : t('Raté')}</span>
           {:else if recording && i === attempts.length}
-            <span class="grow rec"><span class="dot live"></span> Écoute… parlez maintenant</span>
+            <span class="grow rec"><span class="dot live"></span> {t('Écoute… parlez maintenant')}</span>
           {:else}
             <span class="grow faint">—</span>
           {/if}
@@ -122,58 +123,58 @@
       {/each}
     </ul>
     <div class="row foot">
-      <span class="grow small muted">{attempts.length ? `Détection : ${rate}/${attempts.length}` : 'Objectif : 5/5'}</span>
+      <span class="grow small muted">{attempts.length ? t('Détection : {rate}/{total}', { rate, total: attempts.length }) : t('Objectif : 5/5')}</span>
       {#if done5}
-        <button class="btn primary" onclick={() => (step = 'trap')}>Continuer</button>
+        <button class="btn primary" onclick={() => (step = 'trap')}>{t('Continuer')}</button>
       {:else}
         <!-- svelte-ignore a11y_autofocus -->
-        <button class="btn primary" onclick={recordAttempt} disabled={recording} autofocus><Icon name="mic" size={14} />{recording ? 'Écoute…' : `Enregistrer l’essai ${attempts.length + 1}/5`}</button>
+        <button class="btn primary" onclick={recordAttempt} disabled={recording} autofocus><Icon name="mic" size={14} />{recording ? t('Écoute…') : t('Enregistrer l’essai {n}/5', { n: attempts.length + 1 })}</button>
       {/if}
     </div>
   {:else if step === 'trap'}
-    <p>Lisez ce texte à voix haute. Il contient des mots proches du mot d’appel : <strong>aucun déclenchement</strong> n’est attendu.</p>
+    <p>{t('Lisez ce texte à voix haute. Il contient des mots proches du mot d’appel :')} <strong>{t('aucun déclenchement')}</strong> {t('n’est attendu.')}</p>
     <blockquote class="trap">{TRAP}</blockquote>
     <div class="row foot">
-      <span class="grow small muted">Environ 20 secondes.</span>
-      <button class="btn primary" onclick={recordTrap} disabled={recording}><Icon name="mic" size={14} />{recording ? 'Écoute… lisez le texte' : 'Commencer la lecture'}</button>
+      <span class="grow small muted">{t('Environ 20 secondes.')}</span>
+      <button class="btn primary" onclick={recordTrap} disabled={recording}><Icon name="mic" size={14} />{recording ? t('Écoute… lisez le texte') : t('Commencer la lecture')}</button>
     </div>
   {:else}
     <div class="results">
       <div class="score" class:good={rate === 5}>
         <span class="big">{rate}/5</span>
-        <span class="small muted">commandes détectées</span>
+        <span class="small muted">{t('commandes détectées')}</span>
       </div>
       <div class="score" class:good={trapHits.length === 0}>
         <span class="big">{trapHits.length}</span>
-        <span class="small muted">faux déclenchement{trapHits.length > 1 ? 's' : ''}</span>
+        <span class="small muted">{tn(trapHits.length, 'faux déclenchement', 'faux déclenchements')}</span>
       </div>
     </div>
     {#if trapHits.length}
-      <p class="small warn">Phrases qui ont déclenché à tort : {trapHits.map((h) => `« ${h} »`).join(', ')}. Essayez le mode strict ou un autre mot.</p>
+      <p class="small warn">{t('Phrases qui ont déclenché à tort : {list}. Essayez le mode strict ou un autre mot.', { list: trapHits.map((h) => `« ${h} »`).join(', ') })}</p>
     {/if}
     {#if rate === 5 && !trapHits.length}
-      <p class="small okc">Parfait : le mot d’appel est fiable avec votre voix et votre micro.</p>
+      <p class="small okc">{t('Parfait : le mot d’appel est fiable avec votre voix et votre micro.')}</p>
     {/if}
     {#if candidates.length}
       <div class="cands">
-        <p class="small">Ajouter les transcriptions ratées comme variantes acceptées ?</p>
+        <p class="small">{t('Ajouter les transcriptions ratées comme variantes acceptées ?')}</p>
         {#each candidates as c (c.variant)}
           <label class="check small"><input type="checkbox" bind:checked={c.checked} /> <code>{c.variant}</code></label>
         {/each}
-        <div><button class="btn sm" onclick={addVariants}><Icon name="plus" size={13} />Ajouter comme variantes</button></div>
+        <div><button class="btn sm" onclick={addVariants}><Icon name="plus" size={13} />{t('Ajouter comme variantes')}</button></div>
       </div>
     {/if}
     {#if check}
       <div class="small">
-        {#if check.accepted.length}<p class="okc">Ajoutées : {check.accepted.join(', ')} (pensez à enregistrer).</p>{/if}
-        {#each check.rejected as r}<p class="warn">« {r.variant} » refusée : {r.reason}</p>{/each}
+        {#if check.accepted.length}<p class="okc">{t('Ajoutées : {list} (pensez à enregistrer).', { list: check.accepted.join(', ') })}</p>{/if}
+        {#each check.rejected as r}<p class="warn">{t('« {variant} » refusée : {reason}', { variant: r.variant, reason: r.reason })}</p>{/each}
       </div>
     {/if}
-    {#if trapText}<details class="small faint"><summary>Transcription du texte piège</summary><p>{trapText}</p></details>{/if}
+    {#if trapText}<details class="small faint"><summary>{t('Transcription du texte piège')}</summary><p>{trapText}</p></details>{/if}
     <div class="row foot">
-      <button class="btn" onclick={() => { attempts = []; trapHits = []; check = null; step = 'record'; }}>Recommencer</button>
+      <button class="btn" onclick={() => { attempts = []; trapHits = []; check = null; step = 'record'; }}>{t('Recommencer')}</button>
       <span class="grow"></span>
-      <button class="btn primary" onclick={onclose}>Terminer</button>
+      <button class="btn primary" onclick={onclose}>{t('Terminer')}</button>
     </div>
   {/if}
 </dialog>

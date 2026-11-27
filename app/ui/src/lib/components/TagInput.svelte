@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { t } from '../i18n.svelte';
   // Liste de mots éditable (Entrée ou virgule pour ajouter, ⌫ pour retirer le dernier).
   let {
     values = $bindable([]),
-    placeholder = 'Ajouter…',
+    placeholder,
     label,
     onadd,
   }: { values: string[]; placeholder?: string; label: string; onadd?: (v: string) => boolean | Promise<boolean> } = $props();
@@ -32,10 +33,10 @@
   {#each values as v, i (v)}
     <span class="tag">
       {v}
-      <button type="button" aria-label="Retirer {v}" onclick={() => (values = values.filter((_, j) => j !== i))}>×</button>
+      <button type="button" aria-label={t('Retirer {v}', { v })} onclick={() => (values = values.filter((_, j) => j !== i))}>×</button>
     </span>
   {/each}
-  <input bind:value={draft} onkeydown={keydown} onblur={add} {placeholder} aria-label="{label} : ajouter" />
+  <input bind:value={draft} onkeydown={keydown} onblur={add} placeholder={placeholder ?? t('Ajouter…')} aria-label={t('{label} : ajouter', { label })} />
 </div>
 
 <style>

@@ -21,6 +21,7 @@ pub mod maintenance;
 pub mod model;
 pub mod paths;
 pub mod permissions;
+pub mod planning;
 pub mod policy;
 pub mod prompts;
 pub mod report;

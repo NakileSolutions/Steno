@@ -7,11 +7,12 @@
   import type { ContextFile, MeetingContext, ReportTemplate, Settings } from '../types';
   import { toastError } from '../ui.svelte';
   import Icon from './Icon.svelte';
+  import { t, tk } from '../i18n.svelte';
 
   let { meetingId, compact = false, onchange }: { meetingId: string; compact?: boolean; onchange?: (c: MeetingContext) => void } = $props();
 
   const ACCEPT = '.pdf,.xlsx,.xlsm,.xls,.ods,.csv,.tsv,.docx,.doc,.rtf,.odt,.html,.htm,.md,.markdown,.txt,.json,.yaml,.yml,.xml,.log';
-  const KIND_LABEL: Record<string, string> = { pdf: 'PDF', tableur: 'Tableur', csv: 'CSV', document: 'Document', texte: 'Texte' };
+  const KIND_LABEL: Record<string, string> = { pdf: 'PDF', tableur: tk('Tableur'), csv: 'CSV', document: tk('Document'), texte: tk('Texte') };
 
   let ctx = $state<MeetingContext | null>(null);
   let templates = $state<ReportTemplate[]>([]);
@@ -25,10 +26,10 @@
 
   async function load() {
     try {
-      const [c, t, s] = await Promise.all([api.getMeetingContext(meetingId), api.listReportTemplates(), api.getSettings()]);
+      const [c, tl, s] = await Promise.all([api.getMeetingContext(meetingId), api.listReportTemplates(), api.getSettings()]);
       ctx = c;
       text = c.text;
-      templates = t;
+      templates = tl;
       defaultTemplate = s.report?.default_template ?? 'standard';
     } catch (e) {
       toastError(e);
@@ -36,8 +37,8 @@
   }
   onMount(load);
 
-  const defaultName = $derived(templates.find((t) => t.id === defaultTemplate)?.name ?? 'Standard');
-  const current = $derived(templates.find((t) => t.id === (ctx?.template ?? defaultTemplate)));
+  const defaultName = $derived(templates.find((x) => x.id === defaultTemplate)?.name ?? t('Standard'));
+  const current = $derived(templates.find((x) => x.id === (ctx?.template ?? defaultTemplate)));
 
   async function save(template = ctx?.template ?? null) {
     if (!ctx) return;
@@ -69,12 +70,12 @@
     try {
       const s: Settings = await api.getSettings();
       const saved = await api.saveSettings({ ...s, report: { ...s.report, templates: [...s.report.templates, { id: '', name, instructions: newInstr.trim() }] } });
-      const t = saved.report.templates.at(-1);
+      const tpl = saved.report.templates.at(-1);
       templates = await api.listReportTemplates();
       creating = false;
       newName = '';
       newInstr = '';
-      if (t) await save(t.id);
+      if (tpl) await save(tpl.id);
     } catch (e) {
       toastError(e);
     }
@@ -108,24 +109,25 @@
     }
   }
 
-  const size = (n: number) => (n < 1024 ? `${n} o` : n < 1048576 ? `${Math.round(n / 1024)} Ko` : `${(n / 1048576).toFixed(1)} Mo`);
+  const size = (n: number) =>
+    n < 1024 ? t('{n} o', { n }) : n < 1048576 ? t('{n} Ko', { n: Math.round(n / 1024) }) : t('{n} Mo', { n: (n / 1048576).toFixed(1) });
 </script>
 
 <div class="ctx" class:compact>
-  <label class="lbl" for="ctx-text-{meetingId}">Contexte <span class="faint">facultatif</span></label>
+  <label class="lbl" for="ctx-text-{meetingId}">{t('Contexte')} <span class="faint">{t('facultatif')}</span></label>
   <textarea
     id="ctx-text-{meetingId}"
     class="input"
     rows={compact ? 3 : 4}
     bind:value={text}
     onblur={() => save()}
-    placeholder="De quoi parle la réunion, quel projet, ce qu’il faut surveiller… Ex. « Point Nova : vérifier la TVA belge (19 % dans la règle actuelle) »."
+    placeholder={t('De quoi parle la réunion, quel projet, ce qu’il faut surveiller… Ex. « Point Nova : vérifier la TVA belge (19 % dans la règle actuelle) ».')}
     disabled={!ctx}
   ></textarea>
 
   <div class="row docs-h">
-    <span class="lbl">Documents</span>
-    <span class="faint small">PDF, Excel, CSV, Word, Markdown ou texte : lus par l’IA pour le compte rendu.</span>
+    <span class="lbl">{t('Documents')}</span>
+    <span class="faint small">{t('PDF, Excel, CSV, Word, Markdown ou texte : lus par l’IA pour le compte rendu.')}</span>
   </div>
   {#if ctx?.files.length}
     <ul class="files">
@@ -133,44 +135,44 @@
         <li>
           <Icon name="file" size={14} />
           <span class="grow ellipsis" title={f.name}>{f.name}</span>
-          <span class="badge outline">{KIND_LABEL[f.kind] ?? f.kind}</span>
+          <span class="badge outline">{KIND_LABEL[f.kind] ? t(KIND_LABEL[f.kind]) : f.kind}</span>
           <span class="faint small tnum">{size(f.size)}</span>
-          {#if f.truncated}<span class="badge warn" title="Document long : seul le début est lu par l’IA">extrait</span>{/if}
-          <button class="btn ghost sm icon" onclick={() => removeFile(f.id)} title="Retirer ce document" aria-label="Retirer {f.name}"><Icon name="x" size={13} /></button>
+          {#if f.truncated}<span class="badge warn" title={t('Document long : seul le début est lu par l’IA')}>{t('extrait')}</span>{/if}
+          <button class="btn ghost sm icon" onclick={() => removeFile(f.id)} title={t('Retirer ce document')} aria-label={t('Retirer {name}', { name: f.name })}><Icon name="x" size={13} /></button>
         </li>
       {/each}
     </ul>
   {/if}
   <div class="row">
     <button class="btn sm" onclick={() => input?.click()} disabled={!ctx || uploading > 0}>
-      {#if uploading}<span class="spin" aria-hidden="true"></span>Lecture…{:else}<Icon name="paperclip" size={14} />Ajouter des documents{/if}
+      {#if uploading}<span class="spin" aria-hidden="true"></span>{t('Lecture…')}{:else}<Icon name="paperclip" size={14} />{t('Ajouter des documents')}{/if}
     </button>
     <input bind:this={input} type="file" multiple accept={ACCEPT} hidden onchange={(e) => addFiles(e.currentTarget.files)} />
   </div>
 
-  <label class="lbl" for="ctx-tpl-{meetingId}">Format du compte rendu</label>
+  <label class="lbl" for="ctx-tpl-{meetingId}">{t('Format du compte rendu')}</label>
   <select id="ctx-tpl-{meetingId}" class="input tpl" value={ctx?.template ?? ''} onchange={(e) => pickTemplate(e.currentTarget.value)} disabled={!ctx}>
-    <option value="">Par défaut ({defaultName})</option>
-    <optgroup label="Formats prédéfinis">
-      {#each templates.filter((t) => t.builtin) as t (t.id)}<option value={t.id}>{t.name}</option>{/each}
+    <option value="">{t('Par défaut ({name})', { name: defaultName })}</option>
+    <optgroup label={t('Formats prédéfinis')}>
+      {#each templates.filter((x) => x.builtin) as tpl (tpl.id)}<option value={tpl.id}>{tpl.name}</option>{/each}
     </optgroup>
-    {#if templates.some((t) => !t.builtin)}
-      <optgroup label="Mes formats">
-        {#each templates.filter((t) => !t.builtin) as t (t.id)}<option value={t.id}>{t.name}</option>{/each}
+    {#if templates.some((x) => !x.builtin)}
+      <optgroup label={t('Mes formats')}>
+        {#each templates.filter((x) => !x.builtin) as tpl (tpl.id)}<option value={tpl.id}>{tpl.name}</option>{/each}
       </optgroup>
     {/if}
-    <option value="__new">＋ Nouveau format…</option>
+    <option value="__new">＋ {t('Nouveau format…')}</option>
   </select>
   {#if current && !creating}<p class="faint small">{current.description}</p>{/if}
 
   {#if creating}
     <div class="newtpl">
-      <input class="input" bind:value={newName} placeholder="Nom du format (ex. Note COMEX)" aria-label="Nom du format" />
-      <textarea class="input" rows="3" bind:value={newInstr} placeholder="Consignes : structure, ton, longueur… Ex. « Trois puces au plus, ton exécutif, chiffres en gras »." aria-label="Consignes du format"></textarea>
-      <p class="faint small">Enregistré sur ce Mac et réutilisable pour les prochaines réunions (Réglages → Comptes rendus).</p>
+      <input class="input" bind:value={newName} placeholder={t('Nom du format (ex. Note COMEX)')} aria-label={t('Nom du format')} />
+      <textarea class="input" rows="3" bind:value={newInstr} placeholder={t('Consignes : structure, ton, longueur… Ex. « Trois puces au plus, ton exécutif, chiffres en gras ».')} aria-label={t('Consignes du format')}></textarea>
+      <p class="faint small">{t('Enregistré sur ce Mac et réutilisable pour les prochaines réunions (Réglages → Comptes rendus).')}</p>
       <div class="row end">
-        <button class="btn sm ghost" onclick={() => (creating = false)}>Annuler</button>
-        <button class="btn sm primary" onclick={createTemplate} disabled={!newName.trim() || !newInstr.trim()}>Enregistrer et utiliser</button>
+        <button class="btn sm ghost" onclick={() => (creating = false)}>{t('Annuler')}</button>
+        <button class="btn sm primary" onclick={createTemplate} disabled={!newName.trim() || !newInstr.trim()}>{t('Enregistrer et utiliser')}</button>
       </div>
     </div>
   {/if}

@@ -4,12 +4,13 @@
   import { api } from '../../lib/api';
   import type { ReportTemplate, Settings } from '../../lib/types';
   import Icon from '../../lib/components/Icon.svelte';
+  import { t } from '../../lib/i18n.svelte';
 
   let { settings = $bindable() }: { settings: Settings } = $props();
   let builtins = $state<ReportTemplate[]>([]);
   onMount(async () => {
     try {
-      builtins = (await api.listReportTemplates()).filter((t) => t.builtin);
+      builtins = (await api.listReportTemplates()).filter((tp) => tp.builtin);
     } catch {
       builtins = [];
     }
@@ -19,62 +20,62 @@
     settings.report.templates.push({ id: '', name: '', instructions: '' });
   }
   function remove(i: number) {
-    const [t] = settings.report.templates.splice(i, 1);
-    if (t && settings.report.default_template === t.id) settings.report.default_template = 'standard';
+    const [tp] = settings.report.templates.splice(i, 1);
+    if (tp && settings.report.default_template === tp.id) settings.report.default_template = 'standard';
   }
 </script>
 
-<p class="intro muted">Le format guide la rédaction : structure, ton, longueur. Il se choisit pour chaque réunion (à l’arrêt de l’écoute ou sur la page de la réunion) ; sinon le format par défaut s’applique.</p>
+<p class="intro muted">{t('Le format guide la rédaction : structure, ton, longueur. Il se choisit pour chaque réunion (à l’arrêt de l’écoute ou sur la page de la réunion) ; sinon le format par défaut s’applique.')}</p>
 
 <div class="field">
-  <label class="field-label" for="rep-default">Format par défaut</label>
+  <label class="field-label" for="rep-default">{t('Format par défaut')}</label>
   <div class="field-body">
     <select id="rep-default" class="input w" bind:value={settings.report.default_template}>
-      <optgroup label="Formats prédéfinis">
-        {#each builtins as t (t.id)}<option value={t.id}>{t.name}</option>{/each}
+      <optgroup label={t('Formats prédéfinis')}>
+        {#each builtins as tp (tp.id)}<option value={tp.id}>{tp.name}</option>{/each}
       </optgroup>
-      {#if settings.report.templates.some((t) => t.id)}
-        <optgroup label="Mes formats">
-          {#each settings.report.templates.filter((t) => t.id) as t (t.id)}<option value={t.id}>{t.name}</option>{/each}
+      {#if settings.report.templates.some((tp) => tp.id)}
+        <optgroup label={t('Mes formats')}>
+          {#each settings.report.templates.filter((tp) => tp.id) as tp (tp.id)}<option value={tp.id}>{tp.name}</option>{/each}
         </optgroup>
       {/if}
     </select>
-    {#if builtins.find((t) => t.id === settings.report.default_template)}
-      <p class="faint small">{builtins.find((t) => t.id === settings.report.default_template)?.description}</p>
+    {#if builtins.find((tp) => tp.id === settings.report.default_template)}
+      <p class="faint small">{builtins.find((tp) => tp.id === settings.report.default_template)?.description}</p>
     {/if}
   </div>
 </div>
 
 <div class="field">
-  <label class="field-label" for="rep-delay">Délai avant la rédaction<span class="hint">Temps laissé après la réunion pour ajouter contexte et documents. « Rédiger maintenant » le court-circuite.</span></label>
+  <label class="field-label" for="rep-delay">{t('Délai avant la rédaction')}<span class="hint">{t('Temps laissé après la réunion pour ajouter contexte et documents. « Rédiger maintenant » le court-circuite.')}</span></label>
   <div class="field-body">
     <select id="rep-delay" class="input w" bind:value={settings.report.context_delay_s}>
-      {#each [[0, 'Aucun (rédaction immédiate)'], [30, '30 secondes'], [60, '1 minute'], [120, '2 minutes'], [300, '5 minutes']] as [v, l] (v)}<option value={v}>{l}</option>{/each}
+      {#each [[0, t('Aucun (rédaction immédiate)')], [30, t('30 secondes')], [60, t('1 minute')], [120, t('2 minutes')], [300, t('5 minutes')]] as [v, l] (v)}<option value={v}>{l}</option>{/each}
     </select>
   </div>
 </div>
 
 <div class="field">
-  <div class="field-label">À l’arrêt de l’écoute<span class="hint">Désactivé : l’arrêt se fait en un clic et le compte rendu part tout de suite. Le contexte peut s’ajouter pendant la réunion (bouton « Contexte ») ou sur la page de la réunion.</span></div>
+  <div class="field-label">{t('À l’arrêt de l’écoute')}<span class="hint">{t('Désactivé : l’arrêt se fait en un clic et le compte rendu part tout de suite. Le contexte peut s’ajouter pendant la réunion (bouton « Contexte ») ou sur la page de la réunion.')}</span></div>
   <div class="field-body">
-    <label class="check toggle"><span>Proposer contexte, documents et format à l’arrêt</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.report.ask_context_on_stop} /></label>
+    <label class="check toggle"><span>{t('Proposer contexte, documents et format à l’arrêt')}</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.report.ask_context_on_stop} /></label>
   </div>
 </div>
 
 <div class="field">
-  <div class="field-label">Mes formats<span class="hint">Enregistrés sur ce Mac, réutilisables pour toutes les réunions.</span></div>
+  <div class="field-label">{t('Mes formats')}<span class="hint">{t('Enregistrés sur ce Mac, réutilisables pour toutes les réunions.')}</span></div>
   <div class="field-body">
-    {#each settings.report.templates as t, i (i)}
+    {#each settings.report.templates as tp, i (i)}
       <div class="tpl">
         <div class="row">
-          <input class="input grow" bind:value={t.name} placeholder="Nom (ex. Note COMEX)" aria-label="Nom du format" />
-          <button class="btn ghost sm icon" onclick={() => remove(i)} title="Supprimer ce format" aria-label="Supprimer le format {t.name}"><Icon name="trash" size={14} /></button>
+          <input class="input grow" bind:value={tp.name} placeholder={t('Nom (ex. Note COMEX)')} aria-label={t('Nom du format')} />
+          <button class="btn ghost sm icon" onclick={() => remove(i)} title={t('Supprimer ce format')} aria-label={t('Supprimer le format {name}', { name: tp.name })}><Icon name="trash" size={14} /></button>
         </div>
-        <textarea class="input" rows="3" bind:value={t.instructions} placeholder="Consignes : structure, sections, ton, longueur… Ex. « Trois puces au plus, ton exécutif, chiffres en gras »." aria-label="Consignes du format {t.name}"></textarea>
+        <textarea class="input" rows="3" bind:value={tp.instructions} placeholder={t('Consignes : structure, sections, ton, longueur… Ex. « Trois puces au plus, ton exécutif, chiffres en gras ».')} aria-label={t('Consignes du format {name}', { name: tp.name })}></textarea>
       </div>
     {/each}
-    <button class="btn sm" onclick={add}><Icon name="plus" size={14} />Nouveau format</button>
-    <p class="faint small">Prédéfinis : {builtins.map((t) => t.name).join(', ')}.</p>
+    <button class="btn sm" onclick={add}><Icon name="plus" size={14} />{t('Nouveau format')}</button>
+    <p class="faint small">{t('Prédéfinis : {list}.', { list: builtins.map((tp) => tp.name).join(', ') })}</p>
   </div>
 </div>
 

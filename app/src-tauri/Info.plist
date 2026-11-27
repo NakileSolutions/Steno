@@ -4,6 +4,10 @@
 <dict>
   <key>LSUIElement</key>
   <true/>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Sténo lit vos réunions à venir et leurs invités pour préparer les comptes rendus et nommer les participants. Rien n’est modifié dans votre calendrier.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>Sténo lit vos réunions à venir et leurs invités pour préparer les comptes rendus et nommer les participants. Rien n’est modifié dans votre calendrier.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Sténo transcrit votre voix pendant les réunions Teams, entièrement sur ce Mac.</string>
   <key>NSAudioCaptureUsageDescription</key>

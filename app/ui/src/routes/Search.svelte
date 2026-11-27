@@ -8,6 +8,7 @@
   import Icon from '../lib/components/Icon.svelte';
   import RequestCard from '../lib/components/RequestCard.svelte';
   import { groupHits } from '../lib/group';
+  import { t, tn } from '../lib/i18n.svelte';
 
   let query = $state(router.route.query.q ?? '');
   let hits = $state<SearchHit[]>([]);
@@ -58,8 +59,8 @@
 <div class="page scroll">
   <div class="inner">
     <header class="head">
-      <h1>Recherche</h1>
-      <p class="muted small">Transcriptions et comptes rendus de toutes vos réunions.</p>
+      <h1>{t('Recherche')}</h1>
+      <p class="muted small">{t('Transcriptions et comptes rendus de toutes vos réunions.')}</p>
     </header>
     <form class="bar row" onsubmit={(e) => { e.preventDefault(); run(); }}>
       <label class="searchbox grow">
@@ -70,32 +71,32 @@
           type="search"
           bind:value={query}
           oninput={runSoon}
-          placeholder="Mot, ticket (APP-1234), service, personne…"
-          aria-label="Rechercher dans toutes les réunions"
+          placeholder={t('Mot, ticket (APP-1234), service, personne…')}
+          aria-label={t('Rechercher dans toutes les réunions')}
         />
         <kbd>/</kbd>
       </label>
-      <button type="button" class="btn aibtn" onclick={askAi} disabled={!query.trim()} title="Poser la question à l’agent IA, qui lit l’historique via le serveur MCP Sténo">
-        <Icon name="ask" size={15} />Demander à l’IA
+      <button type="button" class="btn aibtn" onclick={askAi} disabled={!query.trim()} title={t('Poser la question à l’agent IA, qui lit l’historique via le serveur MCP Sténo')}>
+        <Icon name="ask" size={15} />{t('Demander à l’IA')}
       </button>
     </form>
 
     {#if aiReq}
       <section class="ai">
-        <div class="row"><h2 class="label grow">Réponse de l’IA</h2><button class="btn ghost sm icon" onclick={() => (aiReq = null)} aria-label="Fermer la réponse"><Icon name="x" size={13} /></button></div>
+        <div class="row"><h2 class="label grow">{t('Réponse de l’IA')}</h2><button class="btn ghost sm icon" onclick={() => (aiReq = null)} aria-label={t('Fermer la réponse')}><Icon name="x" size={13} /></button></div>
         <RequestCard req={aiReq} />
       </section>
     {/if}
 
     {#if searched}
-      <p class="faint small count"><span class="tnum">{hits.length}</span> résultat{hits.length > 1 ? 's' : ''} dans <span class="tnum">{groups.length}</span> réunion{groups.length > 1 ? 's' : ''}</p>
+      <p class="faint small count tnum">{tn(hits.length, '{n} résultat', '{n} résultats')} {tn(groups.length, 'dans {n} réunion', 'dans {n} réunions')}</p>
     {/if}
 
     {#each groups as g (g.id)}
       <section class="group">
         <a class="gtitle row" href={href(`/meetings/${g.id}`)}>
           <span class="gic" aria-hidden="true"><Icon name="meetings" size={14} /></span>
-          <span class="grow ellipsis">{g.title ?? 'Réunion sans titre'}</span>
+          <span class="grow ellipsis">{g.title ?? t('Réunion sans titre')}</span>
           <span class="faint small tnum">{dayLabel(g.started_at)} · {time(g.started_at)}</span>
           <Icon name="chevron" size={13} />
         </a>
@@ -103,7 +104,7 @@
           {#each g.hits as h, i (i)}
             <li>
               <a class="hit" href={href(`/meetings/${g.id}?tab=${h.kind === 'report' ? 'report' : 'transcript'}`)}>
-                <span class="kind" class:rep={h.kind === 'report'}>{h.kind === 'report' ? 'Compte rendu' : h.ts ? time(h.ts) : 'Transcription'}</span>
+                <span class="kind" class:rep={h.kind === 'report'}>{h.kind === 'report' ? t('Compte rendu') : h.ts ? time(h.ts) : t('Transcription')}</span>
                 <span class="snip">{@html highlight(cleanSnippet(h.snippet, searched), searched)}</span>
               </a>
             </li>
@@ -114,18 +115,18 @@
       {#if searched}
         <div class="empty">
           <Icon name="search" size={24} stroke={1.5} />
-          <p>Aucun résultat pour « {searched} ».</p>
-          <p class="small">Essayez « Demander à l’IA » pour une question formulée.</p>
+          <p>{t('Aucun résultat pour « {q} ».', { q: searched })}</p>
+          <p class="small">{t('Essayez « Demander à l’IA » pour une question formulée.')}</p>
         </div>
       {:else}
         <div class="empty">
           <Icon name="search" size={24} stroke={1.5} />
-          <p>Recherche plein texte dans toutes les transcriptions et tous les comptes rendus.</p>
-          <p class="small">Les phrases privées ne sont jamais indexées dans les résultats.</p>
+          <p>{t('Recherche plein texte dans toutes les transcriptions et tous les comptes rendus.')}</p>
+          <p class="small">{t('Les phrases privées ne sont jamais indexées dans les résultats.')}</p>
         </div>
       {/if}
     {/each}
-    {#if groups.length}<p class="faint tiny tnum">Dates : {shortDate(groups.at(-1)!.started_at)} → {shortDate(groups[0].started_at)}</p>{/if}
+    {#if groups.length}<p class="faint tiny tnum">{t('Dates : {from} → {to}', { from: shortDate(groups.at(-1)!.started_at), to: shortDate(groups[0].started_at) })}</p>{/if}
   </div>
 </div>
 

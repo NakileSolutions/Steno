@@ -4,7 +4,7 @@
 import { api } from './api';
 import { DEFAULT_CALL_APPS, DEFAULT_CONSENT_MESSAGE, DEFAULT_STOP_VERB, formatShortcut, stopPhrase } from './listening';
 import type { CallApp, Settings } from './types';
-import { setLang } from './i18n.svelte';
+import { setLang, t } from './i18n.svelte';
 
 export const prefs = $state({
   wake: 'Sténo',
@@ -42,5 +42,7 @@ export function loadPrefs(): void {
 export function stopHint(): string {
   const sc = formatShortcut(prefs.toggle);
   const phrase = stopPhrase(prefs.wake, { stop: prefs.stopVerbs });
-  return `Pour arrêter : bouton${sc ? `, ${sc}` : ''}, ou dites « ${phrase} »`;
+  return sc
+    ? t('Pour arrêter : bouton, {shortcut}, ou dites « {phrase} »', { shortcut: sc, phrase })
+    : t('Pour arrêter : bouton, ou dites « {phrase} »', { phrase });
 }

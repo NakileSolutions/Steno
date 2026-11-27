@@ -12,7 +12,9 @@
   import AgentLogo from '../../lib/components/AgentLogo.svelte';
   import { agentName } from '../../lib/agents';
   import ContextEditor from '../../lib/components/ContextEditor.svelte';
+  import ParticipantsEditor from '../../lib/components/ParticipantsEditor.svelte';
   import type { MeetingContext } from '../../lib/types';
+  import { t, tk, tn } from '../../lib/i18n.svelte';
 
   let { detail, reload }: { detail: MeetingDetail; reload: () => Promise<void> } = $props();
 
@@ -45,10 +47,10 @@
 
   const canCorrelate = $derived(!m.confidential && m.correlation !== 'off' && !!current && m.status !== 'live');
   const correlateHint = $derived(
-    m.confidential ? 'Réunion confidentielle : aucun appel à l’IA.'
-      : m.correlation === 'off' ? 'Corrélation désactivée pour cette réunion.'
-      : !current ? 'Il faut d’abord un compte rendu.'
-      : 'Croiser le compte rendu avec le code et les connecteurs cochés'
+    m.confidential ? t('Réunion confidentielle : aucun appel à l’IA.')
+      : m.correlation === 'off' ? t('Corrélation désactivée pour cette réunion.')
+      : !current ? t('Il faut d’abord un compte rendu.')
+      : t('Croiser le compte rendu avec le code et les connecteurs cochés')
   );
 
   async function correlate() {
@@ -56,7 +58,7 @@
       pending = { op: 'correlate', from: current?.version ?? 0 };
       version = null;
       await api.correlate(m.id);
-      toast('Corrélation lancée : le compte rendu passera en version suivante.');
+      toast(t('Corrélation lancée : le compte rendu passera en version suivante.'));
     } catch (e) {
       pending = null;
       toastError(e);
@@ -67,30 +69,30 @@
       pending = { op: 'regenerate', from: current?.version ?? 0 };
       version = null;
       await api.regenerateReport(m.id);
-      toast('Régénération lancée.');
+      toast(t('Régénération lancée.'));
     } catch (e) {
       pending = null;
       toastError(e);
     }
   }
-  const docTitle = $derived(m.title ?? 'Réunion');
-  const docDate = $derived(`${shortDate(m.started_at)} à ${time(m.started_at)}`);
+  const docTitle = $derived(m.title ?? t('Réunion'));
+  const docDate = $derived(t('{date} à {time}', { date: shortDate(m.started_at), time: time(m.started_at) }));
   const baseName = $derived(`${m.started_at.slice(0, 10)}-${slug(m.title ?? m.id)}`);
 
   /** Copie mise en forme : se colle telle quelle dans Teams, Slack, Outlook ou Gmail. */
   async function copy() {
     if (!report) return;
     const ok = await copyRich(reportHtml(docTitle, docDate, report.markdown), `${docTitle} — ${docDate}\n\n${plainText(report.markdown)}`);
-    if (ok) toast('Compte rendu copié : collez-le dans Teams, Slack ou un mail.');
-    else toastError('Copie impossible.');
+    if (ok) toast(t('Compte rendu copié : collez-le dans Teams, Slack ou un mail.'));
+    else toastError(t('Copie impossible.'));
   }
   async function copyMarkdown() {
-    if (report && (await copyText(report.markdown))) toast('Markdown copié.');
+    if (report && (await copyText(report.markdown))) toast(t('Markdown copié.'));
   }
   async function save(format: ExportFormat) {
     try {
       const where = await saveExport(m.id, format, format === 'markdown' ? baseName : `${baseName}-transcription`);
-      if (where) toast(`Enregistré : ${where.split('/').pop()}`);
+      if (where) toast(t('Enregistré : {file}', { file: where.split('/').pop() ?? '' }));
     } catch (e) {
       toastError(e);
     }
@@ -103,15 +105,15 @@
       toastError(e);
     }
   }
-  const exportItems: MenuItem[] = [
-    { label: 'Copier pour Teams, Slack ou un mail', icon: 'copy', hint: 'mis en forme', action: copy },
-    { label: 'Copier le markdown', icon: 'copy', action: copyMarkdown },
-    { label: 'Imprimer ou enregistrer en PDF…', icon: 'printer', action: print, separatorBefore: true },
-    { label: 'Enregistrer en Markdown…', icon: 'download', hint: '.md, avec la transcription', action: () => save('markdown') },
-    { label: 'Transcription en texte…', icon: 'download', hint: '.txt', action: () => save('txt'), separatorBefore: true },
-    { label: 'Sous-titres SRT…', icon: 'download', hint: '.srt', action: () => save('srt') },
-    { label: 'Sous-titres WebVTT…', icon: 'download', hint: '.vtt', action: () => save('vtt') },
-  ];
+  const exportItems: MenuItem[] = $derived([
+    { label: t('Copier pour Teams, Slack ou un mail'), icon: 'copy', hint: t('mis en forme'), action: copy },
+    { label: t('Copier le markdown'), icon: 'copy', action: copyMarkdown },
+    { label: t('Imprimer ou enregistrer en PDF…'), icon: 'printer', action: print, separatorBefore: true },
+    { label: t('Enregistrer en Markdown…'), icon: 'download', hint: t('.md, avec la transcription'), action: () => save('markdown') },
+    { label: t('Transcription en texte…'), icon: 'download', hint: '.txt', action: () => save('txt'), separatorBefore: true },
+    { label: t('Sous-titres SRT…'), icon: 'download', hint: '.srt', action: () => save('srt') },
+    { label: t('Sous-titres WebVTT…'), icon: 'download', hint: '.vtt', action: () => save('vtt') },
+  ]);
 
   async function toggleAction(id: number, done: boolean) {
     try {
@@ -128,7 +130,15 @@
   const changes = $derived(parts?.changes && !isEmptyBody(parts.changes.body) ? parts.changes : null);
 
   // Contexte : résumé dans l'en-tête du panneau ; un changement invite à régénérer.
-  let ctxSummary = $state('');
+  let ctx = $state<MeetingContext | null>(null);
+  const ctxSummary = $derived.by(() => {
+    if (!ctx) return '';
+    const bits: string[] = [];
+    if (ctx.text.trim()) bits.push(t('contexte'));
+    if (ctx.files.length) bits.push(tn(ctx.files.length, '{n} document', '{n} documents'));
+    if (ctx.template) bits.push(t('format choisi'));
+    return bits.join(' · ');
+  });
   let ctxDirty = $state(false);
   // Délai avant la rédaction (pour ajouter du contexte) : compte à rebours et « Rédiger maintenant ».
   let reportAt = $state<number | null>(null);
@@ -145,11 +155,11 @@
   }
   $effect(() => {
     if (!reportAt) return;
-    const t = setInterval(() => {
+    const timer = setInterval(() => {
       nowMs = Date.now();
       if (reportAt && nowMs >= reportAt) refreshSchedule();
     }, 1000);
-    return () => clearInterval(t);
+    return () => clearInterval(timer);
   });
   async function writeNow() {
     try {
@@ -160,11 +170,7 @@
     }
   }
   function onContext(c: MeetingContext, user = true) {
-    const bits = [];
-    if (c.text.trim()) bits.push('contexte');
-    if (c.files.length) bits.push(`${c.files.length} document${c.files.length > 1 ? 's' : ''}`);
-    if (c.template) bits.push('format choisi');
-    ctxSummary = bits.join(' · ');
+    ctx = c;
     if (user) {
       ctxDirty = !!current;
       refreshSchedule();
@@ -184,43 +190,45 @@
   const openCount = $derived(detail.actions.filter((a) => a.status !== 'done').length);
   const countItems = (md: string) => md.split('\n').filter((l) => /^\s*([-*+]|\d+\.)\s+\S/.test(l)).length;
 
-  const KIND: Record<string, string> = { code: 'Code', jira: 'Jira', confluence: 'Confluence', datadog: 'Datadog', gitlab: 'GitLab' };
+  const KIND: Record<string, string> = { code: tk('Code'), jira: 'Jira', confluence: 'Confluence', datadog: 'Datadog', gitlab: 'GitLab' };
 </script>
 
 <div class="wrap">
   {#if report}
     <div class="toolbar row">
       {#if detail.report_versions.length > 1}
-        <select class="input ver" value={report.version} onchange={(e) => pickVersion(Number(e.currentTarget.value))} aria-label="Version du compte rendu">
+        <select class="input ver" value={report.version} onchange={(e) => pickVersion(Number(e.currentTarget.value))} aria-label={t('Version du compte rendu')}>
           {#each [...detail.report_versions].reverse() as v (v.version)}
-            <option value={v.version}>Version {v.version}{v.correlated ? ' · corrélée' : ''} · {shortDate(v.generated_at)} {time(v.generated_at)}</option>
+            <option value={v.version}>{t('Version {v}', { v: v.version })}{v.correlated ? ` · ${t('corrélée')}` : ''} · {shortDate(v.generated_at)} {time(v.generated_at)}</option>
           {/each}
         </select>
       {/if}
-      {#if version}<span class="old">Ancienne version</span>{/if}
+      {#if version}<span class="old">{t('Ancienne version')}</span>{/if}
       <span class="grow"></span>
       <button class="btn sm" onclick={correlate} disabled={!canCorrelate || !!pending} title={correlateHint}>
-        {#if pending?.op === 'correlate'}<span class="spin" aria-hidden="true"></span>{:else}<Icon name="link2" size={14} />{/if}{pending?.op === 'correlate' ? 'Corrélation…' : 'Corréler'}
+        {#if pending?.op === 'correlate'}<span class="spin" aria-hidden="true"></span>{:else}<Icon name="link2" size={14} />{/if}{pending?.op === 'correlate' ? t('Corrélation…') : t('Corréler')}
       </button>
-      <button class="btn sm" onclick={regenerate} disabled={m.confidential || !!pending} title="Relancer le compte rendu (nouvelle version)">
-        {#if pending?.op === 'regenerate'}<span class="spin" aria-hidden="true"></span>{:else}<Icon name="refresh" size={14} />{/if}{pending?.op === 'regenerate' ? 'Régénération…' : 'Régénérer'}
+      <button class="btn sm" onclick={regenerate} disabled={m.confidential || !!pending} title={t('Relancer le compte rendu (nouvelle version)')}>
+        {#if pending?.op === 'regenerate'}<span class="spin" aria-hidden="true"></span>{:else}<Icon name="refresh" size={14} />{/if}{pending?.op === 'regenerate' ? t('Régénération…') : t('Régénérer')}
       </button>
       <span class="vsep" aria-hidden="true"></span>
-      <button class="btn sm icon ghost" onclick={copy} title="Copier le compte rendu mis en forme (Teams, Slack, mail)" aria-label="Copier le compte rendu"><Icon name="copy" size={15} /></button>
-      <Menu icon="share" items={exportItems} title="Exporter" />
+      <button class="btn sm icon ghost" onclick={copy} title={t('Copier le compte rendu mis en forme (Teams, Slack, mail)')} aria-label={t('Copier le compte rendu')}><Icon name="copy" size={15} /></button>
+      <Menu icon="share" items={exportItems} title={t('Exporter')} />
     </div>
 
-    <p class="faint small gen">{#if report.provider}<AgentLogo id={report.provider} name={agentName(report.provider)} size={14} />{:else}<Icon name="ask" size={12} />{/if}<span class="ellipsis">Généré {report.provider ? `par ${agentName(report.provider)}` : ''} à <span class="tnum">{time(report.generated_at)}</span>{report.model ? ` · ${report.model}` : ''}</span></p>
+    <p class="faint small gen">{#if report.provider}<AgentLogo id={report.provider} name={agentName(report.provider)} size={14} />{:else}<Icon name="ask" size={12} />{/if}<span class="ellipsis">{report.provider ? t('Généré par {agent} à', { agent: agentName(report.provider) }) : t('Généré à')} <span class="tnum">{time(report.generated_at)}</span>{report.model ? ` · ${report.model}` : ''}</span></p>
 
     {#if !m.confidential}
       <details class="ctxbox">
-        <summary><Icon name="paperclip" size={14} />Contexte, documents et format{#if ctxSummary}<span class="faint small">{' — '}{ctxSummary}</span>{/if}</summary>
+        <summary><Icon name="paperclip" size={14} />{t('Contexte, documents et format')}{#if ctxSummary}<span class="faint small">{' — '}{ctxSummary}</span>{/if}</summary>
         <div class="ctxbody">
           <ContextEditor meetingId={m.id} onchange={(c) => onContext(c)} />
+          <p class="lbl-p">{t('Participants')}</p>
+          <ParticipantsEditor meetingId={m.id} onchange={() => (ctxDirty = !!current)} />
           {#if ctxDirty}
             <div class="row redo">
-              <p class="small muted grow">Régénérez le compte rendu pour tenir compte de ces changements (l’ancienne version reste consultable).</p>
-              <button class="btn sm primary" onclick={() => { ctxDirty = false; regenerate(); }} disabled={!!pending}><Icon name="refresh" size={14} />Régénérer</button>
+              <p class="small muted grow">{t('Régénérez le compte rendu pour tenir compte de ces changements (l’ancienne version reste consultable).')}</p>
+              <button class="btn sm primary" onclick={() => { ctxDirty = false; regenerate(); }} disabled={!!pending}><Icon name="refresh" size={14} />{t('Régénérer')}</button>
             </div>
           {/if}
         </div>
@@ -230,7 +238,7 @@
     <article class="report" class:stale={!!pending}>
       {#if changes}
         <section class="rcard chg" aria-labelledby="rp-chg">
-          <h2 class="rc-h" id="rp-chg"><span class="rc-ic"><Icon name="warn" size={14} stroke={1.8} /></span>Changements importants</h2>
+          <h2 class="rc-h" id="rp-chg"><span class="rc-ic"><Icon name="warn" size={14} stroke={1.8} /></span>{t('Changements importants')}</h2>
           <div class="rc-body"><Markdown source={changes.body} /></div>
         </section>
       {/if}
@@ -245,7 +253,7 @@
         <section class="rcard dec" aria-labelledby="rp-dec">
           <h2 class="rc-h" id="rp-dec">
             <span class="rc-ic"><Icon name="flag" size={14} stroke={1.8} /></span>
-            Décisions
+            {t('Décisions')}
             {#if countItems(decisions.body)}<span class="bc">{countItems(decisions.body)}</span>{/if}
           </h2>
           <div class="rc-body"><Markdown source={decisions.body} /></div>
@@ -256,8 +264,8 @@
         <section class="rcard act" aria-labelledby="rp-act">
           <h2 class="rc-h" id="rp-act">
             <span class="rc-ic"><Icon name="checkcircle" size={14} stroke={1.8} /></span>
-            Actions
-            <span class="bc" title="{openCount} à faire sur {liveActions.length}">{liveActions.length - openCount}/{liveActions.length}</span>
+            {t('Actions')}
+            <span class="bc" title={t('{open} à faire sur {total}', { open: openCount, total: liveActions.length })}>{liveActions.length - openCount}/{liveActions.length}</span>
           </h2>
           <ul class="actions">
             {#each liveActions as a (a.id)}
@@ -275,7 +283,7 @@
         <section class="rcard act" aria-labelledby="rp-act">
           <h2 class="rc-h" id="rp-act">
             <span class="rc-ic"><Icon name="checkcircle" size={14} stroke={1.8} /></span>
-            Actions
+            {t('Actions')}
           </h2>
           <div class="rc-body md-actions"><Markdown source={mdActions.body} /></div>
         </section>
@@ -288,11 +296,11 @@
 
     {#if detail.refs.length}
       <section class="block">
-        <h2 class="bh">Liens avec le code et les outils <span class="bc">{detail.refs.length}</span></h2>
+        <h2 class="bh">{t('Liens avec le code et les outils')} <span class="bc">{detail.refs.length}</span></h2>
         <ul class="refs card">
           {#each detail.refs as r (r.id)}
             <li>
-              <span class="kind">{KIND[r.kind] ?? r.kind}</span>
+              <span class="kind">{KIND[r.kind] ? t(KIND[r.kind]) : r.kind}</span>
               <div class="grow">
                 {#if r.url}
                   <button class="reflink" onclick={() => openExternal(r.url!)} title={r.url}><code>{r.ref}</code><Icon name="external" size={11} /></button>
@@ -302,8 +310,8 @@
                 {#if r.title}<span class="muted">{' — '}{r.title}</span>{/if}
                 {#if r.note}<p class="faint small note">{r.note}</p>{/if}
               </div>
-              {#if r.verified}<span class="badge ok" title="Vérifié par l’agent"><Icon name="check" size={11} stroke={2.2} />Vérifié</span>
-              {:else}<span class="badge warn" title="Non vérifié : à confirmer">Supposé</span>{/if}
+              {#if r.verified}<span class="badge ok" title={t('Vérifié par l’agent')}><Icon name="check" size={11} stroke={2.2} />{t('Vérifié')}</span>
+              {:else}<span class="badge warn" title={t('Non vérifié : à confirmer')}>{t('Supposé')}</span>{/if}
             </li>
           {/each}
         </ul>
@@ -312,15 +320,15 @@
 
     {#if detail.drafts.length}
       <section class="block">
-        <h2 class="bh">Brouillons</h2>
-        <p class="faint small">Jamais publiés par Sténo : copiez-les si vous voulez les utiliser.</p>
+        <h2 class="bh">{t('Brouillons')}</h2>
+        <p class="faint small">{t('Jamais publiés par Sténo : copiez-les si vous voulez les utiliser.')}</p>
         {#each detail.drafts as d (d.id)}
           <div class="draft card">
             <div class="row">
-              <span class="badge outline">{d.kind === 'jira_comment' ? 'Commentaire Jira' : d.kind}</span>
+              <span class="badge outline">{d.kind === 'jira_comment' ? t('Commentaire Jira') : d.kind}</span>
               {#if d.target}<code>{d.target}</code>{/if}
               <span class="grow"></span>
-              <button class="btn sm ghost" onclick={async () => (await copyText(d.body)) && toast('Brouillon copié.')}><Icon name="copy" size={13} />Copier</button>
+              <button class="btn sm ghost" onclick={async () => (await copyText(d.body)) && toast(t('Brouillon copié.'))}><Icon name="copy" size={13} />{t('Copier')}</button>
             </div>
             <p class="body">{d.body}</p>
           </div>
@@ -331,27 +339,27 @@
     <div class="empty">
       <Icon name="note" size={24} stroke={1.5} />
       {#if m.confidential}
-        <h2>Réunion confidentielle</h2>
-        <p>Aucun compte rendu n’est généré : aucune donnée n’est envoyée à l’IA.</p>
+        <h2>{t('Réunion confidentielle')}</h2>
+        <p>{t('Aucun compte rendu n’est généré : aucune donnée n’est envoyée à l’IA.')}</p>
       {:else if m.status === 'live'}
-        <h2>Réunion en cours</h2>
-        <p>Le compte rendu sera généré à la fin de la réunion.</p>
+        <h2>{t('Réunion en cours')}</h2>
+        <p>{t('Le compte rendu sera généré à la fin de la réunion.')}</p>
       {:else if remaining > 0}
-        <h2>Rédaction du compte rendu dans <span class="tnum">{countdown}</span></h2>
-        <p>Vous pouvez encore ajouter du contexte, des documents ou choisir le format ci-dessous. Chaque modification laisse au moins 30 s de plus.</p>
-        <button class="btn primary" onclick={writeNow}>Rédiger maintenant</button>
+        <h2>{t('Rédaction du compte rendu dans')} <span class="tnum">{countdown}</span></h2>
+        <p>{t('Vous pouvez encore ajouter du contexte, des documents ou choisir le format ci-dessous. Chaque modification laisse au moins 30 s de plus.')}</p>
+        <button class="btn primary" onclick={writeNow}>{t('Rédiger maintenant')}</button>
       {:else if m.status === 'processing' || pending}
-        <h2>Compte rendu en préparation…</h2>
-        <p>Il apparaîtra ici dès qu’il sera prêt.</p>
+        <h2>{t('Compte rendu en préparation…')}</h2>
+        <p>{t('Il apparaîtra ici dès qu’il sera prêt.')}</p>
       {:else}
-        <h2>Pas encore de compte rendu</h2>
-        <button class="btn primary" onclick={regenerate}>Générer le compte rendu</button>
+        <h2>{t('Pas encore de compte rendu')}</h2>
+        <button class="btn primary" onclick={regenerate}>{t('Générer le compte rendu')}</button>
       {/if}
     </div>
     {#if !m.confidential}
       <section class="ctxempty">
-        <h2 class="bh"><Icon name="paperclip" size={15} />Contexte, documents et format <span class="faint small">facultatif</span></h2>
-        {#if m.status === 'processing' && remaining === 0}<p class="faint small hint">Ajouté avant la fin de la préparation, il est pris en compte ; sinon, régénérez le compte rendu ensuite.</p>{/if}
+        <h2 class="bh"><Icon name="paperclip" size={15} />{t('Contexte, documents et format')} <span class="faint small">{t('facultatif')}</span></h2>
+        {#if m.status === 'processing' && remaining === 0}<p class="faint small hint">{t('Ajouté avant la fin de la préparation, il est pris en compte ; sinon, régénérez le compte rendu ensuite.')}</p>{/if}
         <ContextEditor meetingId={m.id} onchange={(c) => onContext(c, false)} />
       </section>
     {/if}
@@ -473,6 +481,7 @@
   .ctxbody { padding: 14px; }
   .redo { margin-top: 12px; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); }
   .ctxempty { margin-top: 28px; }
+  .lbl-p { font-weight: 600; font-size: var(--fs-ui); margin: 14px 0 8px; }
   .ctxempty .hint { margin: -4px 0 10px; }
   .block { margin-top: 34px; }
   .bh { display: flex; align-items: center; gap: 8px; font-size: var(--fs-h3); margin-bottom: 10px; }

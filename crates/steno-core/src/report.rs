@@ -336,6 +336,7 @@ pub fn report_context(inner: &Inner, meeting: &Meeting) -> Result<crate::prompts
         docs: inner.db.context_texts(&meeting.id)?,
         template,
         lang: s.lang().to_string(),
+        participants: inner.db.participants(&meeting.id)?.into_iter().map(|p| p.name).collect(),
     })
 }
 

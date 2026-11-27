@@ -18,10 +18,11 @@ const fold = (s: string) =>
 
 function kind(heading: string): 'brief' | 'changes' | 'decisions' | 'actions' | null {
   const h = fold(heading).replace(/^[^a-z0-9]+/, '');
-  if (/^changements? importants?\b/.test(h)) return 'changes';
-  if (/^(en bref|resume|tl;?dr)\b/.test(h)) return 'brief';
+  // Titres français ou anglais (compte rendu rédigé dans l'une ou l'autre langue).
+  if (/^(changements? importants?|important changes?|key changes?|what changed)\b/.test(h)) return 'changes';
+  if (/^(en bref|resume|tl;?dr|summary|in brief|at a glance)\b/.test(h)) return 'brief';
   if (/^decisions?\b/.test(h)) return 'decisions';
-  if (/^actions?\b/.test(h)) return 'actions';
+  if (/^(actions?|action items?|next steps)\b/.test(h)) return 'actions';
   return null;
 }
 

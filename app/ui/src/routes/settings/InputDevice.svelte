@@ -5,6 +5,7 @@
   import { TRANSPORT_LABEL, defaultInputLabel, isDeviceMissing, missingInputLabel, transportIcon } from '../../lib/audio';
   import type { AudioDevice, Settings } from '../../lib/types';
   import Icon from '../../lib/components/Icon.svelte';
+  import { t } from '../../lib/i18n.svelte';
 
   let { settings = $bindable() }: { settings: Settings } = $props();
   let inputs = $state<AudioDevice[]>([]);
@@ -34,13 +35,13 @@
   }
 </script>
 
-<h2 class="group-title">Micro</h2>
-<div class="mic" role="radiogroup" aria-label="Micro" aria-disabled={empty}>
+<h2 class="group-title">{t('Micro')}</h2>
+<div class="mic" role="radiogroup" aria-label={t('Micro')} aria-disabled={empty}>
   <label class="mrow" class:sel={!settings.audio.input_device}>
     <input type="radio" name="mic" checked={!settings.audio.input_device} onchange={() => choose(null)} disabled={empty} />
     <span class="mic-ic" aria-hidden="true"><Icon name="mic" size={14} /></span>
     <span class="grow">{defaultInputLabel(inputs)}</span>
-    <span class="tiny faint">suit les changements du système</span>
+    <span class="tiny faint">{t('suit les changements du système')}</span>
   </label>
   {#if missing}
     <label class="mrow sel gone">
@@ -54,15 +55,15 @@
       <input type="radio" name="mic" checked={settings.audio.input_device === d.id} onchange={() => choose(d)} />
       <span class="mic-ic" aria-hidden="true"><Icon name={transportIcon(d.transport)} size={14} /></span>
       <span class="grow">{d.name}</span>
-      <span class="tiny faint">{TRANSPORT_LABEL[d.transport] ?? d.transport}{d.default ? ' · par défaut' : ''}</span>
+      <span class="tiny faint">{TRANSPORT_LABEL[d.transport] ? t(TRANSPORT_LABEL[d.transport]) : d.transport}{d.default ? ' · ' + t('par défaut') : ''}</span>
     </label>
   {/each}
   {#if empty}
-    <p class="mrow faint small">{error || 'Liste disponible dans l’app sur Mac.'}</p>
+    <p class="mrow faint small">{error || t('Liste disponible dans l’app sur Mac.')}</p>
   {/if}
   <div class="mrow foot">
-    <span class="grow tiny faint">Appliqué dès l’enregistrement, même pendant l’écoute, sans couper la transcription.</span>
-    <button class="btn sm" type="button" onclick={refresh} disabled={loading}><Icon name="refresh" size={13} />Rafraîchir</button>
+    <span class="grow tiny faint">{t('Appliqué dès l’enregistrement, même pendant l’écoute, sans couper la transcription.')}</span>
+    <button class="btn sm" type="button" onclick={refresh} disabled={loading}><Icon name="refresh" size={13} />{t('Rafraîchir')}</button>
   </div>
 </div>
 

@@ -18,13 +18,14 @@
   import Waveform from '../lib/components/Waveform.svelte';
   import RequestCard from '../lib/components/RequestCard.svelte';
   import ContextDialog from '../lib/components/ContextDialog.svelte';
+  import { t, tn } from '../lib/i18n.svelte';
 
   const s = $derived(live.s);
   const meeting = $derived(s.meeting);
   const active = $derived(isListening(s));
   const offer = $derived(callOffer(s, prefs.callApps));
   /** Nom du canal « eux » : l'app de l'appel en cours. */
-  const themLabel = $derived(meetingCallChip(meeting?.call_app, prefs.callApps) ?? 'Visio');
+  const themLabel = $derived(meetingCallChip(meeting?.call_app, prefs.callApps) ?? t('Visio'));
   /** Puce de l'app de l'appel (Teams, Slack…), si l'écoute a démarré sur un appel. */
   const appChip = $derived(meetingCallChip(meeting?.call_app, prefs.callApps));
   /** Réunion en présentiel : micro seul, pas de son d'app. */
@@ -68,11 +69,11 @@
     if (!meeting || label === 'Moi') return;
     const current = speakers.find((s) => s.label === label)?.display_name ?? '';
     const name = await promptDialog({
-      title: 'Nommer l’intervenant',
-      message: `Nom affiché pour « ${speakerName(label, speakers)} » dans cette réunion.`,
+      title: t('Nommer l’intervenant'),
+      message: t('Nom affiché pour « {name} » dans cette réunion.', { name: speakerName(label, speakers) }),
       value: current,
-      placeholder: 'Prénom Nom',
-      confirm: 'Enregistrer',
+      placeholder: t('Prénom Nom'),
+      confirm: t('Enregistrer'),
     });
     if (name === null) return;
     try {
@@ -229,7 +230,7 @@
   const showConsent = $derived(!!meeting && prefs.consentReminder && consentDismissed !== meeting.id && s.state !== 'processing');
   async function copyConsent() {
     if (await copyText(prefs.consentMessage)) {
-      toast('Message copié : collez-le dans le chat de l’appel.');
+      toast(t('Message copié : collez-le dans le chat de l’appel.'));
       consentDismissed = meeting?.id ?? null;
     }
   }
@@ -263,41 +264,41 @@
         <span class="recdot {s.state}" aria-hidden="true"><span class="dot {s.state === 'listening' ? 'live' : s.state}"></span></span>
         <div class="grow">
           <p class="sub">
-            <span class="st {s.state}">{STATE_LABEL[s.state]}</span>
+            <span class="st {s.state}">{t(STATE_LABEL[s.state])}</span>
             {#if appChip}<span class="chip"><Icon name={inPerson ? 'user' : 'phone'} size={11} />{appChip}</span>{/if}
-            {#if micGone}<span class="chip micgone" title={missingInputLabel(prefs.inputDeviceName, prefs.inputDevice)}><Icon name="mic" size={11} />micro par défaut</span>{/if}
-            {#if s.pending_requests}<span class="pend"><span class="spin" aria-hidden="true"></span>{s.pending_requests} demande{s.pending_requests > 1 ? 's' : ''} en cours</span>{/if}
-            {#if s.sidecar !== 'running'}<span class="warn">Audio : {s.sidecar}</span>{/if}
+            {#if micGone}<span class="chip micgone" title={missingInputLabel(prefs.inputDeviceName, prefs.inputDevice)}><Icon name="mic" size={11} />{t('micro par défaut')}</span>{/if}
+            {#if s.pending_requests}<span class="pend"><span class="spin" aria-hidden="true"></span>{tn(s.pending_requests, '{n} demande en cours', '{n} demandes en cours')}</span>{/if}
+            {#if s.sidecar !== 'running'}<span class="warn">{t('Audio : {state}', { state: s.sidecar })}</span>{/if}
           </p>
-          <h1 class="ellipsis">{meeting.title ?? 'Réunion sans titre'}</h1>
+          <h1 class="ellipsis">{meeting.title ?? t('Réunion sans titre')}</h1>
         </div>
         {#if s.state !== 'processing'}
-          <label class="check conf" title="Aucun appel à l’IA pour cette réunion">
-            <Icon name="lock" size={14} /> Confidentielle
+          <label class="check conf" title={t('Aucun appel à l’IA pour cette réunion')}>
+            <Icon name="lock" size={14} /> {t('Confidentielle')}
             <input class="switch" type="checkbox" role="switch" checked={meeting.confidential} onchange={(e) => setConf(e.currentTarget.checked)} />
           </label>
-          <button class="btn pausebtn" onclick={togglePause} disabled={busy} title={s.state === 'paused' ? 'Reprendre la transcription' : 'Mettre l’écoute en pause : rien n’est transcrit, la réunion continue'}>
-            <Icon name={s.state === 'paused' ? 'play' : 'pause'} size={14} />{s.state === 'paused' ? 'Reprendre' : 'Pause'}
+          <button class="btn pausebtn" onclick={togglePause} disabled={busy} title={s.state === 'paused' ? t('Reprendre la transcription') : t('Mettre l’écoute en pause : rien n’est transcrit, la réunion continue')}>
+            <Icon name={s.state === 'paused' ? 'play' : 'pause'} size={14} />{s.state === 'paused' ? t('Reprendre') : t('Pause')}
           </button>
           {#if !meeting.confidential}
-            <button class="btn ctxbtn" onclick={openContext} title="Contexte, documents et format du compte rendu"><Icon name="paperclip" size={14} />Contexte</button>
+            <button class="btn ctxbtn" onclick={openContext} title={t('Contexte, documents et format du compte rendu')}><Icon name="paperclip" size={14} />{t('Contexte')}</button>
           {/if}
-          <button class="btn danger stopbtn" onclick={askStop} disabled={busy}><span class="sq" aria-hidden="true"></span>Arrêter l’écoute</button>
+          <button class="btn danger stopbtn" onclick={askStop} disabled={busy}><span class="sq" aria-hidden="true"></span>{t('Arrêter l’écoute')}</button>
         {/if}
       </div>
       {#if showConsent}
         <div class="consent" role="status">
           <Icon name="info" size={15} />
-          <p class="grow">Prévenez les participants que la réunion est transcrite.</p>
-          <button class="btn sm primary" onclick={copyConsent}><Icon name="copy" size={13} />Copier le message</button>
-          <button class="btn sm ghost icon" onclick={() => (consentDismissed = meeting?.id ?? null)} title="Masquer pour cette réunion" aria-label="Masquer le rappel"><Icon name="x" size={13} /></button>
+          <p class="grow">{t('Prévenez les participants que la réunion est transcrite.')}</p>
+          <button class="btn sm primary" onclick={copyConsent}><Icon name="copy" size={13} />{t('Copier le message')}</button>
+          <button class="btn sm ghost icon" onclick={() => (consentDismissed = meeting?.id ?? null)} title={t('Masquer pour cette réunion')} aria-label={t('Masquer le rappel')}><Icon name="x" size={13} /></button>
         </div>
       {/if}
-      {#if s.state === 'paused'}<p class="paused-note small"><Icon name="pause" size={13} />Écoute en pause : rien n’est transcrit jusqu’à la reprise.</p>{/if}
+      {#if s.state === 'paused'}<p class="paused-note small"><Icon name="pause" size={13} />{t('Écoute en pause : rien n’est transcrit jusqu’à la reprise.')}</p>{/if}
 
       <div class="row wavebar">
         <Waveform me={s.levels.me} them={s.levels.them} active={s.state === 'listening'} />
-        <time class="clock tnum" aria-label="Durée {elapsed}">{elapsed}</time>
+        <time class="clock tnum" aria-label={t('Durée {d}', { d: elapsed })}>{elapsed}</time>
       </div>
 
       {#if active}
@@ -307,20 +308,20 @@
             class:on={s.mic_muted}
             aria-pressed={s.mic_muted}
             onclick={() => api.setMicMuted(!s.mic_muted).catch(toastError)}
-            title={s.mic_muted ? 'Rétablir votre micro dans Sténo' : 'Couper votre micro dans Sténo : vos paroles ne sont plus transcrites (le son de l’appel, si)'}
+            title={s.mic_muted ? t('Rétablir votre micro dans Sténo') : t('Couper votre micro dans Sténo : vos paroles ne sont plus transcrites (le son de l’appel, si)')}
           >
             <Icon name={s.mic_muted ? 'micoff' : 'mic'} size={15} />
-            {s.mic_muted ? 'Micro coupé' : 'Couper mon micro'}
+            {s.mic_muted ? t('Micro coupé') : t('Couper mon micro')}
           </button>
           <div class="meters">
-            <Meter db={s.mic_muted ? -90 : s.levels.me} label={s.mic_muted ? 'Micro coupé' : 'Micro'} icon={s.mic_muted ? 'micoff' : 'mic'} />
+            <Meter db={s.mic_muted ? -90 : s.levels.me} label={s.mic_muted ? t('Micro coupé') : t('Micro')} icon={s.mic_muted ? 'micoff' : 'mic'} />
             {#if !inPerson}<Meter db={s.levels.them} label={themLabel} icon="speaker" />{/if}
           </div>
           <button
             class="btn aside"
             class:on={s.aside}
             aria-pressed={s.aside}
-            title="Maintenir pour parler en aparté : vos phrases sont privées et exclues du compte rendu"
+            title={t('Maintenir pour parler en aparté : vos phrases sont privées et exclues du compte rendu')}
             onpointerdown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); asideOn(); }}
             onpointerup={asideOff}
             onpointercancel={asideOff}
@@ -330,7 +331,7 @@
             onblur={asideOff}
           >
             <Icon name="hand" size={15} />
-            {s.aside ? 'Aparté en cours…' : 'Maintenir pour un aparté'}
+            {s.aside ? t('Aparté en cours…') : t('Maintenir pour un aparté')}
           </button>
         </div>
       {/if}
@@ -340,12 +341,12 @@
     <ContextDialog meetingId={meeting.id} mode={ctxMode} bind:open={ctxOpen} onstop={stop} />
 
     <div class="body">
-      <section class="tx" aria-label="Transcription en direct">
+      <section class="tx" aria-label={t('Transcription en direct')}>
         <div class="scroll txs" bind:this={scroller} {onscroll} aria-live="off">
           {#if !visible.length}
             <div class="waiting">
               <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-              <p>En attente des premières phrases…</p>
+              <p>{t('En attente des premières phrases…')}</p>
             </div>
           {/if}
           <ol class="segs">
@@ -358,35 +359,35 @@
                 <div class="body-c">
                   {#if !cont}
                     {#if !/^Eux-\d+$/.test(seg.speaker)}<span class="who">{name}</span>
-                    {:else}<button class="who rename" onclick={() => renameSpeaker(seg.speaker)} title="Nommer cet intervenant">{name}</button>{/if}
+                    {:else}<button class="who rename" onclick={() => renameSpeaker(seg.speaker)} title={t('Nommer cet intervenant')}>{name}</button>{/if}
                   {/if}
                   <p class="text">
-                    {#if seg.private}<span class="priv"><Icon name="lock" size={11} /> Aparté</span>{/if}
+                    {#if seg.private}<span class="priv"><Icon name="lock" size={11} /> {t('Aparté')}</span>{/if}
                     {seg.text}
-                    {#if seg.request_id}<span class="badge accent cmdtag"><Icon name="ask" size={11} /> Demande</span>{/if}
+                    {#if seg.request_id}<span class="badge accent cmdtag"><Icon name="ask" size={11} /> {t('Demande')}</span>{/if}
                   </p>
                 </div>
-                <button class="del" onclick={() => removeSegment(seg)} title="Supprimer cette phrase (jamais dite)" aria-label="Supprimer cette phrase"><Icon name="trash" size={13} /></button>
+                <button class="del" onclick={() => removeSegment(seg)} title={t('Supprimer cette phrase (jamais dite)')} aria-label={t('Supprimer cette phrase')}><Icon name="trash" size={13} /></button>
               </li>
             {/each}
           </ol>
         </div>
         {#if !stick}
           <button class="jump" onclick={() => { stick = true; scrollBottom(true); }}>
-            <Icon name="arrowdown" size={13} stroke={2} /> Revenir au direct{#if unseen}<span class="new">{unseen} nouvelle{unseen > 1 ? 's' : ''}</span>{/if}
+            <Icon name="arrowdown" size={13} stroke={2} /> {t('Revenir au direct')}{#if unseen}<span class="new">{tn(unseen, '{n} nouvelle', '{n} nouvelles')}</span>{/if}
           </button>
         {/if}
       </section>
 
-      <aside class="side" aria-label="Demandes à Sténo">
+      <aside class="side" aria-label={t('Demandes à Sténo')}>
         <form class="ask" onsubmit={ask}>
-          <label class="label" for="live-ask">Demander à Sténo</label>
+          <label class="label" for="live-ask">{t('Demander à Sténo')}</label>
           <div class="askbox">
             <Icon name="ask" size={15} />
-            <input id="live-ask" bind:value={query} placeholder={meeting.confidential ? 'Confidentielle : notes seulement' : 'Votre question…'} autocomplete="off" />
-            <button class="btn primary sm" disabled={!query.trim()}>Envoyer</button>
+            <input id="live-ask" bind:value={query} placeholder={meeting.confidential ? t('Confidentielle : notes seulement') : t('Votre question…')} autocomplete="off" />
+            <button class="btn primary sm" disabled={!query.trim()}>{t('Envoyer')}</button>
           </div>
-          <p class="faint tiny">Ou à voix haute : « Sténo, cherche… », « Sténo, note… »</p>
+          <p class="faint tiny">{t('Ou à voix haute : « Sténo, cherche… », « Sténo, note… »')}</p>
         </form>
         <div class="feed scroll">
           {#each feed as r (r.id)}
@@ -394,7 +395,7 @@
           {:else}
             <div class="none">
               <span class="none-ic"><Icon name="ask" size={18} /></span>
-              <p class="faint small">Aucune demande pour l’instant.</p>
+              <p class="faint small">{t('Aucune demande pour l’instant.')}</p>
             </div>
           {/each}
         </div>
@@ -406,37 +407,37 @@
     <div class="hero card">
       {#if s.state === 'processing'}
         <span class="hic proc"><Logo size={34} tile /></span>
-        <h2>Compte rendu en préparation…</h2>
-        <p class="lead">L’écoute est arrêtée. Le compte rendu apparaîtra dans « Réunions ».</p>
+        <h2>{t('Compte rendu en préparation…')}</h2>
+        <p class="lead">{t('L’écoute est arrêtée. Le compte rendu apparaîtra dans « Réunions ».')}</p>
         <div class="progress" aria-hidden="true"><span></span></div>
       {:else if offer}
         <span class="hic"><Logo size={56} tile /></span>
         <div class="call-offer big" role="status">
           <span class="to-ic"><Icon name="phone" size={18} /></span>
           <div class="grow">
-            <p class="to-title">{offer.heading} : <strong>{offer.title}</strong></p>
-            <p class="to-sub">Sténo n’écoute pas encore : rien n’est transcrit tant que vous ne l’avez pas décidé.{#if offer.browser} Attention : tout le son du navigateur sera capté, y compris les autres onglets.{/if}</p>
+            <p class="to-title">{offer.heading}{t(' : ')}<strong>{offer.title}</strong></p>
+            <p class="to-sub">{t('Sténo n’écoute pas encore : rien n’est transcrit tant que vous ne l’avez pas décidé.')}{#if offer.browser}{' '}{t('Attention : tout le son du navigateur sera capté, y compris les autres onglets.')}{/if}</p>
           </div>
         </div>
-        <button class="btn primary go" onclick={() => start()} disabled={busy}><Icon name="play" size={15} stroke={2} />Démarrer l’écoute</button>
-        <button class="btn room" onclick={() => start(true)} disabled={busy} title="Sans app de visio : seul le micro du Mac est écouté"><Icon name="user" size={15} />Plutôt une réunion en présentiel</button>
+        <button class="btn primary go" onclick={() => start()} disabled={busy}><Icon name="play" size={15} stroke={2} />{t('Démarrer l’écoute')}</button>
+        <button class="btn room" onclick={() => start(true)} disabled={busy} title={t('Sans app de visio : seul le micro du Mac est écouté')}><Icon name="user" size={15} />{t('Plutôt une réunion en présentiel')}</button>
       {:else}
         <span class="hic"><Logo size={56} tile /></span>
-        <h2>Sténo n’écoute pas</h2>
-        <p class="lead">L’écoute démarre et s’arrête uniquement sur votre demande.</p>
+        <h2>{t('Sténo n’écoute pas')}</h2>
+        <p class="lead">{t('L’écoute démarre et s’arrête uniquement sur votre demande.')}</p>
         <form class="start" onsubmit={(e) => { e.preventDefault(); start(); }}>
-          <input class="input lg" bind:value={newTitle} placeholder="Titre de la réunion (facultatif)" aria-label="Titre de la réunion" />
-          <button class="btn primary go" disabled={busy}><Icon name="play" size={15} stroke={2} />Démarrer l’écoute</button>
+          <input class="input lg" bind:value={newTitle} placeholder={t('Titre de la réunion (facultatif)')} aria-label={t('Titre de la réunion')} />
+          <button class="btn primary go" disabled={busy}><Icon name="play" size={15} stroke={2} />{t('Démarrer l’écoute')}</button>
         </form>
-        <button class="btn room" onclick={() => start(true)} disabled={busy} title="Sans app de visio : seul le micro du Mac est écouté ; les intervenants sont identifiés à la fin">
-          <Icon name="user" size={15} />Réunion en présentiel
+        <button class="btn room" onclick={() => start(true)} disabled={busy} title={t('Sans app de visio : seul le micro du Mac est écouté ; les intervenants sont identifiés à la fin')}>
+          <Icon name="user" size={15} />{t('Réunion en présentiel')}
         </button>
       {/if}
       {#if s.state !== 'processing'}
-        <p class="tiny faint howto">Pour arrêter ensuite : le bouton « Arrêter l’écoute », le raccourci, le menu de la barre d’état, ou à la voix.</p>
+        <p class="tiny faint howto">{t('Pour arrêter ensuite : le bouton « Arrêter l’écoute », le raccourci, le menu de la barre d’état, ou à la voix.')}</p>
       {/if}
     </div>
-    <a class="past small" href={href('/meetings')}>Voir les réunions passées <Icon name="chevron" size={13} /></a>
+    <a class="past small" href={href('/meetings')}>{t('Voir les réunions passées')} <Icon name="chevron" size={13} /></a>
   </div>
 {/if}
 

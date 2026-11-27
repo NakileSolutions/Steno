@@ -8,7 +8,7 @@ export type Meeting = {
   title_source: string | null;
   started_at: string;
   ended_at: string | null;
-  status: 'live' | 'ended' | 'processing' | 'done' | 'error';
+  status: 'planned' | 'live' | 'ended' | 'processing' | 'done' | 'error';
   confidential: boolean;
   agent_provider: string | null;
   correlation: 'off' | 'on_demand' | 'auto';
@@ -211,7 +211,7 @@ export type VariantCheck = { accepted: string[]; rejected: { variant: string; re
 export type WakeDetect = { detected: boolean; intent: string | null; query: string | null };
 
 /** Droits macOS demandés par Sténo. */
-export type PermissionKind = 'microphone' | 'system_audio' | 'accessibility';
+export type PermissionKind = 'microphone' | 'system_audio' | 'accessibility' | 'calendar';
 export type PermissionValue = 'granted' | 'denied' | 'unknown';
 export type Permissions = Record<PermissionKind, PermissionValue> & {
   /** Capture audio démarrée : état à jour, demandes possibles. */
@@ -355,6 +355,31 @@ export type MeetingFilter = {
   limit?: number;
   offset?: number;
 };
+
+/** Participant d'une réunion (invité du calendrier ou saisi). */
+export type Participant = { name: string; email: string | null; source: 'calendar' | 'manual' | string };
+
+export type CalendarAttendee = { name: string | null; email: string | null; status: string; organizer: boolean; me: boolean };
+
+/** Événement du calendrier macOS, avec la réunion prévue qui lui correspond éventuellement. */
+export type UpcomingEvent = {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  all_day: boolean;
+  location: string | null;
+  url: string | null;
+  notes: string | null;
+  calendar: string | null;
+  attendees: CalendarAttendee[];
+  meeting_id: string | null;
+};
+
+/** Réunions à venir : prévues dans Sténo, et événements du calendrier (selon la permission). */
+export type Upcoming = { planned: Meeting[]; events: UpcomingEvent[]; calendar: 'granted' | 'denied' | 'unknown' | 'unavailable' | string };
+
+export type PrepAnswer = { question: string; answer: string };
 
 /** État des mises à jour (version publiée, installation depuis les sources). */
 export type UpdateStatus = {

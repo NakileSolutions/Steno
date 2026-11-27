@@ -9,9 +9,10 @@ import type {
   Action, ActionFilter, AgentInfo, AudioDevices, Connector, Decision, DoctorItem, EventMap, EventName,
   LiveState, Meeting, MeetingDetail, MeetingFilter, MeetingSummary, ModelInfo, Note, Repo, Report,
   Permissions, PermissionKind, Request, SearchHit, Segment, Settings, TestAgentResult, VariantCheck, WakeCheck, WakeDetect,
-  ContextFile, MeetingContext, ReportTemplate, UpdateStatus,
+  ContextFile, MeetingContext, ReportTemplate, UpdateStatus, Participant, PrepAnswer, Upcoming,
 } from './types';
 import { normalizeLiveState, normalizeSettings } from './listening';
+import { t } from './i18n.svelte';
 
 export type Unlisten = () => void;
 
@@ -41,7 +42,7 @@ export function httpErrorMessage(status: number, body: string): string {
   } catch {
     // Corps non JSON.
   }
-  return body.trim() || `Erreur ${status} du serveur Sténo.`;
+  return body.trim() || t('Erreur {status} du serveur Sténo.', { status });
 }
 
 export function httpBackend(base = ''): Backend {
@@ -96,7 +97,7 @@ export function httpBackend(base = ''): Backend {
           body: JSON.stringify(args ?? {}),
         });
       } catch {
-        throw new Error('Serveur Sténo injoignable.');
+        throw new Error(t('Serveur Sténo injoignable.'));
       }
       const text = await res.text();
       if (!res.ok) throw new Error(httpErrorMessage(res.status, text));
@@ -316,6 +317,16 @@ export const api = {
   openPermissionSettings: (kind: PermissionKind) => call<null>('open_permission_settings', { kind }),
   completeOnboarding: () => call<null>('complete_onboarding'),
   deleteSegment: (id: number) => call<null>('delete_segment', { id }),
+
+  // Préparation des réunions (phase 3)
+  upcoming: (days = 7) => call<Upcoming>('upcoming', { days }),
+  planMeeting: (title: string, scheduledAt: string, eventId?: string | null) =>
+    call<Meeting>('plan_meeting', eventId ? { title, scheduledAt, eventId } : { title, scheduledAt }),
+  startPlanned: (id: string, inPerson = false) => call<Meeting>('start_planned', inPerson ? { id, inPerson } : { id }),
+  getParticipants: (id: string) => call<Participant[]>('get_participants', { id }),
+  setParticipants: (id: string, participants: Participant[]) => call<Participant[]>('set_participants', { id, participants }),
+  prepareQuestions: (id: string) => call<string[]>('prepare_questions', { id }),
+  prepareApply: (id: string, answers: PrepAnswer[]) => call<MeetingContext>('prepare_apply', { id, answers }),
 
   // Mises à jour
   getUpdateStatus: () => call<UpdateStatus>('get_update_status'),

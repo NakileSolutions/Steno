@@ -1,5 +1,7 @@
 // Palette de commandes (⌘K) : filtrage, regroupement et navigation au clavier. Logique pure.
 
+import { t, tk } from './i18n.svelte';
+
 export type PaletteGroupId = 'recent' | 'meetings' | 'actions';
 
 export type PaletteItem = {
@@ -19,9 +21,9 @@ export type PaletteItem = {
 export type PaletteGroup<T extends PaletteItem = PaletteItem> = { id: PaletteGroupId; label: string; items: T[] };
 
 export const GROUP_LABEL: Record<PaletteGroupId, string> = {
-  recent: 'Récemment ouvert',
-  meetings: 'Réunions',
-  actions: 'Actions',
+  recent: tk('Récemment ouvert'),
+  meetings: tk('Réunions'),
+  actions: tk('Actions'),
 };
 
 /** Minuscules, sans accents ni ponctuation superflue : « Réglages » ≈ « reglages ». */
@@ -104,9 +106,9 @@ export function buildGroups<T extends PaletteItem>(input: BuildInput<T>): Palett
   const actions = filterItems(input.actions, q).slice(0, lim.actions);
   if (q && input.fallback) actions.push(...input.fallback);
   const groups: PaletteGroup<T>[] = [
-    { id: 'recent', label: GROUP_LABEL.recent, items: recent },
-    { id: 'meetings', label: GROUP_LABEL.meetings, items: meetings },
-    { id: 'actions', label: GROUP_LABEL.actions, items: actions },
+    { id: 'recent', label: t(GROUP_LABEL.recent), items: recent },
+    { id: 'meetings', label: t(GROUP_LABEL.meetings), items: meetings },
+    { id: 'actions', label: t(GROUP_LABEL.actions), items: actions },
   ];
   return groups.filter((g) => g.items.length);
 }

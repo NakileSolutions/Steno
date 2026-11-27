@@ -8,6 +8,7 @@
   import Icon from '../lib/components/Icon.svelte';
   import { isOverdue } from '../lib/group';
   import { initial, speakerColor } from '../lib/components/speakers';
+  import { t } from '../lib/i18n.svelte';
 
   let view = $state<'actions' | 'decisions'>('actions');
   let status = $state<'open' | 'done' | 'all'>('open');
@@ -49,7 +50,7 @@
   });
   onMount(() => onEvent('steno://meetings', () => { loadActions(); loadOthers(); }));
 
-  const title = (id: string) => meetings.find((m) => m.id === id)?.title ?? 'Réunion';
+  const title = (id: string) => meetings.find((m) => m.id === id)?.title ?? t('Réunion');
 
   async function toggle(a: Action, done: boolean) {
     try {
@@ -66,29 +67,29 @@
 <div class="page scroll">
   <div class="inner">
     <div class="row head">
-      <h1 class="grow">Décisions & actions</h1>
-      <div class="seg-ctl" role="tablist" aria-label="Affichage">
-        <button role="tab" aria-selected={view === 'actions'} onclick={() => (view = 'actions')}>Actions</button>
-        <button role="tab" aria-selected={view === 'decisions'} onclick={() => (view = 'decisions')}>Décisions</button>
+      <h1 class="grow">{t('Décisions & actions')}</h1>
+      <div class="seg-ctl" role="tablist" aria-label={t('Affichage')}>
+        <button role="tab" aria-selected={view === 'actions'} onclick={() => (view = 'actions')}>{t('Actions')}</button>
+        <button role="tab" aria-selected={view === 'decisions'} onclick={() => (view = 'decisions')}>{t('Décisions')}</button>
       </div>
     </div>
 
     <div class="filters row wrap">
       {#if view === 'actions'}
-        <select class="input" bind:value={status} aria-label="Statut">
-          <option value="open">À faire</option>
-          <option value="done">Faites</option>
-          <option value="all">Toutes</option>
+        <select class="input" bind:value={status} aria-label={t('Statut')}>
+          <option value="open">{t('À faire')}</option>
+          <option value="done">{t('Faites')}</option>
+          <option value="all">{t('Toutes')}</option>
         </select>
-        <select class="input" bind:value={owner} aria-label="Personne">
-          <option value="">Toutes les personnes</option>
+        <select class="input" bind:value={owner} aria-label={t('Personne')}>
+          <option value="">{t('Toutes les personnes')}</option>
           {#each allOwners as o}<option value={o}>{o}</option>{/each}
         </select>
       {/if}
-      <label class="row small faint dl">Du <input class="input" type="date" bind:value={from} /></label>
-      <label class="row small faint dl">au <input class="input" type="date" bind:value={to} /></label>
+      <label class="row small faint dl">{t('Du')} <input class="input" type="date" bind:value={from} /></label>
+      <label class="row small faint dl">{t('au')} <input class="input" type="date" bind:value={to} /></label>
       {#if owner || from || to}
-        <button class="btn ghost sm" onclick={() => { owner = ''; from = ''; to = ''; }}><Icon name="x" size={12} />Effacer les filtres</button>
+        <button class="btn ghost sm" onclick={() => { owner = ''; from = ''; to = ''; }}><Icon name="x" size={12} />{t('Effacer les filtres')}</button>
       {/if}
     </div>
 
@@ -97,7 +98,7 @@
         <ul class="list">
           {#each actions as a (a.id)}
             <li class:done={a.status === 'done'}>
-              <input class="tick" type="checkbox" checked={a.status === 'done'} onchange={(e) => toggle(a, e.currentTarget.checked)} aria-label="Fait : {a.text}" />
+              <input class="tick" type="checkbox" checked={a.status === 'done'} onchange={(e) => toggle(a, e.currentTarget.checked)} aria-label={t('Fait : {text}', { text: a.text })} />
               <div class="grow">
                 <p class="txt">{a.text}</p>
                 <p class="sub small">
@@ -111,7 +112,7 @@
           {/each}
         </ul>
       {:else}
-        <div class="empty"><Icon name="check" size={24} stroke={1.5} /><p>{status === 'open' ? 'Aucune action en attente.' : 'Aucune action.'}</p></div>
+        <div class="empty"><Icon name="check" size={24} stroke={1.5} /><p>{status === 'open' ? t('Aucune action en attente.') : t('Aucune action.')}</p></div>
       {/if}
     {:else}
       {#if decisions.length}
@@ -127,7 +128,7 @@
           {/each}
         </ul>
       {:else}
-        <div class="empty"><Icon name="actions" size={24} stroke={1.5} /><p>Aucune décision sur la période.</p></div>
+        <div class="empty"><Icon name="actions" size={24} stroke={1.5} /><p>{t('Aucune décision sur la période.')}</p></div>
       {/if}
     {/if}
   </div>

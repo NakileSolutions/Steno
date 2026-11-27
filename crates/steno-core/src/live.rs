@@ -37,6 +37,8 @@ pub enum LiveCmd {
     SettingsChanged,
     WakeTest { seconds: u32, reply: oneshot::Sender<Result<String>> },
     Diarize { meeting_id: String, reply: oneshot::Sender<Result<Vec<Turn>>> },
+    /// Événements du calendrier entre deux instants (ISO 8601).
+    Calendar { from: Option<String>, to: Option<String>, reply: oneshot::Sender<Result<Vec<crate::planning::CalendarEvent>>> },
     Retranscribe {
         meeting_id: String,
         language: String,
@@ -88,6 +90,7 @@ struct Session {
     wake_waiters: Vec<oneshot::Sender<Result<String>>>,
     diarize_waiters: HashMap<String, oneshot::Sender<Result<Vec<Turn>>>>,
     retranscribe_waiters: HashMap<String, oneshot::Sender<Result<Vec<RetranscribedItem>>>>,
+    calendar_waiters: Vec<oneshot::Sender<Result<Vec<crate::planning::CalendarEvent>>>>,
     restart_at: Option<Instant>,
     backoff: Duration,
     t_offset: f64,
@@ -121,6 +124,7 @@ pub fn spawn(inner: Arc<Inner>) -> LiveHandle {
         wake_waiters: vec![],
         diarize_waiters: HashMap::new(),
         retranscribe_waiters: HashMap::new(),
+        calendar_waiters: vec![],
         restart_at: None,
         backoff: Duration::from_secs(2),
         t_offset: 0.0,
@@ -300,6 +304,15 @@ impl Session {
     fn create_meeting(&mut self, title: Option<String>, source: &str, call_app: Option<String>) -> Result<Meeting> {
         let s = self.inner.settings();
         let now = chrono::Local::now();
+        let call_title = self.current_call().and_then(|c| c.1.clone()).or_else(|| title.clone());
+        // Réunion prévue à cette heure-ci : on la reprend (contexte, documents, participants).
+        if let Some(p) = self.inner.db.due_planned_meeting(now, crate::planning::DUE_BEFORE_MIN, crate::planning::DUE_AFTER_MIN)? {
+            let started = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
+            self.inner.db.activate_planned(&p.id, &started, call_app.as_deref())?;
+            let m = self.inner.db.get_meeting(&p.id)?.context("réunion prévue introuvable")?;
+            tracing::info!("réunion prévue « {} » reprise", m.title.clone().unwrap_or_default());
+            return self.begin_meeting(m, call_title);
+        }
         let base = format!(
             "{}-{}",
             now.format("%Y-%m-%d-%H%M"),
@@ -326,6 +339,21 @@ impl Session {
             call_app,
         };
         self.inner.db.insert_meeting(&m)?;
+        self.begin_meeting(m, call_title)
+    }
+
+    /// Démarre la capture pour une réunion (nouvelle ou prévue) et rattache les invités du
+    /// calendrier en arrière-plan.
+    fn begin_meeting(&mut self, m: Meeting, call_title: Option<String>) -> Result<Meeting> {
+        {
+            let inner = self.inner.clone();
+            let id = m.id.clone();
+            tokio::spawn(async move {
+                if let Err(e) = crate::planning::link_calendar(&inner, &id, call_title.as_deref()).await {
+                    tracing::debug!("calendrier non rattaché : {e:#}");
+                }
+            });
+        }
         self.meeting = Some(m.clone());
         self.capturing = true;
         self.assembler = CommandAssembler::new();
@@ -479,6 +507,13 @@ impl Session {
             LiveCmd::RequestPermission(kind) => {
                 self.send(SidecarCommand::RequestPermission { kind });
             }
+            LiveCmd::Calendar { from, to, reply } => {
+                if self.send(SidecarCommand::CalendarEvents { from, to }) {
+                    self.calendar_waiters.push(reply);
+                } else {
+                    let _ = reply.send(Err(anyhow!("sidecar absent")));
+                }
+            }
             LiveCmd::WakeTest { seconds, reply } => {
                 if self.send(SidecarCommand::WakeTest { seconds }) {
                     self.wake_waiters.push(reply);
@@ -528,11 +563,17 @@ impl Session {
                 self.backoff = Duration::from_secs(2);
                 self.send_watch();
             }
-            SidecarEvent::Permissions { microphone, system_audio, accessibility } => {
+            SidecarEvent::Permissions { microphone, system_audio, accessibility, calendar } => {
                 let _ = self.inner.db.set_runtime(
                     "permissions",
-                    &serde_json::json!({"microphone": microphone, "system_audio": system_audio, "accessibility": accessibility}).to_string(),
+                    &serde_json::json!({"microphone": microphone, "system_audio": system_audio, "accessibility": accessibility, "calendar": calendar}).to_string(),
                 );
+            }
+            SidecarEvent::Calendar { events } => {
+                *self.inner.calendar_cache.lock().unwrap() = events.clone();
+                for w in self.calendar_waiters.drain(..) {
+                    let _ = w.send(Ok(events.clone()));
+                }
             }
             SidecarEvent::Call { active, app, title } => self.on_call(&app, active, title).await,
             SidecarEvent::TeamsCall { active, title } => self.on_call("teams", active, title).await,
@@ -646,6 +687,9 @@ impl Session {
                     let _ = w.send(Err(anyhow!("le sidecar audio s'est arrêté")));
                 }
                 for (_, w) in self.retranscribe_waiters.drain() {
+                    let _ = w.send(Err(anyhow!("le sidecar audio s'est arrêté")));
+                }
+                for w in self.calendar_waiters.drain(..) {
                     let _ = w.send(Err(anyhow!("le sidecar audio s'est arrêté")));
                 }
                 self.inner.set_live_state(|s| s.sidecar = "error".into());

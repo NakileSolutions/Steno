@@ -12,12 +12,13 @@
   import Logo from '../lib/Logo.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import Meter from '../lib/components/Meter.svelte';
+  import { t, tn } from '../lib/i18n.svelte';
 
   const s = $derived(live.s);
   const m = $derived(s.meeting);
   const active = $derived(isListening(s));
   const offer = $derived(callOffer(s, prefs.callApps));
-  const themLabel = $derived(meetingCallChip(m?.call_app, prefs.callApps) ?? 'Visio');
+  const themLabel = $derived(meetingCallChip(m?.call_app, prefs.callApps) ?? t('Visio'));
 
   let recent = $state<Request[]>([]);
   let query = $state('');
@@ -97,7 +98,7 @@
     <span class="grow"></span>
     <span class="state {s.state}">
       <span class="dot {s.state === 'listening' ? 'live' : s.state === 'idle' ? '' : s.state}"></span>
-      {STATE_LABEL[s.state]}
+      {t(STATE_LABEL[s.state])}
     </span>
   </header>
 
@@ -106,38 +107,38 @@
       <div class="row cur">
         <span class="recdot {s.state}" aria-hidden="true"><span class="dot {s.state === 'listening' ? 'live' : s.state}"></span></span>
         <div class="grow">
-          <p class="mt ellipsis">{m.title ?? 'Réunion sans titre'}</p>
-          <p class="faint small">{#if s.state === 'processing'}Compte rendu en préparation…{:else}<span class="tnum">{duration(m.started_at, null, clock.now)}</span>{/if}{#if s.pending_requests}{' · '}{s.pending_requests} demande{s.pending_requests > 1 ? 's' : ''} en cours{/if}</p>
+          <p class="mt ellipsis">{m.title ?? t('Réunion sans titre')}</p>
+          <p class="faint small">{#if s.state === 'processing'}{t('Compte rendu en préparation…')}{:else}<span class="tnum">{duration(m.started_at, null, clock.now)}</span>{/if}{#if s.pending_requests}{' · '}{tn(s.pending_requests, '{n} demande en cours', '{n} demandes en cours')}{/if}</p>
         </div>
       </div>
 
       {#if active}
         <div class="meters">
-          <Meter db={s.mic_muted ? -90 : s.levels.me} label={s.mic_muted ? 'Micro coupé' : 'Micro'} icon={s.mic_muted ? 'micoff' : 'mic'} active />
+          <Meter db={s.mic_muted ? -90 : s.levels.me} label={s.mic_muted ? t('Micro coupé') : t('Micro')} icon={s.mic_muted ? 'micoff' : 'mic'} active />
           {#if m.call_app !== 'room'}<Meter db={s.levels.them} label={themLabel} icon="speaker" active />{/if}
         </div>
         <div class="row ctl">
           <button class="btn danger grow stop" onclick={toggle} disabled={busy}>
-            <span class="sq" aria-hidden="true"></span>Arrêter l’écoute
+            <span class="sq" aria-hidden="true"></span>{t('Arrêter l’écoute')}
           </button>
           <button
             class="btn sm icon"
             onclick={togglePause}
             disabled={busy}
-            title={s.state === 'paused' ? 'Reprendre l’écoute' : 'Mettre l’écoute en pause'}
-            aria-label={s.state === 'paused' ? 'Reprendre l’écoute' : 'Mettre l’écoute en pause'}
+            title={s.state === 'paused' ? t('Reprendre l’écoute') : t('Mettre l’écoute en pause')}
+            aria-label={s.state === 'paused' ? t('Reprendre l’écoute') : t('Mettre l’écoute en pause')}
           ><Icon name={s.state === 'paused' ? 'play' : 'pause'} size={15} /></button>
           <button
             class="btn sm icon mute"
             class:on={s.mic_muted}
             aria-pressed={s.mic_muted}
             onclick={() => api.setMicMuted(!s.mic_muted).catch(toastError)}
-            title={s.mic_muted ? 'Rétablir votre micro dans Sténo' : 'Couper votre micro dans Sténo'}
-            aria-label={s.mic_muted ? 'Rétablir votre micro dans Sténo' : 'Couper votre micro dans Sténo'}
+            title={s.mic_muted ? t('Rétablir votre micro dans Sténo') : t('Couper votre micro dans Sténo')}
+            aria-label={s.mic_muted ? t('Rétablir votre micro dans Sténo') : t('Couper votre micro dans Sténo')}
           ><Icon name={s.mic_muted ? 'micoff' : 'mic'} size={15} /></button>
-          <label class="check small conf" title="Aucun appel à l’IA pour cette réunion">
+          <label class="check small conf" title={t('Aucun appel à l’IA pour cette réunion')}>
             <input class="switch" type="checkbox" role="switch" checked={!!m.confidential} onchange={(e) => api.setLiveConfidential(e.currentTarget.checked).catch(toastError)} />
-            Confidentielle
+            {t('Confidentielle')}
           </label>
         </div>
         <p class="stophint tiny"><Icon name="info" size={12} />{stopHint()}</p>
@@ -147,40 +148,40 @@
         <div class="call-offer" role="status">
           <span class="to-ic"><Icon name="phone" size={15} /></span>
           <div class="grow">
-            <p class="to-title">{offer.heading} : <strong>{offer.title}</strong></p>
-            <p class="to-sub">Sténo n’écoute pas encore.{#if offer.browser} Tout le son du navigateur sera capté.{/if}</p>
+            <p class="to-title">{offer.heading}{t(' : ')}<strong>{offer.title}</strong></p>
+            <p class="to-sub">{t('Sténo n’écoute pas encore.')}{#if offer.browser}{' '}{t('Tout le son du navigateur sera capté.')}{/if}</p>
           </div>
         </div>
       {:else}
         <div class="quiet">
-          <p class="mt">Sténo n’écoute pas</p>
-          <p class="faint small">L’écoute ne démarre que sur votre demande.</p>
+          <p class="mt">{t('Sténo n’écoute pas')}</p>
+          <p class="faint small">{t('L’écoute ne démarre que sur votre demande.')}</p>
         </div>
       {/if}
       <button class="btn primary go" onclick={toggle} disabled={busy || s.state === 'processing'}>
-        <Icon name="play" size={14} stroke={2} />Démarrer l’écoute
+        <Icon name="play" size={14} stroke={2} />{t('Démarrer l’écoute')}
       </button>
-      <button class="btn sm ghost room" onclick={startRoom} disabled={busy || s.state === 'processing'} title="Sans app de visio : seul le micro du Mac est écouté">
-        <Icon name="user" size={14} />Réunion en présentiel
+      <button class="btn sm ghost room" onclick={startRoom} disabled={busy || s.state === 'processing'} title={t('Sans app de visio : seul le micro du Mac est écouté')}>
+        <Icon name="user" size={14} />{t('Réunion en présentiel')}
       </button>
     {/if}
   </section>
 
   <form class="ask" onsubmit={ask}>
     <Icon name="ask" size={15} />
-    <input data-search bind:value={query} placeholder="Demander à Sténo…" aria-label="Demande rapide" />
+    <input data-search bind:value={query} placeholder={t('Demander à Sténo…')} aria-label={t('Demande rapide')} />
     <kbd>↩</kbd>
   </form>
 
   <section class="recent">
-    <h2 class="label">Dernières réponses</h2>
+    <h2 class="label">{t('Dernières réponses')}</h2>
     <ul>
       {#each recent as r (r.id)}
         <li>
           <button class="ritem" onclick={() => openReq(r)}>
             <span class="row">
               <span class="q grow ellipsis">{r.query}</span>
-              {#if r.status !== 'done'}<span class="badge status {STATUS_CLASS[r.status]}">{STATUS_LABEL[r.status]}</span>
+              {#if r.status !== 'done'}<span class="badge status {STATUS_CLASS[r.status]}">{t(STATUS_LABEL[r.status])}</span>
               {:else}<span class="faint tiny tnum">{relDay(r.created_at)}</span>{/if}
             </span>
             {#if r.summary || r.error}<span class="sum">{plainText(r.summary) || r.error}</span>{/if}
@@ -189,16 +190,16 @@
       {:else}
         <li class="none">
           <span class="none-ic"><Icon name="ask" size={16} /></span>
-          <span class="faint small">Aucune demande récente.</span>
+          <span class="faint small">{t('Aucune demande récente.')}</span>
         </li>
       {/each}
     </ul>
   </section>
 
   <footer class="tf row">
-    <button class="btn ghost sm" onclick={() => openMain('/settings')}><Icon name="settings" size={14} />Réglages</button>
+    <button class="btn ghost sm" onclick={() => openMain('/settings')}><Icon name="settings" size={14} />{t('Réglages')}</button>
     <span class="grow"></span>
-    <button class="btn sm" onclick={() => openMain()}>Ouvrir Sténo<Icon name="external" size={12} /></button>
+    <button class="btn sm" onclick={() => openMain()}>{t('Ouvrir Sténo')}<Icon name="external" size={12} /></button>
   </footer>
 </div>
 

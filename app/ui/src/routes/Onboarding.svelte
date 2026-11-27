@@ -13,14 +13,15 @@
   import { sortAgents } from '../lib/agents';
   import WakeTest from './settings/WakeTest.svelte';
   import Permissions from '../lib/components/Permissions.svelte';
+  import { t, tk, tn } from '../lib/i18n.svelte';
 
   const STEPS = [
-    { id: 'permissions', label: 'Permissions macOS', icon: 'shield' },
-    { id: 'agent', label: 'Agent IA', icon: 'agent' },
-    { id: 'repos', label: 'Dépôts', icon: 'folder' },
-    { id: 'connectors', label: 'Connecteurs', icon: 'plug' },
-    { id: 'wake', label: 'Mot d’appel', icon: 'mic' },
-    { id: 'correlation', label: 'Corrélation', icon: 'link2' },
+    { id: 'permissions', label: tk('Permissions macOS'), icon: 'shield' },
+    { id: 'agent', label: tk('Agent IA'), icon: 'agent' },
+    { id: 'repos', label: tk('Dépôts'), icon: 'folder' },
+    { id: 'connectors', label: tk('Connecteurs'), icon: 'plug' },
+    { id: 'wake', label: tk('Mot d’appel'), icon: 'mic' },
+    { id: 'correlation', label: tk('Corrélation'), icon: 'link2' },
   ] as const;
 
   let step = $state(0);
@@ -116,7 +117,7 @@
       if (step < STEPS.length - 1) step++;
       else {
         await api.completeOnboarding();
-        toast('Sténo est prêt.');
+        toast(t('Sténo est prêt.'));
         navigate('/meetings');
       }
     } catch (e) {
@@ -167,8 +168,8 @@
 
 <div class="ob">
   <aside class="rail">
-    <div class="brand"><span class="btile"><Logo size={40} tile /></span><div><strong>Sténo</strong><p class="tiny">Premier lancement</p></div></div>
-    <div class="prog" role="progressbar" aria-label="Progression" aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={step + 1}>
+    <div class="brand"><span class="btile"><Logo size={40} tile /></span><div><strong>Sténo</strong><p class="tiny">{t('Premier lancement')}</p></div></div>
+    <div class="prog" role="progressbar" aria-label={t('Progression')} aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={step + 1}>
       <span style="width: {((step + 1) / STEPS.length) * 100}%"></span>
     </div>
     <ol class="steps">
@@ -176,93 +177,93 @@
         <li class:cur={i === step} class:done={i < step}>
           <button onclick={() => (i <= step ? (step = i) : null)} disabled={i > step} aria-current={i === step ? 'step' : undefined}>
             <span class="num">{#if i < step}<Icon name="check" size={12} stroke={2} />{:else}{i + 1}{/if}</span>
-            {s.label}
+            {t(s.label)}
           </button>
         </li>
       {/each}
     </ol>
-    <p class="tiny note">Tout reste sur ce Mac. Vous pourrez tout modifier dans les Réglages.</p>
+    <p class="tiny note">{t('Tout reste sur ce Mac. Vous pourrez tout modifier dans les Réglages.')}</p>
   </aside>
 
   <main class="pane scroll">
     {#if settings}
       <div class="inner">
         {#key step}<span class="illus" aria-hidden="true"><Icon name={STEPS[step].icon} size={24} stroke={1.6} /></span>{/key}
-        <p class="label">Étape {step + 1} sur {STEPS.length}</p>
+        <p class="label">{t('Étape {n} sur {total}', { n: step + 1, total: STEPS.length })}</p>
 
         {#if STEPS[step].id === 'permissions'}
-          <h1>Permissions macOS</h1>
-          <p class="lead">Sténo a besoin du micro et de l’audio du système (pour entendre l’app de l’appel : Teams, Slack, Zoom…) ; l’accessibilité lui permet de lire le titre de l’appel. Il n’écoute que lorsque vous démarrez l’écoute.</p>
+          <h1>{t('Permissions macOS')}</h1>
+          <p class="lead">{t('Sténo a besoin du micro et de l’audio du système (pour entendre l’app de l’appel : Teams, Slack, Zoom…) ; l’accessibilité lui permet de lire le titre de l’appel. Il n’écoute que lorsque vous démarrez l’écoute.')}</p>
           <Permissions />
-          <p class="small faint">Vous retrouverez ces droits dans Réglages → Permissions.</p>
+          <p class="small faint">{t('Vous retrouverez ces droits dans Réglages → Permissions.')}</p>
 
         {:else if STEPS[step].id === 'agent'}
-          <h1>Agent IA</h1>
-          <p class="lead">Choisissez le CLI d’agent déjà connecté à votre abonnement. Sténo ne l’appelle que sur demande et en fin de réunion.</p>
-          <div class="choices" role="radiogroup" aria-label="Agent IA">
+          <h1>{t('Agent IA')}</h1>
+          <p class="lead">{t('Choisissez le CLI d’agent déjà connecté à votre abonnement. Sténo ne l’appelle que sur demande et en fin de réunion.')}</p>
+          <div class="choices" role="radiogroup" aria-label={t('Agent IA')}>
             {#each obAgents as a (a.id)}
               <label class="choice" class:sel={settings.agent.provider === a.id} class:off={!a.installed}>
                 <input type="radio" name="ob-agent" value={a.id} bind:group={settings.agent.provider} disabled={!a.installed} />
                 <AgentLogo id={a.id} name={a.name} size={20} />
-                <span class="grow"><strong>{a.name}</strong> <span class="faint small">{a.installed ? (a.version ?? 'installé') : (a.error ?? 'non installé')}</span></span>
-                <span class="badge {a.support === 'supported' ? 'ok' : a.support === 'experimental' ? 'warn' : ''}">{a.support === 'supported' ? 'Supporté' : a.support === 'experimental' ? 'Expérimental' : 'Générique'}</span>
+                <span class="grow"><strong>{a.name}</strong> <span class="faint small">{a.installed ? (a.version ?? t('installé')) : (a.error ?? t('non installé'))}</span></span>
+                <span class="badge {a.support === 'supported' ? 'ok' : a.support === 'experimental' ? 'warn' : ''}">{a.support === 'supported' ? t('Supporté') : a.support === 'experimental' ? t('Expérimental') : t('Générique')}</span>
               </label>
             {/each}
           </div>
           <div class="row">
-            <button class="btn" onclick={testAgent} disabled={testing}>{testing ? 'Test en cours…' : 'Tester l’agent'}</button>
+            <button class="btn" onclick={testAgent} disabled={testing}>{testing ? t('Test en cours…') : t('Tester l’agent')}</button>
             {#if testResult}<span class="small res" class:okc={testResult.ok} class:errc={!testResult.ok}><Icon name={testResult.ok ? 'check' : 'x'} size={13} stroke={2} />{testResult.message}</span>{/if}
           </div>
-          <p class="small faint later"><Icon name="info" size={13} /><span>Modèle et niveau de réflexion se règlent pour les recherches, le compte rendu et les notes. <a href="#/settings?section=agent" onclick={modelsLater}>Choisir les modèles plus tard dans Réglages</a></span></p>
+          <p class="small faint later"><Icon name="info" size={13} /><span>{t('Modèle et niveau de réflexion se règlent pour les recherches, le compte rendu et les notes.')} <a href="#/settings?section=agent" onclick={modelsLater}>{t('Choisir les modèles plus tard dans Réglages')}</a></span></p>
 
         {:else if STEPS[step].id === 'repos'}
-          <h1>Dépôts lisibles</h1>
-          <p class="lead">Les dossiers de code que l’agent peut lire (jamais modifier) pour répondre à vos questions.</p>
+          <h1>{t('Dépôts lisibles')}</h1>
+          <p class="lead">{t('Les dossiers de code que l’agent peut lire (jamais modifier) pour répondre à vos questions.')}</p>
           <ul class="repos">
             {#each repos as r (r.id)}
-              <li><Icon name="folder" size={15} /><strong>{r.label}</strong><span class="faint small mono grow ellipsis">{r.path}</span><button class="btn ghost sm icon" onclick={() => removeRepo(r)} aria-label="Retirer {r.label}"><Icon name="x" size={13} /></button></li>
+              <li><Icon name="folder" size={15} /><strong>{r.label}</strong><span class="faint small mono grow ellipsis">{r.path}</span><button class="btn ghost sm icon" onclick={() => removeRepo(r)} aria-label={t('Retirer {label}', { label: r.label })}><Icon name="x" size={13} /></button></li>
             {:else}
-              <li class="faint">Aucun dossier pour l’instant (facultatif).</li>
+              <li class="faint">{t('Aucun dossier pour l’instant (facultatif).')}</li>
             {/each}
           </ul>
-          <button class="btn" onclick={addRepo}><Icon name="plus" size={14} />Ajouter un dossier…</button>
+          <button class="btn" onclick={addRepo}><Icon name="plus" size={14} />{t('Ajouter un dossier…')}</button>
 
         {:else if STEPS[step].id === 'connectors'}
-          <h1>Connecteurs</h1>
-          <p class="lead">Serveurs MCP de votre agent (Jira, Datadog…). Seuls ceux dont l’écriture peut être bloquée sont proposés.</p>
+          <h1>{t('Connecteurs')}</h1>
+          <p class="lead">{t('Serveurs MCP de votre agent (Jira, Datadog…). Seuls ceux dont l’écriture peut être bloquée sont proposés.')}</p>
           <ul class="repos">
             {#each blockable as c (c.id)}
               <li>
                 <label class="check toggle grow"><span><Icon name="plug" size={14} /> <strong>{c.name}</strong> <span class="faint small">{c.status}</span></span><input class="switch" type="checkbox" role="switch" checked={c.use_live || c.use_correlation} onchange={(e) => setConnector(c, e.currentTarget.checked)} /></label>
               </li>
             {:else}
-              <li class="faint">{refreshing ? 'Détection…' : 'Aucun connecteur activable.'}</li>
+              <li class="faint">{refreshing ? t('Détection…') : t('Aucun connecteur activable.')}</li>
             {/each}
           </ul>
-          {#if hiddenCount}<p class="faint small">{hiddenCount} connecteur{hiddenCount > 1 ? 's' : ''} masqué{hiddenCount > 1 ? 's' : ''} : l’agent ne sait pas bloquer leurs outils d’écriture.</p>{/if}
-          <button class="btn" onclick={refreshConnectors} disabled={refreshing}><Icon name="refresh" size={14} />Rafraîchir</button>
+          {#if hiddenCount}<p class="faint small">{tn(hiddenCount, '{n} connecteur masqué : l’agent ne sait pas bloquer leurs outils d’écriture.', '{n} connecteurs masqués : l’agent ne sait pas bloquer leurs outils d’écriture.')}</p>{/if}
+          <button class="btn" onclick={refreshConnectors} disabled={refreshing}><Icon name="refresh" size={14} />{t('Rafraîchir')}</button>
 
         {:else if STEPS[step].id === 'wake'}
-          <h1>Mot d’appel</h1>
-          <p class="lead">Pendant l’écoute, dites « <strong>{settings.voice.wake_word || '…'}</strong>, cherche… » pour lancer une recherche, et « <strong>{settings.voice.wake_word || '…'}</strong>, arrête l’écoute » pour terminer la réunion. Seul votre micro peut le déclencher.</p>
+          <h1>{t('Mot d’appel')}</h1>
+          <p class="lead">{t('Pendant l’écoute, dites « ')}<strong>{settings.voice.wake_word || '…'}</strong>{t(', cherche… » pour lancer une recherche, et « ')}<strong>{settings.voice.wake_word || '…'}</strong>{t(', arrête l’écoute » pour terminer la réunion. Seul votre micro peut le déclencher.')}</p>
           <div class="row">
-            <input class="input lg wake" bind:value={settings.voice.wake_word} aria-label="Mot d’appel" />
-            <button class="btn" onclick={openWakeTest} disabled={!!wake?.errors.length}><Icon name="mic" size={14} />Tester…</button>
+            <input class="input lg wake" bind:value={settings.voice.wake_word} aria-label={t('Mot d’appel')} />
+            <button class="btn" onclick={openWakeTest} disabled={!!wake?.errors.length}><Icon name="mic" size={14} />{t('Tester…')}</button>
           </div>
           {#if wake}
             <div class="msgs">
               {#each wake.errors as e}<p class="errc small">✕ {stripLeadingIcon(e)}</p>{/each}
               {#each wake.warnings as w}<p class="warnc small">⚠ {stripLeadingIcon(w)}</p>{/each}
-              {#if !wake.errors.length && !wake.warnings.length}<p class="okc small">✓ Aucun risque repéré.</p>{/if}
+              {#if !wake.errors.length && !wake.warnings.length}<p class="okc small">✓ {t('Aucun risque repéré.')}</p>{/if}
             </div>
           {/if}
-          <label class="check strict"><input class="switch" type="checkbox" role="switch" bind:checked={settings.voice.strict} /> Mode strict (exiger « OK {settings.voice.wake_word} »)</label>
+          <label class="check strict"><input class="switch" type="checkbox" role="switch" bind:checked={settings.voice.strict} /> {t('Mode strict (exiger « OK {w} »)', { w: settings.voice.wake_word })}</label>
 
         {:else}
-          <h1>Corrélation</h1>
-          <p class="lead">Après le compte rendu, Sténo peut le croiser avec le code et les connecteurs pour repérer les contradictions.</p>
-          <div class="choices" role="radiogroup" aria-label="Mode de corrélation">
-            {#each [['off', 'Désactivée', 'Jamais.'], ['on_demand', 'À la demande', 'Bouton « Corréler » sur chaque compte rendu. Recommandé.'], ['auto', 'Automatique', 'Après chaque réunion. Consomme davantage de quota.']] as [v, l, h]}
+          <h1>{t('Corrélation')}</h1>
+          <p class="lead">{t('Après le compte rendu, Sténo peut le croiser avec le code et les connecteurs pour repérer les contradictions.')}</p>
+          <div class="choices" role="radiogroup" aria-label={t('Mode de corrélation')}>
+            {#each [['off', t('Désactivée'), t('Jamais.')], ['on_demand', t('À la demande'), t('Bouton « Corréler » sur chaque compte rendu. Recommandé.')], ['auto', t('Automatique'), t('Après chaque réunion. Consomme davantage de quota.')]] as [v, l, h]}
               <label class="choice" class:sel={settings.correlation.mode === v}>
                 <input type="radio" name="ob-corr" value={v} bind:group={settings.correlation.mode} />
                 <span class="grow"><strong>{l}</strong><span class="faint small block">{h}</span></span>
@@ -272,10 +273,10 @@
         {/if}
 
         <div class="nav row">
-          {#if step > 0}<button class="btn" onclick={() => step--}>Précédent</button>{/if}
+          {#if step > 0}<button class="btn" onclick={() => step--}>{t('Précédent')}</button>{/if}
           <span class="grow"></span>
-          <button class="btn ghost" onclick={skip}>Passer</button>
-          <button class="btn primary nextbtn" onclick={next} disabled={saving}>{step === STEPS.length - 1 ? 'Terminer' : 'Suivant'}{#if step < STEPS.length - 1}<Icon name="chevron" size={14} stroke={2} />{/if}</button>
+          <button class="btn ghost" onclick={skip}>{t('Passer')}</button>
+          <button class="btn primary nextbtn" onclick={next} disabled={saving}>{step === STEPS.length - 1 ? t('Terminer') : t('Suivant')}{#if step < STEPS.length - 1}<Icon name="chevron" size={14} stroke={2} />{/if}</button>
         </div>
       </div>
     {/if}

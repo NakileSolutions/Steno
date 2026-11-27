@@ -2,31 +2,33 @@
 // libellés des niveaux de réflexion, ordre d'affichage et noms des CLI.
 
 import type { AgentInfo, AgentTier, AgentTiers, Settings } from './types';
+import { t, tk } from './i18n.svelte';
 
 /** Usages réglables, dans l'ordre d'affichage. */
 export const TIER_ROWS = [
-  { id: 'search', label: 'Recherches et corrélation', hint: 'Recherches en direct, questions sur l’historique, corrélation.', icon: 'search' },
-  { id: 'summary', label: 'Compte rendu', hint: 'Fin de réunion.', icon: 'note' },
-  { id: 'quick', label: 'Notes et récapitulatifs', hint: 'Notes, récaps à la voix, tests.', icon: 'flag' },
+  { id: 'search', label: tk('Recherches et corrélation'), hint: tk('Recherches en direct, questions sur l’historique, corrélation.'), icon: 'search' },
+  { id: 'summary', label: tk('Compte rendu'), hint: tk('Fin de réunion.'), icon: 'note' },
+  { id: 'quick', label: tk('Notes et récapitulatifs'), hint: tk('Notes, récaps à la voix, tests.'), icon: 'flag' },
 ] as const;
 export type TierId = (typeof TIER_ROWS)[number]['id'];
 
 const EFFORT_LABELS: Record<string, string> = {
-  none: 'Aucune',
-  minimal: 'Minimale',
-  low: 'Basse',
-  medium: 'Moyenne',
-  high: 'Élevée',
-  xhigh: 'Très élevée',
-  max: 'Maximale',
-  ultra: 'Ultra',
+  none: tk('Aucune'),
+  minimal: tk('Minimale'),
+  low: tk('Basse'),
+  medium: tk('Moyenne'),
+  high: tk('Élevée'),
+  xhigh: tk('Très élevée'),
+  max: tk('Maximale'),
+  ultra: tk('Ultra'),
 };
 
-/** Libellé français d'un niveau de réflexion ; vide = « Défaut » ; valeur inconnue telle quelle. */
+/** Libellé (traduit) d'un niveau de réflexion ; vide = « Défaut » ; valeur inconnue telle quelle. */
 export function effortLabel(effort: string | null | undefined): string {
   const e = effort?.trim() ?? '';
-  if (!e) return 'Défaut';
-  return EFFORT_LABELS[e.toLowerCase()] ?? e;
+  if (!e) return t('Défaut');
+  const l = EFFORT_LABELS[e.toLowerCase()];
+  return l ? t(l) : e;
 }
 
 /** Agents mis en avant, dans cet ordre ; les autres (Gemini, OpenCode, commande) viennent après. */
@@ -50,13 +52,14 @@ const AGENT_NAMES: Record<string, string> = {
   grok: 'Grok Build',
   gemini: 'Gemini CLI',
   opencode: 'OpenCode',
-  custom: 'Commande personnalisée',
+  custom: tk('Commande personnalisée'),
 };
 
 /** Nom affiché d'un agent : celui détecté, sinon un nom connu, sinon l'identifiant. */
 export function agentName(id: string | null | undefined, agents?: readonly Pick<AgentInfo, 'id' | 'name'>[] | null): string {
   const k = id?.trim() ?? '';
-  return agents?.find((a) => a.id === k)?.name || AGENT_NAMES[k] || k;
+  const known = AGENT_NAMES[k];
+  return agents?.find((a) => a.id === k)?.name || (known ? t(known) : k);
 }
 
 export const emptyTier = (): AgentTier => ({ agent: '', model: '', effort: '' });
@@ -70,7 +73,7 @@ export function resolveTierAgent(tier: Pick<AgentTier, 'agent'> | null | undefin
 /** Libellé de l'option « agent par défaut » : « Agent par défaut (Claude Code) ». */
 export function defaultAgentLabel(provider: string, agents?: readonly Pick<AgentInfo, 'id' | 'name'>[] | null): string {
   const n = agentName(provider, agents);
-  return n ? `Agent par défaut (${n})` : 'Agent par défaut';
+  return n ? t('Agent par défaut ({name})', { name: n }) : t('Agent par défaut');
 }
 
 /**

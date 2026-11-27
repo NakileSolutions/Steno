@@ -4,6 +4,7 @@
   import { time } from '../../lib/format';
   import { confirmDialog, toastError } from '../../lib/ui.svelte';
   import Icon from '../../lib/components/Icon.svelte';
+  import { t } from '../../lib/i18n.svelte';
 
   let { detail }: { detail: MeetingDetail } = $props();
   const m = $derived(detail.meeting);
@@ -34,7 +35,7 @@
   }
 
   async function remove(n: Note) {
-    if (!(await confirmDialog({ title: 'Supprimer cette note ?', message: n.text.slice(0, 140), confirm: 'Supprimer', danger: true }))) return;
+    if (!(await confirmDialog({ title: t('Supprimer cette note ?'), message: n.text.slice(0, 140), confirm: t('Supprimer'), danger: true }))) return;
     try {
       await api.deleteNote(n.id);
       detail.notes = detail.notes.filter((x) => x.id !== n.id);
@@ -59,16 +60,16 @@
 </script>
 
 <div class="wrap">
-  <p class="faint small intro"><Icon name="info" size={13} />Vos notes sont fusionnées dans le compte rendu (section « Mes notes »). Les modifications sont enregistrées en quittant le champ.</p>
+  <p class="faint small intro"><Icon name="info" size={13} />{t('Vos notes sont fusionnées dans le compte rendu (section « Mes notes »). Les modifications sont enregistrées en quittant le champ.')}</p>
   <ul class="notes">
     {#each detail.notes as n (n.id)}
       <li>
         <div class="meta">
           <span>{time(n.ts)}</span>
-          {#if n.source === 'voice'}<span class="src" title="Dictée à Sténo"><Icon name="mic" size={11} /></span>{/if}
+          {#if n.source === 'voice'}<span class="src" title={t('Dictée à Sténo')}><Icon name="mic" size={11} /></span>{/if}
         </div>
-        <textarea class="note" rows="1" bind:value={n.text} onblur={() => save(n)} use:grow aria-label="Note de {time(n.ts)}"></textarea>
-        <button class="btn ghost sm icon del" onclick={() => remove(n)} aria-label="Supprimer la note" title="Supprimer"><Icon name="trash" size={13} /></button>
+        <textarea class="note" rows="1" bind:value={n.text} onblur={() => save(n)} use:grow aria-label={t('Note de {time}', { time: time(n.ts) })}></textarea>
+        <button class="btn ghost sm icon del" onclick={() => remove(n)} aria-label={t('Supprimer la note')} title={t('Supprimer')}><Icon name="trash" size={13} /></button>
       </li>
     {/each}
   </ul>
@@ -77,11 +78,11 @@
       class="input"
       rows="2"
       bind:value={draft}
-      placeholder="Ajouter une note…  (⌘↩ pour enregistrer)"
-      aria-label="Nouvelle note"
+      placeholder={t('Ajouter une note…  (⌘↩ pour enregistrer)')}
+      aria-label={t('Nouvelle note')}
       onkeydown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}
     ></textarea>
-    <div class="row"><span class="grow"></span><button class="btn sm primary" disabled={!draft.trim()}>Ajouter</button></div>
+    <div class="row"><span class="grow"></span><button class="btn sm primary" disabled={!draft.trim()}>{t('Ajouter')}</button></div>
   </form>
 </div>
 

@@ -62,3 +62,45 @@ describe('changements importants', () => {
     expect(p.rest).not.toContain('Changements');
   });
 });
+
+describe('titres anglais', () => {
+  const EN = `# Daily — 26/11/2026
+
+## Summary
+Team daily: slot lock.
+
+## ⚠️ Important changes
+- **Belgian VAT**: 19% → 21%
+
+## Decisions
+- keep the slot lock
+
+## Action items — who / what / due
+- **Marie** — Fix APP-1234 — Friday
+
+## Open questions
+- Export format`;
+
+  it('reconnaît Summary, Important changes, Decisions et Action items', () => {
+    const p = splitReport(EN);
+    expect(p.brief).toEqual({ heading: 'Summary', body: 'Team daily: slot lock.' });
+    expect(p.changes?.body).toBe('- **Belgian VAT**: 19% → 21%');
+    expect(p.decisions?.body).toBe('- keep the slot lock');
+    expect(p.actions?.heading).toBe('Action items — who / what / due');
+    expect(p.rest).toBe('## Open questions\n- Export format');
+  });
+
+  it('TL;DR, Decision, Actions, Next steps', () => {
+    expect(splitReport('## TL;DR\nok').brief?.body).toBe('ok');
+    expect(splitReport('## Decision\n- a').decisions?.body).toBe('- a');
+    expect(splitReport('## Actions\n- b').actions?.body).toBe('- b');
+    expect(splitReport('## Next steps\n- c').actions?.body).toBe('- c');
+    expect(splitReport('## Key changes\n- d').changes?.body).toBe('- d');
+  });
+
+  it('un titre anglais inconnu reste dans le document', () => {
+    const p = splitReport('## Context\n- x');
+    expect(p.brief).toBeNull();
+    expect(p.rest).toBe('## Context\n- x');
+  });
+});

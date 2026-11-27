@@ -22,6 +22,7 @@ pub const COMMANDS: &[&str] = &[
     "delete_segment", "set_mic_muted", "save_export", "print_window", "pause_meeting", "resume_meeting",
     "get_meeting_context", "set_meeting_context", "add_context_file", "delete_context_file", "list_report_templates",
     "report_now", "get_update_status", "check_update", "install_update", "restart_app",
+    "upcoming", "plan_meeting", "start_planned", "get_participants", "set_participants", "prepare_questions", "prepare_apply",
 ];
 
 struct Args(Value);
@@ -94,6 +95,28 @@ pub async fn dispatch(core: &Core, cmd: &str, args: Value) -> Result<Value, Stri
         "list_report_templates" => ok(core.report_templates()),
         "report_now" => ok(core.report_now(&a.s("id")?).map_err(e)?),
         "get_update_status" => ok(core.update_status()),
+        "upcoming" => {
+            let days: Option<i64> = a.opt("days")?;
+            ok(core.upcoming(days.unwrap_or(7)).await.map_err(e)?)
+        }
+        "plan_meeting" => {
+            let event_id: Option<String> = a.opt("eventId")?;
+            ok(core.plan_meeting(&a.s("title")?, &a.s("scheduledAt")?, event_id.as_deref()).map_err(e)?)
+        }
+        "start_planned" => {
+            let in_person: Option<bool> = a.opt("inPerson")?;
+            ok(core.start_planned(&a.s("id")?, in_person.unwrap_or(false)).await.map_err(e)?)
+        }
+        "get_participants" => ok(core.participants(&a.s("id")?).map_err(e)?),
+        "set_participants" => {
+            let list: Vec<crate::planning::Participant> = a.get("participants")?;
+            ok(core.set_participants(&a.s("id")?, &list).map_err(e)?)
+        }
+        "prepare_questions" => ok(core.prepare_questions(&a.s("id")?).await.map_err(e)?),
+        "prepare_apply" => {
+            let answers: Vec<crate::planning::PrepAnswer> = a.get("answers")?;
+            ok(core.prepare_apply(&a.s("id")?, &answers).await.map_err(e)?)
+        }
         "check_update" => ok(core.check_update().await.map_err(e)?),
         "install_update" => ok(core.install_update().map_err(e)?),
         // Redémarrage : propre à l'app Tauri.

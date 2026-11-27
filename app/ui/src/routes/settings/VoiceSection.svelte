@@ -8,6 +8,7 @@
   import Icon from '../../lib/components/Icon.svelte';
   import TagInput from '../../lib/components/TagInput.svelte';
   import WakeTest from './WakeTest.svelte';
+  import { t, tk, tn } from '../../lib/i18n.svelte';
 
   let { settings = $bindable(), ensureSaved }: { settings: Settings; ensureSaved: () => Promise<void> } = $props();
 
@@ -75,59 +76,59 @@
   }
 
   const INTENTS: { id: keyof VoiceVerbs; label: string; hint: string }[] = [
-    { id: 'search', label: 'Rechercher', hint: 'recherche croisée' },
-    { id: 'check', label: 'Vérifier', hint: 'vérification ciblée' },
-    { id: 'note', label: 'Noter', hint: 'aucune recherche' },
-    { id: 'recap', label: 'Récapituler', hint: 'résumé rapide' },
-    { id: 'cancel', label: 'Annuler', hint: 'dernière demande' },
-    { id: 'stop', label: 'Arrêter l’écoute', hint: 'termine la réunion' },
+    { id: 'search', label: tk('Rechercher'), hint: tk('recherche croisée') },
+    { id: 'check', label: tk('Vérifier'), hint: tk('vérification ciblée') },
+    { id: 'note', label: tk('Noter'), hint: tk('aucune recherche') },
+    { id: 'recap', label: tk('Récapituler'), hint: tk('résumé rapide') },
+    { id: 'cancel', label: tk('Annuler'), hint: tk('dernière demande') },
+    { id: 'stop', label: tk('Arrêter l’écoute'), hint: tk('termine la réunion') },
   ];
 </script>
 
 <div class="field">
-  <label class="field-label" for="wake">Mot d’appel<span class="hint">Seul, en début de phrase ; précédé d’un préfixe (« OK Sténo »), n’importe où dans la phrase. Micro uniquement.</span></label>
+  <label class="field-label" for="wake">{t('Mot d’appel')}<span class="hint">{t('Seul, en début de phrase ; précédé d’un préfixe (« OK Sténo »), n’importe où dans la phrase. Micro uniquement.')}</span></label>
   <div class="field-body">
     <div class="row">
       <input id="wake" class="input lg wake" bind:value={settings.voice.wake_word} autocomplete="off" spellcheck="false" />
-      <button class="btn" onclick={openTest} disabled={!!check?.errors.length}><Icon name="mic" size={14} />Tester…</button>
+      <button class="btn" onclick={openTest} disabled={!!check?.errors.length}><Icon name="mic" size={14} />{t('Tester…')}</button>
     </div>
     <div class="checks" aria-live="polite">
       {#if check}
         <p class="faint small">
-          {check.syllables} syllabe{check.syllables > 1 ? 's' : ''} · analysé sur {check.meetings_scanned} réunion{check.meetings_scanned > 1 ? 's' : ''}
-          {#if checking}{' · vérification…'}{/if}
+          {tn(check.syllables, '{n} syllabe', '{n} syllabes')} · {tn(check.meetings_scanned, 'analysé sur {n} réunion', 'analysé sur {n} réunions')}
+          {#if checking}{' · '}{t('vérification…')}{/if}
         </p>
         {#each check.errors as e}<p class="msg err"><Icon name="x" size={13} />{stripLeadingIcon(e)}</p>{/each}
         {#each check.warnings as w}<p class="msg warn"><Icon name="warn" size={13} />{stripLeadingIcon(w)}</p>{/each}
-        {#if !check.errors.length && !check.warnings.length}<p class="msg ok"><Icon name="check" size={13} />Aucun risque repéré.</p>{/if}
+        {#if !check.errors.length && !check.warnings.length}<p class="msg ok"><Icon name="check" size={13} />{t('Aucun risque repéré.')}</p>{/if}
       {/if}
     </div>
   </div>
 </div>
 
 <div class="field">
-  <div class="field-label">Mode strict<span class="hint">Exige un préfixe avant le mot d’appel.</span></div>
+  <div class="field-label">{t('Mode strict')}<span class="hint">{t('Exige un préfixe avant le mot d’appel.')}</span></div>
   <div class="field-body">
-    <label class="check toggle"><span>Exiger un préfixe (« OK {settings.voice.wake_word} », « Dis {settings.voice.wake_word} »)</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.voice.strict} /></label>
+    <label class="check toggle"><span>{t('Exiger un préfixe (« OK {w} », « Dis {w} »)', { w: settings.voice.wake_word })}</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.voice.strict} /></label>
     {#if settings.voice.strict}
-      <TagInput bind:values={settings.voice.prefixes} label="Préfixes" placeholder="Ajouter un préfixe…" />
+      <TagInput bind:values={settings.voice.prefixes} label={t('Préfixes')} placeholder={t('Ajouter un préfixe…')} />
     {/if}
   </div>
 </div>
 
 <div class="field">
-  <div class="field-label">Variantes acceptées<span class="hint">Erreurs de transcription courantes du mot d’appel. Les mots courants en réunion sont refusés.</span></div>
+  <div class="field-label">{t('Variantes acceptées')}<span class="hint">{t('Erreurs de transcription courantes du mot d’appel. Les mots courants en réunion sont refusés.')}</span></div>
   <div class="field-body">
-    <TagInput bind:values={settings.voice.variants} label="Variantes" placeholder="Ajouter une variante…" onadd={onAddVariant} />
+    <TagInput bind:values={settings.voice.variants} label={t('Variantes')} placeholder={t('Ajouter une variante…')} onadd={onAddVariant} />
     {#if rejectedNow}
-      <p class="msg warn small"><Icon name="warn" size={13} />« {rejectedNow.variant} » refusée : {rejectedNow.reason}</p>
+      <p class="msg warn small"><Icon name="warn" size={13} />{t('« {variant} » refusée : {reason}', { variant: rejectedNow.variant, reason: rejectedNow.reason })}</p>
     {/if}
     <div class="row">
-      <button class="btn sm" onclick={generate}><Icon name="refresh" size={13} />Générer les variantes</button>
+      <button class="btn sm" onclick={generate}><Icon name="refresh" size={13} />{t('Générer les variantes')}</button>
     </div>
     {#if generated?.rejected.length}
       <div class="rejected">
-        <p class="label">Variantes rejetées</p>
+        <p class="label">{t('Variantes rejetées')}</p>
         <ul>
           {#each generated.rejected as r (r.variant)}
             <li><code>{r.variant}</code><span class="faint small">{r.reason}</span></li>
@@ -139,28 +140,28 @@
 </div>
 
 <div class="field">
-  <div class="field-label">Verbes par intention<span class="hint">Le verbe qui suit le mot d’appel détermine l’action. Ex. « {settings.voice.wake_word || 'Sténo'}, arrête l’écoute » termine la réunion.</span></div>
+  <div class="field-label">{t('Verbes par intention')}<span class="hint">{t('Le verbe qui suit le mot d’appel détermine l’action. Ex. « {w}, arrête l’écoute » termine la réunion.', { w: settings.voice.wake_word || 'Sténo' })}</span></div>
   <div class="field-body verbs">
     {#each INTENTS as it (it.id)}
       <div class="verb">
-        <span class="vlabel"><strong>{it.label}</strong><span class="faint small">{it.hint}</span></span>
-        <TagInput bind:values={() => settings.voice.verbs[it.id] ?? [], (v) => (settings.voice.verbs[it.id] = v)} label="Verbes : {it.label}" />
+        <span class="vlabel"><strong>{t(it.label)}</strong><span class="faint small">{t(it.hint)}</span></span>
+        <TagInput bind:values={() => settings.voice.verbs[it.id] ?? [], (v) => (settings.voice.verbs[it.id] = v)} label={t('Verbes : {label}', { label: t(it.label) })} />
       </div>
     {/each}
   </div>
 </div>
 
 <div class="field">
-  <div class="field-label">Retour sonore<span class="hint">Quand une commande est détectée. Jamais dans l’audio de l’appel.</span></div>
+  <div class="field-label">{t('Retour sonore')}<span class="hint">{t('Quand une commande est détectée. Jamais dans l’audio de l’appel.')}</span></div>
   <div class="field-body">
-    <div class="seg-ctl" role="radiogroup" aria-label="Retour sonore">
-      {#each [['none', 'Aucun'], ['system', 'Son système'], ['headset', 'Casque uniquement']] as [v, l]}
+    <div class="seg-ctl" role="radiogroup" aria-label={t('Retour sonore')}>
+      {#each [['none', t('Aucun')], ['system', t('Son système')], ['headset', t('Casque uniquement')]] as [v, l]}
         <button role="radio" aria-checked={settings.voice.feedback === v} onclick={() => (settings.voice.feedback = v as Settings['voice']['feedback'])}>{l}</button>
       {/each}
     </div>
     {#if settings.voice.feedback !== 'none'}
       <div class="playon">
-        <label class="small muted" for="feedback-device">Jouer sur</label>
+        <label class="small muted" for="feedback-device">{t('Jouer sur')}</label>
         <select
           id="feedback-device"
           class="input"
@@ -170,20 +171,20 @@
         >
           <option value="">{defaultOutputLabel(outputs)}</option>
           {#each outputs as d (d.id)}<option value={d.id}>{d.name}</option>{/each}
-          {#if outputGone}<option value={settings.voice.feedback_device}>Sortie choisie — débranchée, sortie par défaut utilisée</option>{/if}
+          {#if outputGone}<option value={settings.voice.feedback_device}>{t('Sortie choisie — débranchée, sortie par défaut utilisée')}</option>{/if}
         </select>
       </div>
-      {#if !outputs.length && outputsLoaded}<p class="tiny faint">Liste disponible dans l’app sur Mac.</p>{/if}
-      {#if settings.voice.feedback === 'headset' && !settings.voice.feedback_device}<p class="tiny faint">Joué seulement si la sortie par défaut est un casque.</p>{/if}
-      {#if outputGone}<p class="tiny gonec">Sortie choisie débranchée : le signal est joué sur la sortie par défaut.</p>{/if}
+      {#if !outputs.length && outputsLoaded}<p class="tiny faint">{t('Liste disponible dans l’app sur Mac.')}</p>{/if}
+      {#if settings.voice.feedback === 'headset' && !settings.voice.feedback_device}<p class="tiny faint">{t('Joué seulement si la sortie par défaut est un casque.')}</p>{/if}
+      {#if outputGone}<p class="tiny gonec">{t('Sortie choisie débranchée : le signal est joué sur la sortie par défaut.')}</p>{/if}
     {/if}
   </div>
 </div>
 
 <div class="field">
-  <div class="field-label">Aparté</div>
+  <div class="field-label">{t('Aparté')}</div>
   <div class="field-body">
-    <p class="muted small">Coupez votre micro dans l’app de visio (Teams, Slack, Zoom…) et maintenez <kbd>{settings.audio.shortcuts.aside}</kbd> en parlant : pas besoin de mot d’appel, et vos phrases restent privées. Raccourci modifiable dans « Audio & transcription ».</p>
+    <p class="muted small">{t('Coupez votre micro dans l’app de visio (Teams, Slack, Zoom…) et maintenez')} <kbd>{settings.audio.shortcuts.aside}</kbd> {t('en parlant : pas besoin de mot d’appel, et vos phrases restent privées. Raccourci modifiable dans « Audio & transcription ».')}</p>
   </div>
 </div>
 

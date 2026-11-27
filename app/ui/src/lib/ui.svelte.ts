@@ -1,5 +1,7 @@
 // Notifications éphémères et boîtes de dialogue (confirmation, saisie).
 
+import { t } from './i18n.svelte';
+
 export type Toast = { id: number; text: string; kind: 'info' | 'ok' | 'err' };
 export const toasts = $state<{ list: Toast[] }>({ list: [] });
 let tid = 0;
@@ -31,7 +33,7 @@ export const dialogs = $state<{ current: DialogReq | null }>({ current: null });
 
 export function confirmDialog(o: { title: string; message?: string; confirm?: string; danger?: boolean; typeToConfirm?: string }): Promise<boolean> {
   return new Promise((resolve) => {
-    dialogs.current = { confirm: 'Confirmer', ...o, resolve: (v) => resolve(v === true) };
+    dialogs.current = { confirm: t('Confirmer'), ...o, resolve: (v) => resolve(v === true) };
   });
 }
 
@@ -40,7 +42,7 @@ export function promptDialog(o: { title: string; message?: string; value?: strin
     dialogs.current = {
       title: o.title,
       message: o.message,
-      confirm: o.confirm ?? 'Enregistrer',
+      confirm: o.confirm ?? t('Enregistrer'),
       input: { value: o.value ?? '', placeholder: o.placeholder, label: o.label },
       resolve: (v) => resolve(typeof v === 'string' ? v : null),
     };

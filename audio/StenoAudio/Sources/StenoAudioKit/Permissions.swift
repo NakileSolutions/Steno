@@ -23,7 +23,8 @@ final class PermissionsTracker {
         PermissionsSnapshot(
             microphone: Self.microphoneStatus(),
             systemAudio: currentSystemAudio(),
-            accessibility: Self.accessibilityStatus()
+            accessibility: Self.accessibilityStatus(),
+            calendar: CalendarReader.status()
         )
     }
 
@@ -46,6 +47,8 @@ final class PermissionsTracker {
             // la bonne page des Réglages ; l'app apparaît alors dans la liste.
             let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
             _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+        case .calendar:
+            _ = await CalendarReader.request()
         case .systemAudio:
             if let granted = await SystemAudioTCC.request() {
                 setSystemAudio(granted ? .granted : .denied)

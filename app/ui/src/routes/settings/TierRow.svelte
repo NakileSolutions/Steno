@@ -8,6 +8,7 @@
   import type { AgentInfo, AgentTier, ModelInfo, TestAgentResult } from '../../lib/types';
   import AgentPicker, { type AgentOption } from '../../lib/components/AgentPicker.svelte';
   import Icon from '../../lib/components/Icon.svelte';
+  import { t } from '../../lib/i18n.svelte';
 
   let {
     tier = $bindable(),
@@ -46,8 +47,8 @@
 
   const agentOptions = $derived.by((): AgentOption[] => {
     const opts: AgentOption[] = [{ value: '', label: defaultAgentLabel(provider, agents), logo: provider }];
-    for (const a of sortAgents(agents)) opts.push({ value: a.id, label: a.name, logo: a.id, tag: a.installed ? undefined : 'non installé' });
-    if (tier.agent && !agents.some((a) => a.id === tier.agent)) opts.push({ value: tier.agent, label: tier.agent, logo: tier.agent, tag: 'inconnu' });
+    for (const a of sortAgents(agents)) opts.push({ value: a.id, label: a.name, logo: a.id, tag: a.installed ? undefined : t('non installé') });
+    if (tier.agent && !agents.some((a) => a.id === tier.agent)) opts.push({ value: tier.agent, label: tier.agent, logo: tier.agent, tag: t('inconnu') });
     return opts;
   });
 
@@ -88,44 +89,44 @@
   }
 </script>
 
-<div class="trow" role="group" aria-label={row.label} data-tier={row.id}>
+<div class="trow" role="group" aria-label={t(row.label)} data-tier={row.id}>
   <div class="thead">
     <span class="tic" aria-hidden="true"><Icon name={row.icon} size={14} stroke={1.8} /></span>
     <span class="grow ttl">
-      <strong>{row.label}</strong>
-      <span class="small faint">{row.hint}</span>
+      <strong>{t(row.label)}</strong>
+      <span class="small faint">{t(row.hint)}</span>
     </span>
     <button class="btn sm" type="button" onclick={test} disabled={testing || !eff}>
-      {#if testing}<span class="spin" aria-hidden="true"></span>Test…{:else}<Icon name="check" size={13} />Tester{/if}
+      {#if testing}<span class="spin" aria-hidden="true"></span>{t('Test…')}{:else}<Icon name="check" size={13} />{t('Tester')}{/if}
     </button>
   </div>
 
   <div class="tgrid">
     <div class="ctl">
-      <span class="clabel small muted">Agent</span>
-      <AgentPicker value={tier.agent} options={agentOptions} label="Agent" onchange={setAgent} />
+      <span class="clabel small muted">{t('Agent')}</span>
+      <AgentPicker value={tier.agent} options={agentOptions} label={t('Agent')} onchange={setAgent} />
     </div>
 
     <div class="ctl">
       <span class="clabel small muted">
-        <label for="{id}-model">Modèle</label>
+        <label for="{id}-model">{t('Modèle')}</label>
         <button
           class="refresh"
           type="button"
           onclick={() => ensureModels(eff, true)}
           disabled={list?.loading}
-          title="Rafraîchir la liste des modèles"
-          aria-label="Rafraîchir les modèles"
+          title={t('Rafraîchir la liste des modèles')}
+          aria-label={t('Rafraîchir les modèles')}
         ><Icon name="refresh" size={11} stroke={2} /></button>
       </span>
       {#if listed}
         <select id="{id}-model" class="input" value={selectValue} onchange={(e) => onModelSelect(e.currentTarget.value)}>
-          <option value="">Par défaut du CLI</option>
+          <option value="">{t('Par défaut du CLI')}</option>
           {#each models as m (m.id)}<option value={m.id}>{modelLabel(m)}</option>{/each}
-          <option value={OTHER}>Autre…</option>
+          <option value={OTHER}>{t('Autre…')}</option>
         </select>
         {#if showOther}
-          <input class="input mono" bind:this={otherInput} bind:value={tier.model} placeholder="identifiant du modèle" aria-label="Autre modèle" spellcheck="false" autocapitalize="off" />
+          <input class="input mono" bind:this={otherInput} bind:value={tier.model} placeholder={t('identifiant du modèle')} aria-label={t('Autre modèle')} spellcheck="false" autocapitalize="off" />
         {/if}
       {:else}
         <input
@@ -133,13 +134,13 @@
           class="input mono"
           bind:value={tier.model}
           list="{id}-models"
-          placeholder="Par défaut du CLI"
+          placeholder={t('Par défaut du CLI')}
           spellcheck="false"
           autocapitalize="off"
         />
         <datalist id="{id}-models">{#each models as m (m.id)}<option value={m.id}>{m.note ?? ''}</option>{/each}</datalist>
         {#if models.length}
-          <span class="chips" role="group" aria-label="Suggestions de modèles">
+          <span class="chips" role="group" aria-label={t('Suggestions de modèles')}>
             {#each models.slice(0, 4) as m (m.id)}
               <button type="button" class="chip" aria-pressed={tier.model === m.id} onclick={() => (tier.model = tier.model === m.id ? '' : m.id)} title={modelLabel(m)}>{m.id}</button>
             {/each}
@@ -149,19 +150,19 @@
       {#if note}
         <span class="sub tiny faint">{note}</span>
       {:else if !listed && eff}
-        <span class="sub tiny faint">Saisie libre : ce CLI ne liste pas ses modèles.</span>
+        <span class="sub tiny faint">{t('Saisie libre : ce CLI ne liste pas ses modèles.')}</span>
       {/if}
       {#if list?.error}<span class="sub tiny faint lerr" title={list.error}><Icon name="warn" size={11} />{list.error}</span>{/if}
     </div>
 
     <div class="ctl">
-      <label class="clabel small muted" for="{id}-effort">Réflexion</label>
+      <label class="clabel small muted" for="{id}-effort">{t('Réflexion')}</label>
       <select id="{id}-effort" class="input" bind:value={tier.effort} disabled={!efforts.length}>
-        <option value="">Défaut</option>
+        <option value="">{t('Défaut')}</option>
         {#each efforts as e (e)}<option value={e}>{effortLabel(e)}</option>{/each}
         {#if tier.effort && !efforts.includes(tier.effort)}<option value={tier.effort}>{effortLabel(tier.effort)}</option>{/if}
       </select>
-      {#if !efforts.length}<span class="sub tiny faint">Non réglable pour cet agent.</span>{/if}
+      {#if !efforts.length}<span class="sub tiny faint">{t('Non réglable pour cet agent.')}</span>{/if}
     </div>
   </div>
 

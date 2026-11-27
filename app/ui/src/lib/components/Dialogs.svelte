@@ -1,5 +1,6 @@
 <script lang="ts">
   import { dialogs } from '../ui.svelte';
+  import { t } from '../i18n.svelte';
 
   let el: HTMLDialogElement | undefined = $state();
   let value = $state('');
@@ -33,13 +34,13 @@
       {/if}
       {#if d.typeToConfirm}
         <label class="col small">
-          <span>Tapez <strong>{d.typeToConfirm}</strong> pour confirmer :</span>
+          <span>{t('Tapez')} <strong>{d.typeToConfirm}</strong> {t('pour confirmer :')}</span>
           <!-- svelte-ignore a11y_autofocus -->
           <input class="input" bind:value={typed} autocomplete="off" autofocus />
         </label>
       {/if}
       <div class="row actions">
-        <button type="button" class="btn" onclick={() => done(null)}>Annuler</button>
+        <button type="button" class="btn" onclick={() => done(null)}>{t('Annuler')}</button>
         <button type="submit" class="btn {d.danger ? 'danger solid' : 'primary'}" disabled={!canConfirm}>{d.confirm}</button>
       </div>
     </form>

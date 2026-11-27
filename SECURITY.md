@@ -63,6 +63,7 @@ Seule la dernière version de la branche principale reçoit des correctifs de s�
 | Micro | Transcrire votre voix et détecter le mot d'appel |
 | Audio du système (« Enregistrement de l'écran et de l'audio système ») | Entendre les autres participants, uniquement dans l'app de l'appel |
 | Accessibilité (facultatif) | Lire le titre de l'appel en cours |
+| Calendriers (facultatif) | Lire vos réunions à venir et leurs invités (lecture seule, rien n'est modifié) ; les noms des invités sont transmis à l'agent pour le compte rendu |
 
 Pour proposer la permission « audio du système » dans l'assistant, Sténo utilise une API
 privée de macOS (`TCC.framework`, chargée dynamiquement), comme d'autres outils de capture

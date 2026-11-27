@@ -6,7 +6,7 @@ import type {
   Action, ActionFilter, DoctorItem, EventMap, EventName, LiveState, Meeting, MeetingDetail,
   MeetingFilter, MeetingSummary, Note, Repo, Request, SearchHit, Segment, Settings,
   PermissionKind, PermissionValue, VariantCheck, WakeCheck, WakeDetect,
-  ContextFile, MeetingContext, ReportTemplate, UpdateStatus,
+  ContextFile, MeetingContext, ReportTemplate, UpdateStatus, Participant, UpcomingEvent,
 } from './types';
 import {
   LIVE_SCRIPT, TEAMS_TITLE, defaultSettings, iso, nextIds, seedAgents, seedAudioDevices, seedConnectors,
@@ -70,7 +70,7 @@ export function createMockBackend(): Backend {
   const unplugged = new Set<string>();
   let reqSeq = 100;
   let wakeTestCount = 0;
-  const permissions: Record<PermissionKind, PermissionValue> = { microphone: 'granted', system_audio: 'unknown', accessibility: 'denied' };
+  const permissions: Record<PermissionKind, PermissionValue> = { microphone: 'granted', system_audio: 'unknown', accessibility: 'denied', calendar: 'granted' };
 
   const liveStore = () => meetings.find((m) => m.meeting.status === 'live');
   const find = (id: string) => {
@@ -449,6 +449,57 @@ export function createMockBackend(): Backend {
   ];
   const KINDS: Record<string, string> = { pdf: 'pdf', xlsx: 'tableur', xls: 'tableur', ods: 'tableur', csv: 'csv', docx: 'document', doc: 'document', rtf: 'document', md: 'texte', txt: 'texte', json: 'texte' };
 
+  // --- Préparation des réunions : calendrier, réunions prévues, participants ---
+  const participants = new Map<string, Participant[]>();
+  const eventLinks = new Map<string, string>();
+  const at = (days: number, h: number, m = 0) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    d.setHours(h, m, 0, 0);
+    return d;
+  };
+  const calendarEvents = (): Omit<UpcomingEvent, 'meeting_id'>[] => [
+    {
+      id: 'evt-revue-nova', title: 'Revue Nova — v2', start: iso(at(1, 10)), end: iso(at(1, 11)), all_day: false,
+      location: 'Teams', url: null, notes: 'Ordre du jour : périmètre de la v2, date de sortie, risques.', calendar: 'Travail',
+      attendees: [
+        { name: 'Inès Martin', email: 'ines.martin@exemple.fr', status: 'accepted', organizer: true, me: false },
+        { name: null, email: 'paul.durand@exemple.fr', status: 'pending', organizer: false, me: false },
+        { name: 'Camille', email: 'camille@exemple.fr', status: 'accepted', organizer: false, me: true },
+      ],
+    },
+    {
+      id: 'evt-point-client', title: 'Point client Brindille', start: iso(at(2, 14, 30)), end: iso(at(2, 15)), all_day: false,
+      location: null, url: null, notes: null, calendar: 'Travail',
+      attendees: [{ name: 'Sophie Bernard', email: 'sophie@brindille.example', status: 'accepted', organizer: false, me: false }],
+    },
+  ];
+  function planned(): Meeting[] {
+    return meetings.filter((x) => x.meeting.status === 'planned').map((x) => clone(x.meeting))
+      .sort((a, b) => a.started_at.localeCompare(b.started_at));
+  }
+  function planMeeting(title: string, scheduledAt: string, eventId?: string): Meeting {
+    if (eventId && eventLinks.has(eventId)) return clone(find(eventLinks.get(eventId)!).meeting);
+    const ev = calendarEvents().find((e) => e.id === eventId);
+    const start = new Date(scheduledAt);
+    if (Number.isNaN(start.getTime())) throw 'Date prévue invalide.';
+    const meeting: Meeting = {
+      id: `prevue-${start.getTime()}`, title: title || ev?.title || 'Réunion prévue', title_source: ev ? 'calendar' : 'user',
+      started_at: iso(start), ended_at: null, status: 'planned', confidential: false,
+      agent_provider: settings.agent.provider, correlation: settings.correlation.mode, call_app: null,
+    };
+    meetings.unshift({ meeting, segments: [], speakers: [{ label: 'Moi', display_name: null }], notes: [], requests: [], reports: [], refs: [], decisions: [], actions: [], drafts: [] });
+    if (ev) {
+      eventLinks.set(ev.id, meeting.id);
+      participants.set(meeting.id, ev.attendees.filter((x) => !x.me && x.status !== 'declined').map((x) => ({
+        name: x.name ?? x.email!.split('@')[0].split('.').map((p) => p[0].toUpperCase() + p.slice(1)).join(' '), email: x.email, source: 'calendar',
+      })));
+      if (ev.notes) ctxOf(meeting.id).text = `Invitation du calendrier :\n${ev.notes}`;
+    }
+    emit('steno://meetings', null);
+    return clone(meeting);
+  }
+
   // --- Mises à jour (version 0.2.0 publiée) ---
   const updateStatus: UpdateStatus = {
     current: '0.1.0', latest: '0.2.0', available: true, url: 'https://github.com/NakileSolutions/Steno/releases/tag/v0.2.0',
@@ -464,6 +515,18 @@ export function createMockBackend(): Backend {
     start_meeting: (a) => {
       if (liveStore()) throw 'Une réunion est déjà en cours.';
       const start = new Date();
+      // Réunion prévue dans la fenêtre ±30 min : reprise (comme le cœur).
+      const due = meetings.find((x) => x.meeting.status === 'planned' && Math.abs(new Date(x.meeting.started_at).getTime() - start.getTime()) <= 30 * 60_000);
+      if (due) {
+        due.meeting.status = 'live';
+        due.meeting.started_at = iso(start);
+        due.meeting.call_app = a.in_person ? 'room' : live.call.active ? live.call.app : null;
+        scriptPos = 0;
+        live.state = 'listening';
+        emitLive();
+        emit('steno://meetings', null);
+        return clone(due.meeting);
+      }
       const id = `reunion-${start.getTime()}`;
       const meeting: Meeting = {
         id, title: (a.title as string) || (!a.in_person && live.call.active && live.call.title) || (a.in_person ? 'Réunion en présentiel' : 'Réunion'),
@@ -838,6 +901,36 @@ export function createMockBackend(): Backend {
     },
     complete_onboarding: () => null,
     get_update_status: () => clone(updateStatus),
+    upcoming: () => ({
+      planned: planned(),
+      events: permissions.calendar === 'granted' ? calendarEvents().map((e) => ({ ...e, meeting_id: eventLinks.get(e.id) ?? null })) : [],
+      calendar: permissions.calendar,
+    }),
+    plan_meeting: (a) => planMeeting(String(a.title ?? ''), String(a.scheduledAt), (a.eventId as string) || undefined),
+    start_planned: (a) => {
+      const s = find(String(a.id));
+      if (s.meeting.status !== 'planned') throw 'Cette réunion n’est pas une réunion prévue.';
+      s.meeting.started_at = iso(new Date());
+      return handlers.start_meeting({ in_person: !!a.inPerson });
+    },
+    get_participants: (a) => clone(participants.get(String(a.id)) ?? []),
+    set_participants: (a) => {
+      const list = (a.participants as Participant[]).filter((p) => p.name.trim());
+      participants.set(String(a.id), list);
+      return clone(list);
+    },
+    prepare_questions: () => [
+      'Quel est l’objectif principal de cette réunion ?',
+      'Quelles décisions doivent être prises ?',
+      'Y a-t-il des chiffres ou des dates à surveiller ?',
+    ],
+    prepare_apply: (a) => {
+      const c = ctxOf(String(a.id));
+      const lines = (a.answers as { question: string; answer: string }[]).filter((x) => x.answer.trim()).map((x) => `- ${x.answer.trim()}`);
+      if (!lines.length) throw 'Aucune réponse.';
+      c.text = [c.text.trim(), `Préparation\n${lines.join('\n')}`].filter(Boolean).join('\n\n');
+      return clone(c);
+    },
     check_update: () => {
       updateStatus.checked_at = iso(new Date());
       emitUpdate();

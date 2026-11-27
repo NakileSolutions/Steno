@@ -3,22 +3,23 @@
   import TagInput from '../../lib/components/TagInput.svelte';
   import CallApps from './CallApps.svelte';
   import InputDevice from './InputDevice.svelte';
+  import { t, tk } from '../../lib/i18n.svelte';
 
   let { settings = $bindable() }: { settings: Settings } = $props();
   const SHORTCUTS = [
-    { id: 'toggle', label: 'Démarrer / arrêter l’écoute' },
-    { id: 'aside', label: 'Aparté (maintenir)' },
-    { id: 'quick_note', label: 'Note rapide' },
+    { id: 'toggle', label: tk('Démarrer / arrêter l’écoute') },
+    { id: 'aside', label: tk('Aparté (maintenir)') },
+    { id: 'quick_note', label: tk('Note rapide') },
   ] as const;
   const FINAL_LANGUAGES = [
-    ['off', 'Désactivée (garder le direct)'],
-    ['fr', 'Français'],
-    ['en', 'Anglais'],
-    ['es', 'Espagnol'],
-    ['de', 'Allemand'],
-    ['it', 'Italien'],
-    ['pt', 'Portugais'],
-    ['nl', 'Néerlandais'],
+    ['off', tk('Désactivée (garder le direct)')],
+    ['fr', tk('Français')],
+    ['en', tk('Anglais')],
+    ['es', tk('Espagnol')],
+    ['de', tk('Allemand')],
+    ['it', tk('Italien')],
+    ['pt', tk('Portugais')],
+    ['nl', tk('Néerlandais')],
   ] as const;
 </script>
 
@@ -26,9 +27,9 @@
 
 <CallApps bind:settings={settings} />
 
-<h2 class="group-title">Transcription</h2>
+<h2 class="group-title">{t('Transcription')}</h2>
 <div class="field">
-  <label class="field-label" for="silence">Fin de phrase<span class="hint">Silence qui termine une phrase.</span></label>
+  <label class="field-label" for="silence">{t('Fin de phrase')}<span class="hint">{t('Silence qui termine une phrase.')}</span></label>
   <div class="field-body">
     <div class="row">
       <input id="silence" type="range" min="400" max="2500" step="100" bind:value={settings.audio.silence_ms} />
@@ -37,22 +38,22 @@
   </div>
 </div>
 <div class="field">
-  <label class="field-label" for="final-tr">Retranscription finale<span class="hint">À la fin de la réunion, un modèle plus précis réécrit la transcription dans la langue choisie (évite le mélange français / anglais). Premier usage : téléchargement d’environ 1 Go.</span></label>
+  <label class="field-label" for="final-tr">{t('Retranscription finale')}<span class="hint">{t('À la fin de la réunion, un modèle plus précis réécrit la transcription dans la langue choisie (évite le mélange français / anglais). Premier usage : téléchargement d’environ 1 Go.')}</span></label>
   <div class="field-body">
     <select id="final-tr" class="input" value={settings.audio.final_transcription ?? 'fr'} onchange={(e) => (settings.audio.final_transcription = e.currentTarget.value)}>
-      {#each FINAL_LANGUAGES as [v, l] (v)}<option value={v}>{l}</option>{/each}
+      {#each FINAL_LANGUAGES as [v, l] (v)}<option value={v}>{t(l)}</option>{/each}
     </select>
   </div>
 </div>
 <div class="field">
-  <div class="field-label">Vocabulaire<span class="hint">Noms de services, d’équipe, produits : aide la transcription.</span></div>
-  <div class="field-body"><TagInput bind:values={settings.audio.vocabulary} label="Vocabulaire" placeholder="ms-booking, ORION…" /></div>
+  <div class="field-label">{t('Vocabulaire')}<span class="hint">{t('Noms de services, d’équipe, produits : aide la transcription.')}</span></div>
+  <div class="field-body"><TagInput bind:values={settings.audio.vocabulary} label={t('Vocabulaire')} placeholder="ms-booking, ORION…" /></div>
 </div>
 <div class="field">
-  <div class="field-label">Raccourcis globaux<span class="hint">Ex. Ctrl+Alt+S, Cmd+Shift+Space. La fin d’un appel n’arrête pas l’écoute : bouton, raccourci, barre d’état ou voix.</span></div>
+  <div class="field-label">{t('Raccourcis globaux')}<span class="hint">{t('Ex. Ctrl+Alt+S, Cmd+Shift+Space. La fin d’un appel n’arrête pas l’écoute : bouton, raccourci, barre d’état ou voix.')}</span></div>
   <div class="field-body">
     {#each SHORTCUTS as sc (sc.id)}
-      <label class="sc"><span>{sc.label}</span><input class="input mono" bind:value={settings.audio.shortcuts[sc.id]} /></label>
+      <label class="sc"><span>{t(sc.label)}</span><input class="input mono" bind:value={settings.audio.shortcuts[sc.id]} /></label>
     {/each}
   </div>
 </div>

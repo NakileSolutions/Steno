@@ -533,6 +533,100 @@ impl Db {
         })
     }
 
+    // ---------- Réunions prévues et participants ----------
+
+    /// Réunions prévues, de la plus proche à la plus lointaine (celles de plus d'un jour dans le
+    /// passé sont ignorées).
+    pub fn planned_meetings(&self) -> Result<Vec<Meeting>> {
+        let since = (chrono::Local::now() - chrono::Duration::days(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
+        self.with(|c| {
+            let mut st = c.prepare(&format!(
+                "SELECT {MEETING_COLS} FROM meetings WHERE status='planned' AND started_at >= ?1 ORDER BY started_at"
+            ))?;
+            let rows = st.query_map([since], meeting_row)?;
+            rows.collect()
+        })
+    }
+
+    /// Réunion prévue à reprendre maintenant : heure prévue entre `before_min` minutes avant et
+    /// `after_min` minutes après `now`, la plus proche.
+    pub fn due_planned_meeting(&self, now: chrono::DateTime<chrono::Local>, before_min: i64, after_min: i64) -> Result<Option<Meeting>> {
+        let lo = (now - chrono::Duration::minutes(after_min)).to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
+        let hi = (now + chrono::Duration::minutes(before_min)).to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
+        let list: Vec<Meeting> = self.with(|c| {
+            let mut st = c.prepare(&format!(
+                "SELECT {MEETING_COLS} FROM meetings WHERE status='planned' AND started_at BETWEEN ?1 AND ?2"
+            ))?;
+            let rows = st.query_map([lo, hi], meeting_row)?;
+            rows.collect()
+        })?;
+        Ok(list.into_iter().min_by_key(|m| {
+            chrono::DateTime::parse_from_rfc3339(&m.started_at).map(|t| (t.timestamp() - now.timestamp()).abs()).unwrap_or(i64::MAX)
+        }))
+    }
+
+    /// Une réunion prévue démarre : statut `live`, heure réelle de début, app de l'appel.
+    pub fn activate_planned(&self, id: &str, started_at: &str, call_app: Option<&str>) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE meetings SET status='live', started_at=?2, call_app=COALESCE(?3, call_app) WHERE id=?1 AND status='planned'",
+                params![id, started_at, call_app],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn set_meeting_event(&self, meeting_id: &str, event_id: Option<&str>) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "INSERT INTO meeting_context (meeting_id, text, event_id, updated_at) VALUES (?1,'',?2,NULL) \
+                 ON CONFLICT(meeting_id) DO UPDATE SET event_id=excluded.event_id",
+                params![meeting_id, event_id],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// Réunion (prévue ou passée) liée à un événement du calendrier.
+    pub fn meeting_for_event(&self, event_id: &str) -> Result<Option<String>> {
+        self.with(|c| {
+            c.query_row(
+                "SELECT x.meeting_id FROM meeting_context x JOIN meetings m ON m.id = x.meeting_id WHERE x.event_id=?1 \
+                 ORDER BY m.started_at DESC LIMIT 1",
+                [event_id],
+                |r| r.get(0),
+            )
+            .optional()
+        })
+    }
+
+    pub fn participants(&self, meeting_id: &str) -> Result<Vec<crate::planning::Participant>> {
+        self.with(|c| {
+            let mut st = c.prepare("SELECT name, email, source FROM meeting_participants WHERE meeting_id=?1 ORDER BY id")?;
+            let rows = st.query_map([meeting_id], |r| {
+                Ok(crate::planning::Participant { name: r.get(0)?, email: r.get(1)?, source: r.get(2)? })
+            })?;
+            rows.collect()
+        })
+    }
+
+    pub fn set_participants(&self, meeting_id: &str, list: &[crate::planning::Participant]) -> Result<()> {
+        self.tx(|t| {
+            t.execute("DELETE FROM meeting_participants WHERE meeting_id=?1", [meeting_id])?;
+            for p in list {
+                let name = p.name.trim();
+                if name.is_empty() {
+                    continue;
+                }
+                t.execute(
+                    "INSERT INTO meeting_participants (meeting_id, name, email, source) VALUES (?1,?2,?3,?4)",
+                    params![meeting_id, name, p.email.as_deref().map(str::trim).filter(|e| !e.is_empty()), p.source],
+                )?;
+            }
+            Ok(())
+        })
+    }
+
     /// Dernière modification du contexte (texte, format ou documents), UTC.
     pub fn touch_meeting_context(&self, meeting_id: &str) -> Result<()> {
         self.with(|c| {

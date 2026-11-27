@@ -16,6 +16,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/002_call_app.sql"),
     include_str!("migrations/003_context.sql"),
     include_str!("migrations/004_job_not_before.sql"),
+    include_str!("migrations/005_planning.sql"),
 ];
 
 fn migrations() -> Migrations<'static> {

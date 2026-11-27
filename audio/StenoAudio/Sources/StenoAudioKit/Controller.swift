@@ -156,6 +156,11 @@ actor Controller {
         case .permissions:
             output.send(.permissions(permissions.snapshot()))
 
+        case let .calendarEvents(from, to):
+            let start = from ?? Date()
+            let end = to ?? start.addingTimeInterval(7 * 24 * 3600)
+            output.send(.calendar(events: CalendarReader.events(from: start, to: end)))
+
         case let .requestPermission(kind):
             let tracker = permissions
             let out = output

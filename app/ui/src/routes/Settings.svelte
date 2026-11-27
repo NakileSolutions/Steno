@@ -20,6 +20,7 @@
   import UpdatesSection from './settings/UpdatesSection.svelte';
   import ImportSection from './settings/ImportSection.svelte';
   import { version } from '../../package.json';
+  import { t } from '../lib/i18n.svelte';
 
   let settings = $state<Settings | null>(null);
   let saved = $state('');
@@ -48,7 +49,7 @@
       setPrefs(s);
       settings = s;
       saved = JSON.stringify(s);
-      toast('Réglages enregistrés.');
+      toast(t('Réglages enregistrés.'));
     } catch (e) {
       toastError(e);
     } finally {
@@ -77,16 +78,16 @@
 <div class="settings">
   <header class="shead row">
     <span class="sic"><Icon name={section.icon} size={18} /></span>
-    <h1 class="grow">{section.label}</h1>
-    <select class="input secsel" value={section.id} onchange={(e) => setQuery({ section: e.currentTarget.value })} aria-label="Section des réglages">
-      {#each SETTINGS_SECTIONS as s (s.id)}<option value={s.id}>{s.label}</option>{/each}
+    <h1 class="grow">{t(section.label)}</h1>
+    <select class="input secsel" value={section.id} onchange={(e) => setQuery({ section: e.currentTarget.value })} aria-label={t('Section des réglages')}>
+      {#each SETTINGS_SECTIONS as s (s.id)}<option value={s.id}>{t(s.label)}</option>{/each}
     </select>
     {#if dirty}
-      <span class="unsaved small"><span class="udot" aria-hidden="true"></span>Modifications non enregistrées</span>
-      <button class="btn" onclick={revert}>Annuler</button>
+      <span class="unsaved small"><span class="udot" aria-hidden="true"></span>{t('Modifications non enregistrées')}</span>
+      <button class="btn" onclick={revert}>{t('Annuler')}</button>
     {/if}
     {#if !immediate || dirty}
-      <button class="btn primary" onclick={save} disabled={!dirty || saving} title="Enregistrer (⌘S)">{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
+      <button class="btn primary" onclick={save} disabled={!dirty || saving} title={t('Enregistrer (⌘S)')}>{saving ? t('Enregistrement…') : t('Enregistrer')}</button>
     {/if}
   </header>
 
@@ -101,7 +102,7 @@
         {:else if section.id === 'audio'}<AudioSection bind:settings={settings} />
         {:else if section.id === 'permissions'}
           <section class="perm-sec">
-            <p class="muted">Droits accordés à Sténo par macOS. Un droit refusé ne peut être rétabli que dans les Réglages Système.</p>
+            <p class="muted">{t('Droits accordés à Sténo par macOS. Un droit refusé ne peut être rétabli que dans les Réglages Système.')}</p>
             <Permissions />
           </section>
         {:else if section.id === 'reports'}<ReportsSection bind:settings={settings} />
@@ -114,7 +115,7 @@
           {#each [0, 1, 2] as k (k)}<div class="sk-row"><span class="skeleton" style="width: 30%"></span><span class="skeleton" style="width: {60 - k * 12}%"></span></div>{/each}
         </div>
       {/if}
-      <p class="credit">Sténo {version} · Développé par Nakile Solutions</p>
+      <p class="credit">{t('Sténo {version} · Développé par Nakile Solutions', { version })}</p>
     </div>
   </div>
 </div>
