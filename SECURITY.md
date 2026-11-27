@@ -71,5 +71,9 @@ audio. Elle sert uniquement à demander ou vérifier cette permission.
 
 ### Signature
 
-L'application est compilée sur votre machine et signée **ad hoc** (sans compte développeur
-Apple). Compilez-la depuis une source de confiance et vérifiez le dépôt avant `make install`.
+L'application est compilée sur votre machine, sans compte développeur Apple. `make install`
+crée une fois, dans votre trousseau de session, un certificat auto-signé « Steno Local Signing »
+(`scripts/local-signing.sh`) et signe l'app avec : macOS conserve ainsi ses autorisations d'une
+version à l'autre. Ce certificat ne quitte pas votre Mac et ne sert qu'aux apps compilées ici ;
+vous pouvez le supprimer dans Trousseaux d'accès (la signature redevient alors « ad hoc »).
+Compilez depuis une source de confiance et vérifiez le dépôt avant `make install`.
