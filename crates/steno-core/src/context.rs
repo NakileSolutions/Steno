@@ -15,6 +15,13 @@ pub const MAX_FILE_BYTES: usize = 20 * 1024 * 1024;
 pub const MAX_FILE_CHARS: usize = 60_000;
 /// Texte de tous les documents d'une réunion envoyé à l'agent (caractères).
 pub const MAX_TOTAL_CHARS: usize = 150_000;
+/// Archive (xlsx, ods, docx, odt) : taille décompressée totale et nombre de fichiers internes.
+pub const MAX_UNZIPPED_BYTES: u64 = 200 * 1024 * 1024;
+pub const MAX_ZIP_ENTRIES: usize = 2_000;
+/// Convertisseurs externes (`textutil`, `antiword`, `catdoc`) : durée et texte lu au plus.
+const CONVERT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+const MAX_CONVERT_OUTPUT: u64 = 16 * 1024 * 1024;
+
 
 /// Formats acceptés (extension → nature).
 pub const ACCEPTED: &[(&str, &str)] = &[
@@ -125,48 +132,204 @@ fn tidy(text: &str) -> String {
     out.trim().to_string()
 }
 
-fn spreadsheet_text(bytes: &[u8]) -> Result<String> {
-    use calamine::{open_workbook_auto_from_rs, Reader};
+/// Archive zip (même renommée ou précédée d'octets) : nombre de fichiers internes et taille
+/// réellement décompressée bornés avant toute lecture par `calamine` ou `textutil`.
+fn check_archive(bytes: &[u8], limit: u64) -> Result<()> {
+    let Ok(mut zip) = zip::ZipArchive::new(std::io::Cursor::new(bytes)) else { return Ok(()) };
+    if zip.len() > MAX_ZIP_ENTRIES {
+        bail!("document trop complexe ({} fichiers internes)", zip.len());
+    }
+    let mut total: u64 = 0;
+    for i in 0..zip.len() {
+        let entry = zip.by_index(i).context("document illisible")?;
+        total += std::io::copy(&mut std::io::Read::take(entry, limit - total + 1), &mut std::io::sink()).context("document illisible")?;
+        if total > limit {
+            bail!("document trop volumineux une fois décompressé (plus de {} Mo)", limit / 1024 / 1024);
+        }
+    }
+    Ok(())
+}
+
+/// Texte d'un tableur, ligne par ligne, compté en caractères.
+#[derive(Default)]
+struct SheetText {
+    out: String,
+    chars: usize,
+    line: String,
+    line_chars: usize,
+    line_cells: usize,
+}
+
+impl SheetText {
+    fn push(&mut self, s: &str) {
+        self.chars += s.chars().count();
+        self.out.push_str(s);
+    }
+
+    fn cell(&mut self, text: &str) {
+        let text = text.replace(['\n', '\t'], " ");
+        self.line_chars += text.chars().count() + 3;
+        self.line_cells += 1;
+        self.line.push_str(&text);
+        self.line.push_str(" | ");
+    }
+
+    fn end_row(&mut self) {
+        let line = std::mem::take(&mut self.line);
+        (self.line_chars, self.line_cells) = (0, 0);
+        let line = line.trim_end_matches([' ', '|']);
+        if !line.trim().is_empty() {
+            self.push(line);
+            self.push("\n");
+        }
+    }
+
+    fn full(&self) -> bool {
+        self.chars + self.line_chars >= MAX_FILE_CHARS
+    }
+
+    /// Feuille lue cellule par cellule, sans grille pleine ; `true` : plafond atteint.
+    fn stream(&mut self, name: &str, mut next: impl FnMut() -> Option<((u32, u32), calamine::Data)>) -> bool {
+        let mut row = None;
+        while let Some(((r, col), value)) = next() {
+            if row != Some(r) {
+                match row {
+                    Some(_) => self.end_row(),
+                    None => self.push(&format!("### Feuille « {name} »\n")),
+                }
+                row = Some(r);
+            }
+            // Cases vides intercalées (au plus quelques-unes) pour garder l'alignement.
+            for _ in self.line_cells..(col as usize).min(self.line_cells + 26) {
+                self.cell("");
+            }
+            self.cell(&value.to_string());
+            if self.full() {
+                self.end_row();
+                return true;
+            }
+        }
+        if row.is_some() {
+            self.end_row();
+            self.push("\n");
+        }
+        false
+    }
+}
+
+/// Texte d'un classeur, arrêté dès le plafond atteint (`true` : coupé).
+fn spreadsheet_text(bytes: &[u8]) -> Result<(String, bool)> {
+    use calamine::{open_workbook_auto_from_rs, Reader, Sheets};
     let mut wb = open_workbook_auto_from_rs(std::io::Cursor::new(bytes.to_vec())).context("classeur illisible")?;
-    let mut out = String::new();
+    let mut t = SheetText::default();
+    // xlsx et xlsb (choisis d'après le contenu, pas l'extension) : cellule par cellule.
+    // `worksheet_range` construirait la grille pleine entre la première et la dernière cellule
+    // (A1 et XFD1048576 : 17 milliards de cases). Ods est borné par calamine.
+    macro_rules! stream_sheet {
+        ($book:expr, $name:expr) => {{
+            let Ok(mut cells) = $book.worksheet_cells_reader($name) else { continue };
+            let next = || cells.next_cell().ok().flatten().map(|c| (c.get_position(), calamine::Data::from(c.get_value().clone())));
+            if t.stream($name, next) {
+                return Ok((t.out, true));
+            }
+            continue;
+        }};
+    }
     for name in wb.sheet_names() {
+        match &mut wb {
+            Sheets::Xlsx(x) => stream_sheet!(x, &name),
+            Sheets::Xlsb(x) => stream_sheet!(x, &name),
+            _ => {}
+        }
         let Ok(range) = wb.worksheet_range(&name) else { continue };
         if range.is_empty() {
             continue;
         }
-        out.push_str(&format!("### Feuille « {name} »\n"));
+        t.push(&format!("### Feuille « {name} »\n"));
         for row in range.rows() {
-            let cells: Vec<String> = row.iter().map(|c| c.to_string().replace(['\n', '\t'], " ")).collect();
-            if cells.iter().all(|c| c.trim().is_empty()) {
-                continue;
+            for c in row {
+                t.cell(&c.to_string());
+                if t.full() {
+                    t.end_row();
+                    return Ok((t.out, true));
+                }
             }
-            out.push_str(cells.join(" | ").trim_end_matches([' ', '|']));
-            out.push('\n');
+            t.end_row();
         }
-        out.push('\n');
+        t.push("\n");
     }
-    Ok(out)
+    Ok((t.out, false))
 }
 
-/// Conversion par `textutil` (macOS) : Word, RTF, ODT, HTML.
+/// Convertisseur externe : sortie lue au plus 16 Mo, délai maximal (processus tué au-delà).
+fn run_converter(cmd: &mut std::process::Command, tool: &str, name: &str, spawn_error: String) -> Result<String> {
+    use std::io::Read;
+    use std::process::Stdio;
+    let mut child = cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().context(spawn_error)?;
+    let mut stdout = child.stdout.take().context("stdout")?;
+    let reader = std::thread::spawn(move || {
+        let mut b = Vec::new();
+        let _ = (&mut stdout).take(MAX_CONVERT_OUTPUT).read_to_end(&mut b);
+        let _ = std::io::copy(&mut stdout, &mut std::io::sink());
+        b
+    });
+    let deadline = std::time::Instant::now() + CONVERT_TIMEOUT;
+    let status = loop {
+        if let Some(s) = child.try_wait()? {
+            break s;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            bail!("conversion de « {name} » trop longue (plus de {} s)", CONVERT_TIMEOUT.as_secs());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    let out = reader.join().unwrap_or_default();
+    if !status.success() {
+        bail!("document illisible (conversion par {tool} impossible)");
+    }
+    Ok(String::from_utf8_lossy(&out).into_owned())
+}
+
+/// Dossier temporaire privé (700), supprimé en toutes circonstances.
+struct TempDir(std::path::PathBuf);
+
+impl TempDir {
+    fn new() -> Result<TempDir> {
+        let dir = std::env::temp_dir().join(format!("steno-ctx-{}", uuid::Uuid::new_v4().simple()));
+        crate::paths::create_private_dir(&dir)?;
+        Ok(TempDir(dir))
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Conversion par `textutil` (macOS) : Word, RTF, ODT, HTML. Sans chargement de ressources
+/// externes (`-noload`, `-nostore`), sortie et durée bornées.
 #[cfg(target_os = "macos")]
 fn textutil_text(name: &str, bytes: &[u8]) -> Result<String> {
-    let dir = std::env::temp_dir().join(format!("steno-ctx-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&dir)?;
-    let src = dir.join(format!("source.{}", extension(name)));
-    std::fs::write(&src, bytes)?;
-    let out = std::process::Command::new("/usr/bin/textutil")
-        .args(["-convert", "txt", "-stdout"])
-        .arg(&src)
-        .output();
-    let _ = std::fs::remove_dir_all(&dir);
-    let out = out.context("textutil introuvable")?;
-    if !out.status.success() {
-        bail!("document illisible ({})", String::from_utf8_lossy(&out.stderr).trim());
-    }
+    let dir = TempDir::new()?;
+    let src = dir.0.join(format!("source.{}", extension(name)));
+    crate::paths::write_private(&src, bytes)?;
+    let mut cmd = std::process::Command::new("/usr/bin/textutil");
+    cmd.args(["-noload", "-nostore", "-convert", "txt", "-stdout"]).arg(&src);
+    let out = run_converter(&mut cmd, "textutil", name, "textutil introuvable".into())?;
     // textutil renders line breaks (RTF `\line`, ODT `<text:line-break/>`) as U+2028 and
     // paragraph separators as U+2029: same plain newlines as the portable reader.
-    Ok(String::from_utf8_lossy(&out.stdout).replace(['\u{2028}', '\u{2029}'], "\n"))
+    Ok(out.replace(['\u{2028}', '\u{2029}'], "\n"))
+}
+
+/// Texte d'un PDF ; un fichier malformé qui ferait paniquer la bibliothèque devient une erreur.
+fn pdf_text(bytes: &[u8]) -> Result<String> {
+    match std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem(bytes)) {
+        Ok(r) => r.map_err(|e| anyhow::anyhow!("PDF illisible : {e}")),
+        Err(_) => bail!("PDF illisible : fichier malformé"),
+    }
 }
 
 /// Texte d'un document Word, RTF, ODT ou HTML. Sur macOS, `textutil` d'abord, puis la lecture
@@ -194,7 +357,7 @@ fn portable_document_text(name: &str, bytes: &[u8]) -> Result<String> {
         "odt" => odt_text(bytes),
         "html" | "htm" => Ok(html_text(&String::from_utf8_lossy(bytes))),
         "rtf" => Ok(rtf_text(&String::from_utf8_lossy(bytes))),
-        _ => legacy_doc_text(bytes),
+        _ => legacy_doc_text(name, bytes),
     }
 }
 
@@ -647,22 +810,17 @@ fn rtf_text(rtf: &str) -> String {
 }
 
 /// Ancien format Word (`.doc`) : `antiword` ou `catdoc`, s'ils sont installés.
-fn legacy_doc_text(bytes: &[u8]) -> Result<String> {
+fn legacy_doc_text(name: &str, bytes: &[u8]) -> Result<String> {
     let tools: [(&str, &[&str]); 2] = [("antiword", &["-w", "0"]), ("catdoc", &["-w"])];
     let Some((tool, args)) = tools.iter().find_map(|(t, a)| which::which(t).ok().map(|p| (p, *a))) else {
         bail!("document Word .doc illisible : installez antiword ou catdoc, ou enregistrez-le en .docx");
     };
-    let dir = std::env::temp_dir().join(format!("steno-ctx-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&dir)?;
-    let src = dir.join("source.doc");
-    std::fs::write(&src, bytes)?;
-    let out = std::process::Command::new(&tool).args(args).arg(&src).output();
-    let _ = std::fs::remove_dir_all(&dir);
-    let out = out.with_context(|| format!("impossible de lancer {}", tool.display()))?;
-    if !out.status.success() {
-        bail!("document illisible ({})", String::from_utf8_lossy(&out.stderr).trim());
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    let dir = TempDir::new()?;
+    let src = dir.0.join("source.doc");
+    crate::paths::write_private(&src, bytes)?;
+    let label = tool.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let spawn_error = format!("impossible de lancer {}", tool.display());
+    run_converter(std::process::Command::new(&tool).args(args).arg(&src), &label, name, spawn_error)
 }
 
 /// Texte d'un document : `(nature, texte, tronqué)`.
@@ -671,9 +829,17 @@ pub fn extract(name: &str, bytes: &[u8]) -> Result<(&'static str, String, bool)>
         bail!("« {name} » dépasse {} Mo", MAX_FILE_BYTES / 1024 / 1024);
     }
     let kind = kind_of(name)?;
+    if matches!(kind, "tableur" | "document") {
+        check_archive(bytes, MAX_UNZIPPED_BYTES)?;
+    }
+    let mut cut_early = false;
     let raw = match kind {
-        "pdf" => pdf_extract::extract_text_from_mem(bytes).map_err(|e| anyhow::anyhow!("PDF illisible : {e}"))?,
-        "tableur" => spreadsheet_text(bytes)?,
+        "pdf" => pdf_text(bytes)?,
+        "tableur" => {
+            let (text, cut) = spreadsheet_text(bytes)?;
+            cut_early = cut;
+            text
+        }
         "document" => document_text(name, bytes)?,
         _ => String::from_utf8_lossy(bytes).into_owned(),
     };
@@ -682,7 +848,7 @@ pub fn extract(name: &str, bytes: &[u8]) -> Result<(&'static str, String, bool)>
         bail!("aucun texte trouvé dans « {name} » (document scanné ?)");
     }
     let (text, truncated) = cap(&text, MAX_FILE_CHARS);
-    Ok((kind, text, truncated))
+    Ok((kind, text, truncated || cut_early))
 }
 
 #[cfg(test)]
@@ -729,6 +895,139 @@ mod tests {
             w.write_all(body.as_bytes()).unwrap();
         }
         w.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn archives_bornees() {
+        let padding = " ".repeat(3 * 1024 * 1024);
+        let bomb = zip_of(&[("xl/worksheets/sheet1.xml", padding.as_str())]);
+        assert!(check_archive(&bomb, 1024 * 1024).unwrap_err().to_string().contains("trop volumineux"));
+        assert!(check_archive(&bomb, 8 * 1024 * 1024).is_ok());
+        let mut prefixed = b"X".to_vec();
+        prefixed.extend(&bomb);
+        assert!(check_archive(&prefixed, 1024 * 1024).is_err(), "archive contrôlée malgré l'octet en tête");
+        let names: Vec<String> = (0..=MAX_ZIP_ENTRIES).map(|i| format!("f{i}.xml")).collect();
+        let many: Vec<(&str, &str)> = names.iter().map(|n| (n.as_str(), "")).collect();
+        assert!(check_archive(&zip_of(&many), MAX_UNZIPPED_BYTES).unwrap_err().to_string().contains("trop complexe"));
+        assert!(check_archive(b"pas une archive", MAX_UNZIPPED_BYTES).is_ok());
+    }
+
+    /// Classeur xlsx d'une feuille « Taux » dont `sheet_data` est le contenu de `<sheetData>`.
+    fn xlsx(sheet_data: &str) -> Vec<u8> {
+        let rels = r#"xmlns="http://schemas.openxmlformats.org/package/2006/relationships""#;
+        let sheet = format!(r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{sheet_data}</sheetData></worksheet>"#);
+        let root_rels = format!(r#"<Relationships {rels}><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#);
+        let wb_rels = format!(r#"<Relationships {rels}><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#);
+        zip_of(&[
+            ("[Content_Types].xml", r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>"#),
+            ("_rels/.rels", root_rels.as_str()),
+            ("xl/workbook.xml", r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Taux" sheetId="1" r:id="rId1"/></sheets></workbook>"#),
+            ("xl/_rels/workbook.xml.rels", wb_rels.as_str()),
+            ("xl/worksheets/sheet1.xml", sheet.as_str()),
+        ])
+    }
+
+    fn rows(n: usize, label: &str) -> String {
+        (1..=n).map(|i| format!(r#"<row r="{i}"><c r="A{i}" t="inlineStr"><is><t>{label} {i}</t></is></c><c r="C{i}"><v>21</v></c></row>"#)).collect()
+    }
+
+    #[test]
+    fn tableur_coupe_au_plafond() {
+        let (k, t, cut) = extract("taux.xlsx", &xlsx(&rows(3, "Belgique"))).unwrap();
+        assert_eq!(k, "tableur");
+        assert!(t.contains("### Feuille « Taux »") && t.contains("Belgique 2 |  | 21"), "{t}");
+        assert!(!cut);
+        let (_, t, cut) = extract("gros.xlsx", &xlsx(&rows(20_000, "Belgique"))).unwrap();
+        assert!(cut && t.chars().count() <= MAX_FILE_CHARS);
+        // Plafond compté en caractères, pas en octets (texte accentué).
+        let (_, t, cut) = extract("accents.xlsx", &xlsx(&rows(20_000, "Éléphant à côté"))).unwrap();
+        assert!(cut && t.chars().count() > MAX_FILE_CHARS - 200, "{} caractères", t.chars().count());
+    }
+
+    /// Classeur xlsb (binaire) d'une feuille « Taux », cellules `(ligne, colonne, entier)`.
+    fn xlsb(cells: &[(u32, u32, i32)]) -> Vec<u8> {
+        use std::io::Write;
+        fn rec(out: &mut Vec<u8>, typ: u16, body: &[u8]) {
+            if typ < 0x80 {
+                out.push(typ as u8);
+            } else {
+                out.extend([(typ & 0x7F) as u8 | 0x80, (typ >> 7) as u8]);
+            }
+            let mut len = body.len();
+            loop {
+                let b = (len & 0x7F) as u8;
+                len >>= 7;
+                if len == 0 {
+                    out.push(b);
+                    break;
+                }
+                out.push(b | 0x80);
+            }
+            out.extend_from_slice(body);
+        }
+        fn wide(s: &str) -> Vec<u8> {
+            let units: Vec<u16> = s.encode_utf16().collect();
+            let mut v = (units.len() as u32).to_le_bytes().to_vec();
+            units.iter().for_each(|u| v.extend(u.to_le_bytes()));
+            v
+        }
+        let mut book = vec![];
+        let mut sheet = vec![0u8; 8];
+        sheet.extend(wide("rId1"));
+        sheet.extend(wide("Taux"));
+        rec(&mut book, 0x009C, &sheet); // BrtBundleSh
+        rec(&mut book, 0x0090, &[]); // BrtEndBundleShs
+        rec(&mut book, 0x009D, &[]); // BrtCalcProp
+        let mut ws = vec![];
+        let dim: Vec<u8> = [0u32, 1_048_575, 0, 16_383].iter().flat_map(|v| v.to_le_bytes()).collect();
+        rec(&mut ws, 0x0094, &dim); // BrtWsDim
+        rec(&mut ws, 0x0091, &[]); // BrtBeginSheetData
+        let mut row = None;
+        for &(r, c, v) in cells {
+            if row != Some(r) {
+                let mut hdr = r.to_le_bytes().to_vec();
+                hdr.resize(17, 0);
+                rec(&mut ws, 0x0000, &hdr); // BrtRowHdr
+                row = Some(r);
+            }
+            let mut cell = c.to_le_bytes().to_vec();
+            cell.extend([0u8; 4]);
+            cell.extend(((v << 2) | 2).to_le_bytes());
+            rec(&mut ws, 0x0002, &cell); // BrtCellRk (entier)
+        }
+        rec(&mut ws, 0x0092, &[]); // BrtEndSheetData
+        let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.bin"/></Relationships>"#;
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for (name, body) in [("xl/workbook.bin", book.as_slice()), ("xl/_rels/workbook.bin.rels", rels.as_bytes()), ("xl/worksheets/sheet1.bin", ws.as_slice())] {
+            w.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+            w.write_all(body).unwrap();
+        }
+        w.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn xlsb_cellule_par_cellule() {
+        // Format choisi d'après le contenu : un xlsb renommé en .xlsx passe par le lecteur xlsb.
+        let (k, t, _) = extract("taux.xlsx", &xlsb(&[(0, 0, 1), (0, 2, 21), (1, 0, 2)])).unwrap();
+        assert_eq!(k, "tableur");
+        assert!(t.contains("### Feuille « Taux »") && t.contains("1 |  | 21"), "{t}");
+        // A1 et XFD1048576 : sans lecture cellule par cellule, grille pleine de 17 milliards de cases.
+        let (_, t, _) = extract("piege.xlsx", &xlsb(&[(0, 0, 1), (1_048_575, 16_383, 2)])).unwrap();
+        assert!(t.contains('1') && t.contains('2'), "{t}");
+    }
+
+    #[test]
+    fn tableur_creux_sans_grille_pleine() {
+        // A1 et XFD1048576 : la grille pleine ferait 17 milliards de cases.
+        let data = r#"<row r="1"><c r="A1"><v>1</v></c></row><row r="1048576"><c r="XFD1048576"><v>2</v></c></row>"#;
+        let (_, t, _) = extract("creux.xlsx", &xlsx(data)).unwrap();
+        assert!(t.contains('1') && t.contains('2'), "{t}");
+    }
+
+    #[test]
+    fn pdf_malforme_sans_panique() {
+        let e = extract("faux.pdf", b"%PDF-1.7\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF").unwrap_err();
+        assert!(e.to_string().contains("PDF illisible"), "{e}");
     }
 
     #[test]

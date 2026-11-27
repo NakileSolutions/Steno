@@ -640,6 +640,9 @@ impl Settings {
 
     /// Valide et normalise avant enregistrement.
     pub fn validated(mut self) -> Result<Settings> {
+        // Rôle et équipe sont repris dans les consignes de l'agent : une seule ligne.
+        self.profile.role = crate::prompts::sanitize_inline(&self.profile.role, 120);
+        self.profile.team = crate::prompts::sanitize_inline(&self.profile.team, 120);
         self.voice.wake_word = self.voice.wake_word.trim().to_string();
         if self.voice.wake_word.is_empty() {
             anyhow::bail!("le mot d'appel ne peut pas être vide");

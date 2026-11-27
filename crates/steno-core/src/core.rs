@@ -790,6 +790,10 @@ impl Core {
             .filter(|n| !n.is_empty())
             .context("nom de fichier manquant")?
             .to_string();
+        // Taille vérifiée avant le décodage : un contenu démesuré n'est jamais décodé en mémoire.
+        if data_base64.trim().len() > crate::context::MAX_FILE_BYTES / 3 * 4 + 64 {
+            bail!("« {name} » dépasse {} Mo", crate::context::MAX_FILE_BYTES / 1024 / 1024);
+        }
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(data_base64.trim())
             .context("contenu du fichier illisible (base64 attendu)")?;

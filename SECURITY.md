@@ -44,7 +44,12 @@ Only the latest version of the main branch receives security fixes.
 - **Updates**: at startup and then every 6 hours, Sténo reads the latest published version
   from GitHub's public API (`api.github.com`), with no authentication and no personal data.
   This can be turned off in Settings → Updates. Installing fetches the version's tag into your
-  clone (`git fetch`) and rebuilds locally; published tags are signed and protected.
+  clone (`git fetch`) and rebuilds locally, only if the clone tracks the official repository,
+  the version is exactly `X.Y.Z`, the tag carries this name in its header and is SSH-signed by
+  the release key known to the app (`crates/steno-core/release-signers`, fingerprint checked,
+  GPG disabled), its code is at this version, and it is on `main` and newer than the sources;
+  exactly that commit, unmodified, is built. An imported team setting cannot enable automatic
+  install, API keys or automatic correlation, change the agent or remove an excluded meeting.
 
 ### The agent only reads
 
@@ -74,7 +79,18 @@ Only the latest version of the main branch receives security fixes.
   left in place so Bedrock or Vertex setups keep working, and your custom command receives
   your full environment.
 - Meeting content is always presented to the agent as **data**, never as instructions
-  (protection against instruction injection by a participant).
+  (protection against instruction injection by a participant), in blocks that the text itself
+  cannot close.
+
+### Local development API
+
+`steno serve` (tests and development) only listens on `127.0.0.1` and refuses requests from
+another origin or another host name (DNS rebinding). In the app, commands that edit settings,
+meetings, actions, repositories or connectors, delete data, install an update, write a file or
+request a permission are only accepted from the main window. Besides read-only commands, the
+menu bar panel can start, pause and stop listening, mute the microphone, make the current
+meeting confidential, ask about the current meeting, cancel a request and open the main window
+(full list in `docs/contracts.md` §5).
 
 ### macOS permissions
 

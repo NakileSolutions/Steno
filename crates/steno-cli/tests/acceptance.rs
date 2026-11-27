@@ -642,6 +642,9 @@ async fn contexte_documents_et_format_du_compte_rendu() {
     let f = c.add_context_file(&m.id, "regles-tva.md", &data).unwrap();
     assert_eq!((f.kind.as_str(), f.chars), ("texte", 35));
     assert!(c.add_context_file(&m.id, "photo.png", &data).is_err(), "format refusé");
+    let huge = "A".repeat(steno_core::context::MAX_FILE_BYTES / 3 * 4 + 1024);
+    let e = c.add_context_file(&m.id, "enorme.md", &huge).unwrap_err().to_string();
+    assert!(e.contains("dépasse"), "taille refusée avant le décodage : {e}");
     let ctx = c.set_meeting_context(&m.id, "Réunion Nova : surveiller la TVA.", Some(&fmt)).unwrap();
     assert_eq!(ctx.files.len(), 1);
     assert!(c.set_meeting_context(&m.id, "x", Some("inconnu")).is_err());
