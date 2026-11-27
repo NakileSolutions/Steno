@@ -416,7 +416,7 @@ fn log_event(ev: &CoreEvent) {
             if s.is_echo { " (écho)" } else { "" },
             s.text
         ),
-        CoreEvent::Request(r) => println!("» demande {} [{}] {} : {}", &r.id[..8], r.intent, r.status, r.summary.clone().unwrap_or(r.query.clone())),
+        CoreEvent::Request(r) => println!("» demande {} [{}] {} : {}", r.id.chars().take(8).collect::<String>(), r.intent, r.status, r.summary.clone().unwrap_or(r.query.clone())),
         CoreEvent::Report { meeting_id, version } => println!("» compte rendu v{version} : {meeting_id}"),
         CoreEvent::Notify { title, body, .. } => println!("🔔 {title} — {body}"),
         CoreEvent::CommandDetected { .. } => println!("🔔 commande vocale détectée"),

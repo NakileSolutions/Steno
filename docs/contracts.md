@@ -64,6 +64,15 @@ CREATE TABLE runtime (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
 - `requests.status` : `queued | running | done | error | cancelled | refused`.
 - `runtime` clé `app_heartbeat` : mise à jour toutes les 5 s par l'app. La CLI considère
   que l'app tourne si le battement a moins de 15 s ; sinon elle exécute la tâche elle-même.
+  A core starting while another process's heartbeat is fresh leaves the meeting marked
+  `live` alone (it belongs to that process); otherwise it closes it (crash recovery).
+- `jobs.status`: a `request` job abandoned after 3 attempts also moves its request to
+  `error`. A request is only set `running` from `queued` or `running` (never after a
+  cancellation).
+- `runtime` key `settings_rev`: new random value on every settings save. A running core
+  checks it every 5 s and reloads the settings (`steno://settings`) when another process
+  (`steno settings import`) saved them.
+- Write transactions use `BEGIN IMMEDIATE` (the app and the CLI share the database).
 
 ---
 

@@ -26,11 +26,17 @@ pub struct CoreOptions {
     pub agent_override: Option<Arc<dyn AgentAdapter>>,
 }
 
+/// `runtime` key changed on every settings save (see `Inner::reload_settings_if_changed`).
+const SETTINGS_REV: &str = "settings_rev";
+
 /// État partagé entre l'app, la file de tâches et la session en direct.
 pub struct Inner {
     pub db: Db,
     events: broadcast::Sender<CoreEvent>,
     settings: RwLock<Settings>,
+    /// Revision of the saved settings this process last loaded or wrote (`settings_rev` in
+    /// `runtime`): another process (the CLI) changing it means the settings must be reloaded.
+    settings_rev: Mutex<Option<String>>,
     pub hook_exe: Option<PathBuf>,
     pub jobs_notify: Notify,
     pub cancels: Mutex<HashMap<String, CancellationToken>>,
@@ -64,6 +70,27 @@ impl Inner {
 
     pub fn settings(&self) -> Settings {
         self.settings.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    fn apply_settings(&self, s: Settings) {
+        *self.settings.write().unwrap_or_else(|e| e.into_inner()) = s.clone();
+        self.send_live(LiveCmd::SettingsChanged);
+        self.emit(CoreEvent::SettingsChanged(Box::new(s)));
+    }
+
+    /// Reloads the settings when another process (`steno settings import`) saved them, so
+    /// the next save from the UI does not overwrite them. True if they were reloaded.
+    pub fn reload_settings_if_changed(&self) -> Result<bool> {
+        let rev = self.db.get_runtime(SETTINGS_REV)?.map(|(v, _)| v);
+        {
+            let mut seen = self.settings_rev.lock().unwrap_or_else(|e| e.into_inner());
+            if *seen == rev {
+                return Ok(false);
+            }
+            *seen = rev;
+        }
+        self.apply_settings(Settings::load(&self.db)?);
+        Ok(true)
     }
 
     pub fn adapter(&self) -> Result<Arc<dyn AgentAdapter>> {
@@ -289,12 +316,14 @@ pub struct Core {
 impl Core {
     pub fn new(db: Db, opts: CoreOptions) -> Result<Core> {
         let settings = Settings::load(&db)?;
+        let settings_rev = db.get_runtime(SETTINGS_REV)?.map(|(v, _)| v);
         let (tx, _) = broadcast::channel(1024);
         Ok(Core {
             inner: Arc::new(Inner {
                 db,
                 events: tx,
                 settings: RwLock::new(settings),
+                settings_rev: Mutex::new(settings_rev),
                 hook_exe: opts.hook_exe,
                 jobs_notify: Notify::new(),
                 cancels: Mutex::new(HashMap::new()),
@@ -329,10 +358,13 @@ impl Core {
     /// session en direct (sidecar).
     pub fn start_background(&self) {
         let _ = self.inner.db.recover_jobs();
+        // Read before our own heartbeat overwrites it: another running process (the app while
+        // `steno serve` starts) owns the meeting still marked live.
+        let other_alive = self.inner.db.other_process_running().unwrap_or(false);
         crate::jobs::spawn_runner(self.inner.clone());
         crate::maintenance::spawn(self.inner.clone());
         crate::updates::spawn(self.inner.clone());
-        let handle = crate::live::spawn(self.inner.clone());
+        let handle = crate::live::spawn(self.inner.clone(), !other_alive);
         *self.inner.live.lock().unwrap() = Some(handle);
     }
 
@@ -383,9 +415,10 @@ impl Core {
     pub fn save_settings(&self, s: Settings) -> Result<Settings> {
         let s = s.validated()?;
         s.save(&self.inner.db)?;
-        *self.inner.settings.write().unwrap() = s.clone();
-        self.inner.send_live(LiveCmd::SettingsChanged);
-        self.inner.emit(CoreEvent::SettingsChanged(Box::new(s.clone())));
+        let rev = uuid::Uuid::new_v4().to_string();
+        self.inner.db.set_runtime(SETTINGS_REV, &rev)?;
+        *self.inner.settings_rev.lock().unwrap() = Some(rev);
+        self.inner.apply_settings(s.clone());
         Ok(s)
     }
 
@@ -1039,6 +1072,57 @@ pub(crate) fn cancel_request(inner: &Inner, id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `steno serve` started while the app records: the meeting still marked live is not
+    /// closed under the app's feet; after a crash (no other process), it is.
+    #[tokio::test]
+    async fn live_meeting_closed_only_without_another_process() {
+        let core = Core::new(Db::open_in_memory().unwrap(), Default::default()).unwrap();
+        core.db()
+            .insert_meeting(&Meeting {
+                id: "m1".into(),
+                title: Some("Point Nova".into()),
+                title_source: Some("user".into()),
+                started_at: now_iso(),
+                ended_at: None,
+                status: "live".into(),
+                confidential: false,
+                agent_provider: None,
+                agent_session_id: None,
+                correlation: None,
+                call_app: None,
+            })
+            .unwrap();
+        let wait = || tokio::time::sleep(std::time::Duration::from_millis(300));
+        let h = crate::live::spawn(core.inner.clone(), false);
+        wait().await;
+        assert!(core.db().live_meeting().unwrap().is_some());
+        h.send(LiveCmd::Shutdown);
+        let h = crate::live::spawn(core.inner.clone(), true);
+        wait().await;
+        assert!(core.db().live_meeting().unwrap().is_none());
+        h.send(LiveCmd::Shutdown);
+    }
+
+    /// `steno settings import` while the app runs: the app picks the new settings up instead
+    /// of overwriting them on its next save.
+    #[tokio::test]
+    async fn settings_saved_by_another_process_are_reloaded() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("steno.db");
+        let app = Core::new(Db::open(&path).unwrap(), Default::default()).unwrap();
+        let cli = Core::new(Db::open(&path).unwrap(), Default::default()).unwrap();
+        assert!(!app.inner.reload_settings_if_changed().unwrap());
+        let mut rx = app.subscribe();
+        let mut s = cli.settings();
+        s.voice.wake_word = "Greffier".into();
+        cli.save_settings(s).unwrap();
+        assert!(app.inner.reload_settings_if_changed().unwrap());
+        assert_eq!(app.settings().voice.wake_word, "Greffier");
+        assert!(matches!(rx.try_recv(), Ok(CoreEvent::SettingsChanged(_))));
+        assert!(!app.inner.reload_settings_if_changed().unwrap(), "only once");
+        assert!(!cli.inner.reload_settings_if_changed().unwrap(), "its own save");
+    }
 
     #[test]
     fn refus_de_publication() {

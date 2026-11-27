@@ -136,14 +136,19 @@ async fn run_request(inner: &Inner, job: &Job) -> Result<()> {
         emit_request(inner, &rid);
         return Ok(());
     }
-    inner.db.set_request_running(&rid)?;
-    emit_request(inner, &rid);
-    let started = std::time::Instant::now();
+    // Register the cancellation token before marking the request running: a cancellation
+    // either finds the token or lands first, and then the guarded update refuses to run it.
     let cancel = CancellationToken::new();
     inner.cancels.lock().unwrap().insert(rid.clone(), cancel.clone());
+    if !inner.db.set_request_running(&rid)? {
+        inner.cancels.lock().unwrap().remove(&rid);
+        return Ok(());
+    }
+    emit_request(inner, &rid);
+    let started = std::time::Instant::now();
     let s = inner.settings();
     let intent = Intent::parse(&req.intent).unwrap_or(Intent::Search);
-    let adapter_caps = inner.adapter()?.capabilities();
+    let adapter_caps = inner.adapter_for_tier(intent.tier())?.capabilities();
     let now = chrono::Local::now().format("%H:%M").to_string();
     let result = match intent {
         Intent::Recap => {

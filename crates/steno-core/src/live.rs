@@ -97,9 +97,12 @@ struct Session {
     t_max: f64,
     levels: Levels,
     last_level_emit: Instant,
+    close_stale: bool,
 }
 
-pub fn spawn(inner: Arc<Inner>) -> LiveHandle {
+/// `close_stale`: close a meeting left live by a crash. False when another process (the app)
+/// is running and still records that meeting.
+pub fn spawn(inner: Arc<Inner>, close_stale: bool) -> LiveHandle {
     let (tx, rx) = mpsc::unbounded_channel();
     let detector = Detector::new(&inner.settings().voice);
     let mut s = Session {
@@ -131,6 +134,7 @@ pub fn spawn(inner: Arc<Inner>) -> LiveHandle {
         t_max: 0.0,
         levels: Levels { me: -90.0, them: -90.0 },
         last_level_emit: Instant::now(),
+        close_stale,
     };
     tokio::spawn(async move { s.run(rx).await });
     LiveHandle { tx }
@@ -146,7 +150,7 @@ async fn recv_opt(rx: &mut Option<mpsc::UnboundedReceiver<SidecarEvent>>) -> Opt
 impl Session {
     async fn run(&mut self, mut cmds: mpsc::UnboundedReceiver<LiveCmd>) {
         // Une réunion restée « live » (plantage) est close au démarrage.
-        if let Ok(Some(m)) = self.inner.db.live_meeting() {
+        if let Some(m) = self.inner.db.live_meeting().ok().flatten().filter(|_| self.close_stale) {
             let _ = self.inner.db.end_meeting(&m.id, &now_iso());
             let _ = self.after_end(&m);
         }

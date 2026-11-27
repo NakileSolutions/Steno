@@ -11,6 +11,9 @@ pub fn spawn(inner: Arc<Inner>) {
     tokio::spawn(async move {
         loop {
             let _ = i.db.set_runtime("app_heartbeat", &std::process::id().to_string());
+            if let Err(e) = i.reload_settings_if_changed() {
+                tracing::warn!("settings reload: {e:#}");
+            }
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(5)) => {}
                 _ = i.shutdown.cancelled() => {

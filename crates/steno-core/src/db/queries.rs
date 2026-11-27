@@ -154,7 +154,9 @@ fn job_row(r: &Row) -> rusqlite::Result<Job> {
 pub fn fts_query(input: &str) -> Option<String> {
     let toks: Vec<String> = input
         .split(|c: char| !c.is_alphanumeric() && c != '-' && c != '_')
-        .filter(|t| !t.is_empty())
+        // "-" and "_" are separators for unicode61: a token made only of them is an empty
+        // phrase, and `""*` is an FTS5 syntax error.
+        .filter(|t| t.chars().any(char::is_alphanumeric))
         .map(|t| format!("\"{}\"*", t.replace('"', "")))
         .collect();
     if toks.is_empty() {
@@ -173,7 +175,9 @@ pub fn fts_query_any(input: &str) -> Option<String> {
     ];
     let toks: Vec<String> = input
         .split(|c: char| !c.is_alphanumeric() && c != '-' && c != '_')
-        .filter(|t| t.chars().count() >= 3 && !STOP.contains(&t.to_lowercase().as_str()))
+        .filter(|t| {
+            t.chars().count() >= 3 && t.chars().any(char::is_alphanumeric) && !STOP.contains(&t.to_lowercase().as_str())
+        })
         .map(|t| format!("\"{}\"*", t.replace('"', "")))
         .collect();
     if toks.is_empty() {
@@ -854,14 +858,16 @@ impl Db {
         })
     }
 
-    pub fn set_request_running(&self, id: &str) -> Result<()> {
+    /// Marks a request as running. False if it is no longer queued or running (cancelled in
+    /// the meantime): the caller must not run it.
+    pub fn set_request_running(&self, id: &str) -> Result<bool> {
         self.with(|c| {
             c.execute(
-                "UPDATE requests SET status='running', started_at=?2 WHERE id=?1",
+                "UPDATE requests SET status='running', started_at=?2 WHERE id=?1 AND status IN ('queued','running')",
                 params![id, now_iso()],
             )
-        })?;
-        Ok(())
+        })
+        .map(|n| n > 0)
     }
 
     pub fn finish_request(
@@ -1315,6 +1321,13 @@ impl Db {
                 "UPDATE jobs SET status='error', error='abandonnée après 3 essais' WHERE status='running' AND attempts>=3",
                 [],
             )?;
+            // Their requests would otherwise stay queued or running forever.
+            c.execute(
+                "UPDATE requests SET status='error', finished_at=?1, error='abandonnée après 3 essais' \
+                 WHERE status IN ('queued','running') AND id IN \
+                 (SELECT json_extract(payload, '$.request_id') FROM jobs WHERE type='request' AND status='error')",
+                [now_iso()],
+            )?;
             c.execute("UPDATE jobs SET status='pending' WHERE status='running'", [])
         })
     }
@@ -1488,6 +1501,12 @@ impl Db {
                 .unwrap_or(false),
             None => false,
         })
+    }
+
+    /// True if another process (not this one) signalled its presence less than 15 s ago.
+    pub fn other_process_running(&self) -> Result<bool> {
+        let own = std::process::id().to_string();
+        Ok(self.app_is_running()? && self.get_runtime("app_heartbeat")?.is_some_and(|(pid, _)| pid != own))
     }
 
     // ---------------------------------------------------------------- recherche
@@ -1671,6 +1690,82 @@ mod tests {
             .unwrap();
         assert_eq!(list.len(), 1);
         assert!(list[0].snippet.as_deref().unwrap_or("").contains("créneau"));
+    }
+
+    #[test]
+    fn fts_ignores_tokens_without_letters_or_digits() {
+        assert_eq!(fts_query("Daily - Équipe").as_deref(), Some("\"Daily\"* \"Équipe\"*"));
+        assert_eq!(fts_query("---"), None);
+        assert_eq!(fts_query("_ -"), None);
+        assert_eq!(fts_query_any("Nova --- ___ planning").as_deref(), Some("\"Nova\"* OR \"planning\"*"));
+        let db = Db::open_in_memory().unwrap();
+        db.insert_meeting(&meeting("m1", "Daily - Équipe")).unwrap();
+        db.insert_segment(&seg("m1", "them", "Le daily de l'équipe Nova", false)).unwrap();
+        assert_eq!(db.search("Daily - Équipe", 10).unwrap().len(), 1);
+        assert!(db.search("---", 10).unwrap().is_empty());
+        assert!(db.search_relevant("quoi de neuf --- sur Nova ?", 10).unwrap().len() == 1);
+        let list = db.list_meetings(&MeetingFilter { query: Some("daily - équipe".into()), ..Default::default() }).unwrap();
+        assert_eq!(list.len(), 1);
+    }
+
+    fn request(id: &str, status: &str) -> Request {
+        Request {
+            id: id.into(),
+            meeting_id: None,
+            created_at: now_iso(),
+            origin: "cli".into(),
+            intent: "history".into(),
+            query: "Où en est Nova ?".into(),
+            context_seconds: None,
+            tier: "search".into(),
+            status: status.into(),
+            started_at: None,
+            finished_at: None,
+            error: None,
+            summary: None,
+            answer_md: None,
+            tools_used: vec![],
+        }
+    }
+
+    #[test]
+    fn cancelled_request_is_not_set_running_again() {
+        let db = Db::open_in_memory().unwrap();
+        db.insert_request(&request("r1", "queued")).unwrap();
+        assert!(db.set_request_running("r1").unwrap());
+        assert!(db.set_request_running("r1").unwrap(), "a retried job resumes a running request");
+        db.finish_request("r1", "cancelled", Some("Demande annulée."), None, &[], None).unwrap();
+        assert!(!db.set_request_running("r1").unwrap());
+        assert_eq!(db.get_request("r1").unwrap().unwrap().status, "cancelled");
+    }
+
+    #[test]
+    fn abandoned_request_jobs_fail_their_requests() {
+        let db = Db::open_in_memory().unwrap();
+        db.insert_request(&request("r1", "running")).unwrap();
+        db.insert_request(&request("r2", "queued")).unwrap();
+        let j1 = db.enqueue_job("request", None, &serde_json::json!({ "request_id": "r1" })).unwrap();
+        let j2 = db.enqueue_job("request", None, &serde_json::json!({ "request_id": "r2" })).unwrap();
+        db.with(|c| c.execute("UPDATE jobs SET status='running', attempts=3 WHERE id=?1", [j1])).unwrap();
+        db.with(|c| c.execute("UPDATE jobs SET status='running', attempts=1 WHERE id=?1", [j2])).unwrap();
+        db.recover_jobs().unwrap();
+        assert_eq!(db.get_job(j1).unwrap().unwrap().status, "error");
+        assert_eq!(db.get_request("r1").unwrap().unwrap().status, "error");
+        assert_eq!(db.get_job(j2).unwrap().unwrap().status, "pending");
+        assert_eq!(db.get_request("r2").unwrap().unwrap().status, "queued", "retried job: request untouched");
+    }
+
+    #[test]
+    fn other_process_heartbeat() {
+        let db = Db::open_in_memory().unwrap();
+        assert!(!db.other_process_running().unwrap());
+        db.set_runtime("app_heartbeat", &std::process::id().to_string()).unwrap();
+        assert!(!db.other_process_running().unwrap(), "our own heartbeat");
+        db.set_runtime("app_heartbeat", "999999999").unwrap();
+        assert!(db.other_process_running().unwrap());
+        db.with(|c| c.execute("UPDATE runtime SET updated_at='1970-01-01T00:00:00+00:00' WHERE key='app_heartbeat'", []))
+            .unwrap();
+        assert!(!db.other_process_running().unwrap(), "stale heartbeat");
     }
 
     #[test]
