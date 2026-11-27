@@ -5,7 +5,7 @@
   import { setPrefs } from '../lib/prefs.svelte';
   import { navigate } from '../lib/router.svelte';
   import type { AgentInfo, Connector, DoctorItem, Repo, Settings, TestAgentResult, WakeCheck } from '../lib/types';
-  import { debounce } from '../lib/format';
+  import { debounce, stripLeadingIcon } from '../lib/format';
   import { toast, toastError } from '../lib/ui.svelte';
   import Logo from '../lib/Logo.svelte';
   import Icon from '../lib/components/Icon.svelte';
@@ -241,8 +241,8 @@
           </div>
           {#if wake}
             <div class="msgs">
-              {#each wake.errors as e}<p class="errc small">✕ {e}</p>{/each}
-              {#each wake.warnings as w}<p class="warnc small">⚠ {w}</p>{/each}
+              {#each wake.errors as e}<p class="errc small">✕ {stripLeadingIcon(e)}</p>{/each}
+              {#each wake.warnings as w}<p class="warnc small">⚠ {stripLeadingIcon(w)}</p>{/each}
               {#if !wake.errors.length && !wake.warnings.length}<p class="okc small">✓ Aucun risque repéré.</p>{/if}
             </div>
           {/if}

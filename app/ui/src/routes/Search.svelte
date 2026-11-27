@@ -3,7 +3,7 @@
   import { api, onEvent } from '../lib/api';
   import { router, href, setQuery } from '../lib/router.svelte';
   import type { Request, SearchHit } from '../lib/types';
-  import { debounce, highlight, shortDate, time, dayLabel } from '../lib/format';
+  import { cleanSnippet, debounce, highlight, shortDate, time, dayLabel } from '../lib/format';
   import { toastError } from '../lib/ui.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import RequestCard from '../lib/components/RequestCard.svelte';
@@ -16,6 +16,8 @@
   let input: HTMLInputElement | undefined = $state();
 
   async function run() {
+    // Recherche différée arrivée après avoir quitté la page : ne pas toucher à l'URL.
+    if (router.route.path !== '/search') return;
     const q = query.trim();
     setQuery({ q: q || null });
     if (!q) {
@@ -96,7 +98,7 @@
             <li>
               <a class="hit" href={href(`/meetings/${g.id}?tab=${h.kind === 'report' ? 'report' : 'transcript'}`)}>
                 <span class="kind">{h.kind === 'report' ? 'Compte rendu' : h.ts ? time(h.ts) : 'Transcription'}</span>
-                <span class="snip">{@html highlight(h.snippet, searched)}</span>
+                <span class="snip">{@html highlight(cleanSnippet(h.snippet, searched), searched)}</span>
               </a>
             </li>
           {/each}

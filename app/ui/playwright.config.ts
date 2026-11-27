@@ -84,7 +84,7 @@ const desktop = {
   viewport: { width: 1440, height: 900 },
   locale: 'fr-FR',
   timezoneId: 'Europe/Paris',
-  launchOptions: executablePath ? { executablePath } : {},
+  launchOptions: { args: ['--lang=fr-FR'], ...(executablePath ? { executablePath } : {}) },
 };
 
 export default defineConfig({

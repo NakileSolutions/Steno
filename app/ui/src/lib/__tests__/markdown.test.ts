@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractLinks, renderMarkdown } from '../markdown';
+import { extractLinks, plainText, renderMarkdown, stripTldr } from '../markdown';
 
 function dom(md: string): HTMLElement {
   const el = document.createElement('div');
@@ -70,5 +70,18 @@ describe('extractLinks', () => {
   });
   it('renvoie une liste vide sans markdown', () => {
     expect(extractLinks(null)).toEqual([]);
+  });
+});
+
+describe('résumés', () => {
+  it('stripTldr retire le préfixe en tête seulement', () => {
+    expect(stripTldr('TL;DR: Le verrou est dans `SlotLock.kt:42`.\n\n## Code')).toBe('Le verrou est dans `SlotLock.kt:42`.\n\n## Code');
+    expect(stripTldr('**TL;DR** : court')).toBe('court');
+    expect(stripTldr('Rien à retirer (TL;DR: plus loin)')).toBe('Rien à retirer (TL;DR: plus loin)');
+  });
+  it('plainText enlève code, gras et liens', () => {
+    expect(plainText('TL;DR: Le verrou de créneau est géré dans `src/SlotLock.kt:42` ; voir **[APP-1234](https://jira.example.com/browse/APP-1234)**.'))
+      .toBe('Le verrou de créneau est géré dans src/SlotLock.kt:42 ; voir APP-1234.');
+    expect(plainText(null)).toBe('');
   });
 });

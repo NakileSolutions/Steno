@@ -50,6 +50,13 @@
 
   const m = $derived(detail?.meeting);
 
+  // Changement d'onglet : on repart du haut (sauf pour une demande ciblée, qui se place seule).
+  let panel: HTMLElement | undefined = $state();
+  $effect(() => {
+    void tab;
+    if (panel && !router.route.query.request) panel.scrollTop = 0;
+  });
+
   async function rename() {
     if (!m) return;
     const title = await promptDialog({ title: 'Renommer la réunion', value: m.title ?? '', placeholder: 'Titre de la réunion' });
@@ -163,7 +170,7 @@
       </div>
     </header>
 
-    <div class="panel scroll" id="panel" role="tabpanel" aria-labelledby="tab-{tab}">
+    <div class="panel scroll" id="panel" role="tabpanel" aria-labelledby="tab-{tab}" bind:this={panel}>
       {#if tab === 'report'}
         <ReportTab {detail} reload={load} />
       {:else if tab === 'transcript'}

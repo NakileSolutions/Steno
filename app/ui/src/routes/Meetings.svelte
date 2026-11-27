@@ -3,7 +3,7 @@
   import { api, onEvent } from '../lib/api';
   import { router, href } from '../lib/router.svelte';
   import type { MeetingFilter, MeetingSummary } from '../lib/types';
-  import { debounce, duration, highlight, isoDate, time } from '../lib/format';
+  import { cleanSnippet, debounce, duration, highlight, isoDate, time } from '../lib/format';
   import { groupByDay } from '../lib/group';
   import { toastError } from '../lib/ui.svelte';
   import Icon from '../lib/components/Icon.svelte';
@@ -153,7 +153,7 @@
               {#if m.status === 'processing'}<span class="ic">Traitement…</span>{/if}
             </div>
             {#if m.snippet}
-              <p class="snippet">{@html highlight(m.snippet, query)}</p>
+              <p class="snippet">{@html highlight(cleanSnippet(m.snippet, query), query)}</p>
             {/if}
           </a>
         {/each}

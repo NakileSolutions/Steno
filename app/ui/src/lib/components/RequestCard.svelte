@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Request } from '../types';
   import { api, openExternal } from '../api';
-  import { extractLinks } from '../markdown';
+  import { extractLinks, plainText, stripTldr } from '../markdown';
   import { INTENT_LABEL, ORIGIN_LABEL, STATUS_CLASS, STATUS_LABEL, time } from '../format';
   import { toastError } from '../ui.svelte';
   import Markdown from './Markdown.svelte';
@@ -60,12 +60,12 @@
   {#if req.answer_md}
     {#if compact && !open}
       <button class="summary" onclick={() => (open = true)} aria-expanded="false">
-        {req.summary ?? 'Afficher la réponse'}
+        {plainText(req.summary) || 'Afficher la réponse'}
         <span class="more">Afficher la réponse</span>
       </button>
     {/if}
     {#if showAnswer}
-      <div class="answer"><Markdown source={req.answer_md} compact={compact} /></div>
+      <div class="answer"><Markdown source={stripTldr(req.answer_md)} compact={compact} /></div>
     {/if}
   {:else if pending}
     <p class="faint small">{req.status === 'queued' ? 'En attente d’un créneau pour l’agent…' : 'L’agent cherche…'}</p>

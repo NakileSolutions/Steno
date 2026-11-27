@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import { api } from '../../lib/api';
   import type { Settings, VariantCheck, VoiceVerbs, WakeCheck } from '../../lib/types';
-  import { debounce } from '../../lib/format';
+  import { debounce, stripLeadingIcon } from '../../lib/format';
   import { toastError } from '../../lib/ui.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import TagInput from '../../lib/components/TagInput.svelte';
@@ -85,8 +85,8 @@
           {check.syllables} syllabe{check.syllables > 1 ? 's' : ''} · analysé sur {check.meetings_scanned} réunion{check.meetings_scanned > 1 ? 's' : ''}
           {#if checking}{' · vérification…'}{/if}
         </p>
-        {#each check.errors as e}<p class="msg err"><Icon name="x" size={13} />{e}</p>{/each}
-        {#each check.warnings as w}<p class="msg warn"><Icon name="warn" size={13} />{w}</p>{/each}
+        {#each check.errors as e}<p class="msg err"><Icon name="x" size={13} />{stripLeadingIcon(e)}</p>{/each}
+        {#each check.warnings as w}<p class="msg warn"><Icon name="warn" size={13} />{stripLeadingIcon(w)}</p>{/each}
         {#if !check.errors.length && !check.warnings.length}<p class="msg ok"><Icon name="check" size={13} />Aucun risque repéré.</p>{/if}
       {/if}
     </div>

@@ -35,3 +35,22 @@ export function extractLinks(md: string | null): { text: string; url: string }[]
   }
   return out;
 }
+
+const TLDR = /^\s*(\*\*|__)?\s*TL;?DR\s*:?\s*(\*\*|__)?\s*:?\s*/i;
+
+/** Retire le préfixe « TL;DR: » qu'ajoutent certains agents en tête de réponse. */
+export function stripTldr(md: string): string {
+  return md.replace(TLDR, '');
+}
+
+/** Résumé en texte brut (une ligne) : sans « TL;DR: », ni code, gras ou liens markdown. */
+export function plainText(md: string | null | undefined): string {
+  if (!md) return '';
+  return stripTldr(md)
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/(\*\*|__)(.+?)\1/g, '$2')
+    .replace(/^#+\s*/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}

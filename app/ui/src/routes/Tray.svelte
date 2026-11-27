@@ -8,6 +8,7 @@
   import type { Request } from '../lib/types';
   import { duration, relDay, STATUS_CLASS, STATUS_LABEL } from '../lib/format';
   import { toastError } from '../lib/ui.svelte';
+  import { plainText } from '../lib/markdown';
   import Logo from '../lib/Logo.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import Meter from '../lib/components/Meter.svelte';
@@ -139,7 +140,7 @@
               {#if r.status !== 'done'}<span class="badge {STATUS_CLASS[r.status]}">{STATUS_LABEL[r.status]}</span>
               {:else}<span class="faint tiny">{relDay(r.created_at)}</span>{/if}
             </span>
-            {#if r.summary || r.error}<span class="sum">{r.summary ?? r.error}</span>{/if}
+            {#if r.summary || r.error}<span class="sum">{plainText(r.summary) || r.error}</span>{/if}
           </button>
         </li>
       {:else}

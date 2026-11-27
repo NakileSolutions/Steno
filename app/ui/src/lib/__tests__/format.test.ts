@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  cap, clockDuration, dayLabel, debounce, duration, fullDate, highlight, INTENT_LABEL, isoDate,
+  cap, cleanSnippet, clockDuration, stripLeadingIcon, dayLabel, debounce, duration, fullDate, highlight, INTENT_LABEL, isoDate,
   offset, relDay, shortDate, STATUS_LABEL, time, timeS,
 } from '../format';
 
@@ -107,5 +107,26 @@ describe('debounce', () => {
     vi.advanceTimersByTime(200);
     expect(fn).toHaveBeenCalledTimes(1);
     expect(fn).toHaveBeenCalledWith(3);
+  });
+});
+
+describe('cleanSnippet', () => {
+  it('retire les marqueurs « » autour des termes cherchés, pas les vraies citations', () => {
+    expect(cleanSnippet('Je relancerai le support «Brindille» cet après-midi.', 'brindille')).toBe('Je relancerai le support Brindille cet après-midi.');
+    expect(cleanSnippet('Il a dit « garder » puis «Brindille».', 'Brindille')).toBe('Il a dit « garder » puis Brindille.');
+  });
+  it('nettoie la syntaxe markdown des comptes rendus', () => {
+    expect(cleanSnippet('...verrou de créneau, export «Brindille». ## Décisions - garder le **verrou** `SlotLock`...', 'brindille'))
+      .toBe('…verrou de créneau, export Brindille. Décisions · garder le verrou SlotLock…');
+  });
+  it('garde les tirets des noms composés', () => {
+    expect(cleanSnippet('- erreurs ms-booking - hier', 'x')).toBe('erreurs ms-booking · hier');
+  });
+});
+
+describe('stripLeadingIcon', () => {
+  it('retire le pictogramme de tête', () => {
+    expect(stripLeadingIcon('⚠️ « Scribe » n’a qu’une syllabe')).toBe('« Scribe » n’a qu’une syllabe');
+    expect(stripLeadingIcon('Sans icône')).toBe('Sans icône');
   });
 });

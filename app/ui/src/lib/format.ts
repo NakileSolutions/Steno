@@ -124,3 +124,29 @@ export function highlight(text: string, query: string): string {
   if (!terms.length) return out;
   return out.replace(new RegExp(`(${terms.map(esc).join('|')})`, 'gi'), '<mark>$1</mark>');
 }
+
+const foldTerm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+/**
+ * Extrait de recherche lisible : retire les marqueurs « » que le moteur plein texte place autour
+ * des termes trouvés (on surligne nous-mêmes), la syntaxe markdown des comptes rendus (titres,
+ * puces, gras, code) et normalise les points de suspension. Les guillemets d'origine autour
+ * d'autre chose qu'un terme cherché sont conservés.
+ */
+export function cleanSnippet(snippet: string, query: string): string {
+  const terms = query.trim().split(/\s+/).filter((t) => t.length > 1).map(foldTerm);
+  return snippet
+    .replace(/«\s?([^«»\s]+)\s?»/g, (all, w: string) => (terms.some((t) => foldTerm(w).startsWith(t)) ? w : all))
+    .replace(/(^|\s)#{1,6}\s+/g, '$1')
+    .replace(/^[-*]\s+/, '')
+    .replace(/\s[-*]\s+(?=\S)/g, ' · ')
+    .replace(/(\*\*|__|`)/g, '')
+    .replace(/\.\.\./g, '…')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+/** Message du backend sans pictogramme en tête (l'interface affiche déjà le sien). */
+export function stripLeadingIcon(msg: string): string {
+  return msg.replace(/^[\s⚠❌✅✓✕✖️]+/u, '');
+}

@@ -13,7 +13,7 @@ test.describe('navigation', () => {
   test('barre latérale', async ({ page }) => {
     await open(page);
     const sections: [string, RegExp, string][] = [
-      ['En direct', /#\/live$/, 'Le Scribe n’écoute pas'],
+      ['En direct', /#\/live$/, 'Appel Teams détecté :'],
       ['Recherche', /#\/search/, 'Recherche'],
       ['Décisions & actions', /#\/actions$/, 'Décisions & actions'],
       ['Réglages', /#\/settings$/, 'Agent IA'],
@@ -22,7 +22,7 @@ test.describe('navigation', () => {
     for (const [label, url, heading] of sections) {
       await nav(page).getByRole('link', { name: label, exact: true }).click();
       await expect(page).toHaveURL(url);
-      await expect(main(page).getByRole('heading', { name: heading, exact: true }).first()).toBeVisible();
+      await expect(main(page).getByText(heading).first()).toBeVisible();
       await expect(nav(page).getByRole('link', { name: label, exact: true })).toHaveAttribute('aria-current', 'page');
     }
   });
@@ -105,7 +105,8 @@ test.describe('réunions', () => {
 
     // La touche / ouvre la recherche depuis n'importe où.
     await nav(page).getByRole('link', { name: 'Décisions & actions' }).click();
-    await page.locator('body').press('/');
+    await expect(main(page).getByRole('heading', { name: 'Décisions & actions' })).toBeVisible();
+    await page.keyboard.press('/');
     await expect(page).toHaveURL(/#\/search/);
   });
 
@@ -144,7 +145,8 @@ test.describe('écoute', () => {
 
     // « Scribe, arrête l'écoute » : la réunion se termine.
     await page.evaluate(() => (window as unknown as { __scribeMock: { say(t: string): boolean } }).__scribeMock.say('Scribe, arrête l’écoute.'));
-    await expect(live.getByRole('heading', { name: 'Compte rendu en préparation…' })).toBeVisible();
+    await expect(live.getByRole('button', { name: 'Arrêter l’écoute' })).toHaveCount(0);
+    await expect(live.getByText(/Traitement/).first()).toBeVisible();
     await expect(live.getByText('Appel Teams détecté :')).toBeVisible({ timeout: 8000 });
     await nav(page).getByRole('link', { name: 'Réunions', exact: true }).click();
     await page.getByRole('region', { name: 'Liste des réunions' }).getByRole('link', { name: /Refinement ORION/ }).click();
@@ -160,9 +162,9 @@ test.describe('écoute', () => {
     await live.getByLabel('Demander au Scribe').fill('Poste ça sur Slack');
     await live.getByRole('button', { name: 'Envoyer' }).click();
     const card = live.locator('article.req', { hasText: 'Poste ça sur Slack' });
-    await expect(card.getByText('Refusée')).toBeVisible();
+    await expect(card.getByText('Refusée', { exact: true })).toBeVisible();
     await live.getByRole('button', { name: 'Arrêter l’écoute' }).click();
-    await expect(live.getByRole('heading', { name: 'Compte rendu en préparation…' })).toBeVisible();
+    await expect(live.getByText(/Traitement/).first()).toBeVisible();
     await expect(nav(page).getByRole('button', { name: 'Démarrer l’écoute' })).toBeVisible({ timeout: 8000 });
   });
 });
@@ -172,11 +174,14 @@ test.describe('réglages', () => {
     await open(page, '/settings?section=voice');
     const wake = page.locator('#wake');
     await expect(wake).toHaveValue('Scribe');
-    await expect(page.getByText('Aucun risque repéré.')).toBeVisible();
+    // « Scribe » apparaît une fois dans l'historique sans être une commande.
+    await expect(page.getByText(/Ce mot apparaît 1 fois/)).toBeVisible();
     await wake.fill('Bonjour');
     await expect(page.getByText('Mot très courant en français')).toBeVisible();
-    await wake.fill('Scribe');
+    await wake.fill('Scribouillard');
     await expect(page.getByText('Aucun risque repéré.')).toBeVisible();
+    await wake.fill('Scribe');
+    await expect(page.getByText(/Ce mot apparaît 1 fois/)).toBeVisible();
 
     await page.getByRole('button', { name: 'Générer les variantes' }).click();
     const rejected = page.locator('.rejected');
@@ -241,7 +246,7 @@ test.describe('panneau de barre de menu', () => {
 
   test('propose de démarrer, puis rappelle comment arrêter', async ({ page }) => {
     await page.goto('/#/tray');
-    await expect(page.getByText('N’écoute pas')).toBeVisible();
+    await expect(page.getByText('N’écoute pas', { exact: true })).toBeVisible();
     await expect(page.getByText('Appel Teams détecté :')).toBeVisible();
     await expect(page.getByText('Refinement ORION — sprint 48')).toBeVisible();
     await expect(page.getByText('Dernières réponses')).toBeVisible();

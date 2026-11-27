@@ -219,7 +219,7 @@
         <form class="ask" onsubmit={ask}>
           <label class="label" for="live-ask">Demander au Scribe</label>
           <div class="row askrow">
-            <input id="live-ask" class="input" bind:value={query} placeholder={meeting.confidential ? 'Confidentielle : notes seulement' : 'Ex. cherche les erreurs sur ms-booking'} autocomplete="off" />
+            <input id="live-ask" class="input" bind:value={query} placeholder={meeting.confidential ? 'Confidentielle : notes seulement' : 'Votre question…'} autocomplete="off" />
             <button class="btn primary" disabled={!query.trim()}>Envoyer</button>
           </div>
           <p class="faint tiny">Ou à voix haute : « Scribe, cherche… », « Scribe, note… »</p>
