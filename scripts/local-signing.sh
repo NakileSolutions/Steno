@@ -1,17 +1,17 @@
 #!/bin/sh
-# Identité de signature locale de Sténo (certificat auto-signé dans le trousseau de session).
+# Sténo's local signing identity (self-signed certificate in the login keychain).
 #
-# Sans compte développeur Apple, l'app était signée « ad hoc » : macOS reconnaît alors l'app
-# à l'empreinte exacte du binaire, qui change à chaque compilation, et redemande micro, audio
-# système, accessibilité et calendriers après chaque mise à jour. Signée avec un certificat
-# stable, l'app garde la même identité d'une version à l'autre et les autorisations restent.
+# Without an Apple developer account, the app used to be signed "ad hoc": macOS then identifies
+# the app by the exact hash of the binary, which changes with every build, and asks again for
+# microphone, system audio, accessibility and calendar access after each update. Signed with a
+# stable certificate, the app keeps the same identity across versions and permissions are kept.
 #
-# Le certificat est créé une seule fois, sur ce Mac, et ne sert qu'à signer les apps
-# compilées ici (il ne quitte jamais le trousseau). Pour le retirer : Trousseaux d'accès →
-# « Steno Local Signing » → Supprimer.
+# The certificate is created once, on this Mac, and is only used to sign apps built here
+# (it never leaves the keychain). To remove it: Keychain Access →
+# "Steno Local Signing" → Delete.
 #
-# Affiche le nom de l'identité à utiliser avec `codesign -s`, ou échoue (la signature ad hoc
-# prend alors le relais).
+# Prints the identity name to use with `codesign -s`, or fails (ad hoc signing then takes
+# over).
 set -eu
 NAME="Steno Local Signing"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
@@ -40,7 +40,7 @@ CNF
 PASS=$(/usr/bin/openssl rand -hex 16)
 /usr/bin/openssl pkcs12 -export -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
   -name "$NAME" -out "$TMP/identity.p12" -passout "pass:$PASS" >/dev/null 2>&1
-# -T : codesign peut utiliser la clé sans demander l'accès à chaque compilation.
+# -T: codesign can use the key without asking for access on every build.
 security import "$TMP/identity.p12" -k "$KEYCHAIN" -P "$PASS" -T /usr/bin/codesign >/dev/null
-echo "Identité de signature locale créée : $NAME (trousseau de session)." >&2
+echo "Local signing identity created: $NAME (login keychain)." >&2
 echo "$NAME"

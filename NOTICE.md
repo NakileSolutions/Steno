@@ -1,64 +1,64 @@
-# Composants tiers et modèles
+# Third-party components and models
 
-Sténo est distribué sous licence MIT (voir [`LICENSE`](LICENSE)). Il s'appuie sur les
-composants et modèles ci-dessous, chacun sous sa propre licence.
+Sténo is distributed under the MIT license (see [`LICENSE`](LICENSE)). It relies on the
+components and models below, each under its own license.
 
-## Modèles d'IA audio
+## Audio AI models
 
-Les modèles ne sont **pas inclus dans ce dépôt** : ils sont téléchargés depuis Hugging Face au
-premier lancement (ou par `make install`) et restent sur votre ordinateur
-(macOS : `~/Library/Application Support/FluidAudio/Models`). Ils tournent entièrement en local.
+The models are **not included in this repository**: they are downloaded from Hugging Face on
+first launch (or by `make install`) and stay on your computer
+(macOS: `~/Library/Application Support/FluidAudio/Models`). They run entirely locally.
 
-| Usage dans Sténo | Modèle | Auteur | Licence |
+| Use in Sténo | Model | Author | License |
 |---|---|---|---|
-| Transcription en direct | Parakeet TDT 0.6B v3 (conversion CoreML [`FluidInference/parakeet-tdt-0.6b-v3-coreml`](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml)) | NVIDIA | CC-BY-4.0 |
-| Retranscription de fin de réunion | Canary 1B v2 (conversion CoreML [`FluidInference/canary-1b-v2-coreml`](https://huggingface.co/FluidInference/canary-1b-v2-coreml)) | NVIDIA | CC-BY-4.0 |
-| Détection de la parole | Silero VAD (conversion CoreML [`FluidInference/silero-vad-coreml`](https://huggingface.co/FluidInference/silero-vad-coreml)) | Silero Team | MIT |
-| Identification des intervenants | pyannote speaker-diarization community-1 (conversion CoreML [`FluidInference/speaker-diarization-coreml`](https://huggingface.co/FluidInference/speaker-diarization-coreml)) | pyannote | CC-BY-4.0 |
+| Live transcription | Parakeet TDT 0.6B v3 (CoreML conversion [`FluidInference/parakeet-tdt-0.6b-v3-coreml`](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml)) | NVIDIA | CC-BY-4.0 |
+| End-of-meeting re-transcription | Canary 1B v2 (CoreML conversion [`FluidInference/canary-1b-v2-coreml`](https://huggingface.co/FluidInference/canary-1b-v2-coreml)) | NVIDIA | CC-BY-4.0 |
+| Speech detection | Silero VAD (CoreML conversion [`FluidInference/silero-vad-coreml`](https://huggingface.co/FluidInference/silero-vad-coreml)) | Silero Team | MIT |
+| Speaker identification | pyannote speaker-diarization community-1 (CoreML conversion [`FluidInference/speaker-diarization-coreml`](https://huggingface.co/FluidInference/speaker-diarization-coreml)) | pyannote | CC-BY-4.0 |
 
-Attribution CC-BY-4.0 : les modèles Parakeet TDT 0.6B v3 et Canary 1B v2 sont © NVIDIA
-Corporation ; pyannote speaker-diarization-community-1 est © pyannoteAI. Ils sont utilisés
-après conversion au format CoreML par FluidInference, sans autre modification.
+CC-BY-4.0 attribution: the Parakeet TDT 0.6B v3 and Canary 1B v2 models are © NVIDIA
+Corporation; pyannote speaker-diarization-community-1 is © pyannoteAI. They are used
+after conversion to the CoreML format by FluidInference, without any other modification.
 
 ### Linux
 
-Sous Linux, le sidecar `steno-audio` (`crates/steno-audio-linux`) utilise les conversions ONNX
-publiées par le projet sherpa-onnx (téléchargées depuis ses publications GitHub, rangées dans
-`~/.local/share/Steno/models`) :
+On Linux, the `steno-audio` sidecar (`crates/steno-audio-linux`) uses the ONNX conversions
+published by the sherpa-onnx project (downloaded from its GitHub releases, stored in
+`~/.local/share/Steno/models`):
 
-| Usage dans Sténo | Modèle | Auteur | Licence |
+| Use in Sténo | Model | Author | License |
 |---|---|---|---|
-| Transcription en direct | Parakeet TDT 0.6B v3, int8 ([`sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8`](https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8)) | NVIDIA | CC-BY-4.0 |
-| Retranscription de fin de réunion | Canary 180M Flash, int8 ([`sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8`](https://huggingface.co/csukuangfj/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8)) | NVIDIA | CC-BY-4.0 |
-| Détection de la parole | Silero VAD (ONNX) | Silero Team | MIT |
-| Identification des intervenants | pyannote segmentation 3.0 (ONNX) | pyannote | MIT |
-| Identification des intervenants | 3D-Speaker ERes2Net base (ONNX) | Alibaba (3D-Speaker) | Apache-2.0 |
+| Live transcription | Parakeet TDT 0.6B v3, int8 ([`sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8`](https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8)) | NVIDIA | CC-BY-4.0 |
+| End-of-meeting re-transcription | Canary 180M Flash, int8 ([`sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8`](https://huggingface.co/csukuangfj/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8)) | NVIDIA | CC-BY-4.0 |
+| Speech detection | Silero VAD (ONNX) | Silero Team | MIT |
+| Speaker identification | pyannote segmentation 3.0 (ONNX) | pyannote | MIT |
+| Speaker identification | 3D-Speaker ERes2Net base (ONNX) | Alibaba (3D-Speaker) | Apache-2.0 |
 
-Attribution CC-BY-4.0 : Parakeet TDT 0.6B v3 et Canary 180M Flash sont © NVIDIA Corporation,
-utilisés après conversion ONNX et quantification int8 par le projet sherpa-onnx, sans autre
+CC-BY-4.0 attribution: Parakeet TDT 0.6B v3 and Canary 180M Flash are © NVIDIA Corporation,
+used after ONNX conversion and int8 quantization by the sherpa-onnx project, without any other
 modification.
 
-## Bibliothèques principales
+## Main libraries
 
-| Composant | Licence |
+| Component | License |
 |---|---|
-| [FluidAudio](https://github.com/FluidInference/FluidAudio) (ASR, VAD, diarisation sur le Neural Engine) | Apache-2.0 |
-| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) et [ONNX Runtime](https://onnxruntime.ai) (ASR, VAD, diarisation sous Linux) | Apache-2.0, MIT |
-| [WebRTC Audio Processing](https://gitlab.freedesktop.org/pulseaudio/webrtc-audio-processing) et [Abseil](https://abseil.io) (annulation d'écho sous Linux) | BSD-3-Clause, Apache-2.0 |
-| [libpulse-binding](https://github.com/jnqnfe/pulse-binding-rust) / PulseAudio (capture sous Linux) | MIT / Apache-2.0, LGPL-2.1 |
-| [x11rb](https://github.com/psychon/x11rb) (titres des fenêtres sous Linux) | MIT / Apache-2.0 |
+| [FluidAudio](https://github.com/FluidInference/FluidAudio) (ASR, VAD, diarization on the Neural Engine) | Apache-2.0 |
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) and [ONNX Runtime](https://onnxruntime.ai) (ASR, VAD, diarization on Linux) | Apache-2.0, MIT |
+| [WebRTC Audio Processing](https://gitlab.freedesktop.org/pulseaudio/webrtc-audio-processing) and [Abseil](https://abseil.io) (echo cancellation on Linux) | BSD-3-Clause, Apache-2.0 |
+| [libpulse-binding](https://github.com/jnqnfe/pulse-binding-rust) / PulseAudio (capture on Linux) | MIT / Apache-2.0, LGPL-2.1 |
+| [x11rb](https://github.com/psychon/x11rb) (window titles on Linux) | MIT / Apache-2.0 |
 | [Tauri](https://tauri.app) (application) | MIT / Apache-2.0 |
-| [Svelte](https://svelte.dev), [Vite](https://vitejs.dev) (interface) | MIT |
-| [marked](https://marked.js.org), [DOMPurify](https://github.com/cure53/DOMPurify) (rendu Markdown) | MIT, Apache-2.0 / MPL-2.0 |
-| [rusqlite](https://github.com/rusqlite/rusqlite) / SQLite (base locale) | MIT / domaine public |
-| [calamine](https://github.com/tafia/calamine) (lecture des classeurs) | MIT |
-| [pdf-extract](https://github.com/jrmuizel/pdf-extract) (lecture des PDF) | MIT |
+| [Svelte](https://svelte.dev), [Vite](https://vitejs.dev) (UI) | MIT |
+| [marked](https://marked.js.org), [DOMPurify](https://github.com/cure53/DOMPurify) (Markdown rendering) | MIT, Apache-2.0 / MPL-2.0 |
+| [rusqlite](https://github.com/rusqlite/rusqlite) / SQLite (local database) | MIT / public domain |
+| [calamine](https://github.com/tafia/calamine) (spreadsheet reading) | MIT |
+| [pdf-extract](https://github.com/jrmuizel/pdf-extract) (PDF reading) | MIT |
 
-La liste complète des dépendances et de leurs licences se trouve dans `Cargo.lock`,
-`app/ui/package-lock.json` et `audio/StenoAudio/Package.resolved`.
+The full list of dependencies and their licenses is in `Cargo.lock`,
+`app/ui/package-lock.json` and `audio/StenoAudio/Package.resolved`.
 
-## Agents IA
+## AI agents
 
-Sténo ne contient aucun modèle de langage : il pilote le CLI d'agent que vous avez installé
-(Claude Code, Codex, Gemini CLI, OpenCode…), avec votre propre abonnement et selon les
-conditions de son éditeur.
+Sténo contains no language model: it drives the agent CLI you have installed
+(Claude Code, Codex, Gemini CLI, OpenCode…), with your own subscription and under its
+vendor's terms.

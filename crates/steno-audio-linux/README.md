@@ -1,87 +1,87 @@
-# steno-audio (Linux) — sidecar audio de Sténo
+# steno-audio (Linux) — Sténo's audio sidecar
 
-Binaire Rust lancé par le cœur de Sténo sous Linux, équivalent du sidecar Swift de macOS
-(`audio/StenoAudio`). Même protocole **JSON lines** sur stdin/stdout (`docs/contracts.md` §2),
-journaux **uniquement sur stderr**. Aucun audio ne quitte l'ordinateur ; seuls les modèles sont
-téléchargés (une fois).
+Rust binary launched by the Sténo core on Linux, the counterpart of the macOS Swift sidecar
+(`audio/StenoAudio`). Same **JSON lines** protocol over stdin/stdout (`docs/contracts.md` §2),
+logs **only on stderr**. No audio ever leaves the computer; only the models are downloaded
+(once).
 
-| Rôle | macOS (Swift) | Linux (ce crate) |
+| Role | macOS (Swift) | Linux (this crate) |
 |---|---|---|
-| Micro (canal `me`) | AVAudioEngine + voice processing | flux d'enregistrement PulseAudio / PipeWire + annulation d'écho WebRTC AEC3 (`aec.rs`) |
-| Son de l'appel (canal `them`) | process tap Core Audio sur les processus de l'app | moniteur de **chaque flux de lecture** de l'app (`pa_stream_set_monitor_stream`), mélangés (`capture.rs`) |
-| Détection d'appel | processus de l'app qui utilise l'entrée audio | flux d'enregistrement d'un vrai micro ouvert par l'app (pas un moniteur) (`calls.rs`) |
-| Appartenance d'un processus | préfixe de bundle ID, sinon PID parent | préfixe du nom d'exécutable, de l'identifiant Flatpak / Snap, sinon PID parent, sinon `application.name` (jamais pour un navigateur) |
-| Titre de l'appel | accessibilité | fenêtres X11 / XWayland (`x11.rs`), mêmes heuristiques (`titles.rs`) |
-| VAD, ASR | Silero, Parakeet TDT v3 (FluidAudio, Neural Engine) | Silero, Parakeet TDT v3 int8 (sherpa-onnx, ONNX Runtime sur CPU) |
-| Retranscription | Canary 1B v2 | Canary 180M Flash (fr, en, es, de) |
-| Diarisation | FluidAudio | pyannote segmentation 3.0 + 3D-Speaker ERes2Net (sherpa-onnx) |
-| Périphériques | UID Core Audio | nom du nœud PulseAudio (`alsa_input.usb-…`), stable d'un branchement à l'autre |
-| Calendrier | EventKit | Evolution Data Server (cache local), `.ics` de `calendars.txt` (`calendar.rs`, `ical.rs`) |
-| Permissions | TCC | aucune : `microphone` / `system_audio` = `granted` dès que le serveur son répond, `accessibility` = `granted` si X11 est joignable, `calendar` = `granted` si une source existe |
+| Microphone (`me` channel) | AVAudioEngine + voice processing | PulseAudio / PipeWire recording stream + WebRTC AEC3 echo cancellation (`aec.rs`) |
+| Call audio (`them` channel) | Core Audio process tap on the app's processes | monitor of **each playback stream** of the app (`pa_stream_set_monitor_stream`), mixed together (`capture.rs`) |
+| Call detection | an app process using audio input | a recording stream from a real microphone (not a monitor) opened by the app (`calls.rs`) |
+| Process ownership | bundle ID prefix, otherwise parent PID | executable name prefix, Flatpak / Snap ID, otherwise parent PID, otherwise `application.name` (never for a browser) |
+| Call title | accessibility | X11 / XWayland windows (`x11.rs`), same heuristics (`titles.rs`) |
+| VAD, ASR | Silero, Parakeet TDT v3 (FluidAudio, Neural Engine) | Silero, Parakeet TDT v3 int8 (sherpa-onnx, ONNX Runtime on CPU) |
+| Re-transcription | Canary 1B v2 | Canary 180M Flash (fr, en, es, de) |
+| Diarization | FluidAudio | pyannote segmentation 3.0 + 3D-Speaker ERes2Net (sherpa-onnx) |
+| Devices | Core Audio UID | PulseAudio node name (`alsa_input.usb-…`), stable across reconnections |
+| Calendar | EventKit | Evolution Data Server (local cache), `.ics` files from `calendars.txt` (`calendar.rs`, `ical.rs`) |
+| Permissions | TCC | none: `microphone` / `system_audio` = `granted` as soon as the sound server responds, `accessibility` = `granted` if X11 is reachable, `calendar` = `granted` if a source exists |
 
-Les parties sans dépendance au système sont des ports fidèles du Swift, avec leurs tests :
-protocole, segmenteur, filtre des fausses phrases, correction par le vocabulaire, retranscription,
-mise en forme de la diarisation, heuristiques de titre, tri des périphériques, signal sonore.
+The system-independent parts are faithful ports of the Swift code, with their tests: protocol,
+segmenter, false-sentence filter, vocabulary correction, re-transcription, diarization
+formatting, title heuristics, device sorting, sound cue.
 
-Performance mesurée (4 cœurs x86_64) : Parakeet transcrit environ dix fois plus vite que le temps
-réel (5 s d'audio en 0,4 s) ; modèle chargé en 2 s.
+Measured performance (4 x86_64 cores): Parakeet transcribes about ten times faster than real
+time (5 s of audio in 0.4 s); model loaded in 2 s.
 
-## Compilation
+## Build
 
 ```sh
-make deps      # paquets apt (une fois)
-make sidecar   # télécharge sherpa-onnx (curl), compile, copie dans app/src-tauri/binaries/
+make deps      # apt packages (once)
+make sidecar   # downloads sherpa-onnx (curl), builds, copies into app/src-tauri/binaries/
 ```
 
-À la main : `SHERPA_ONNX_ARCHIVE_DIR=<dossier de l'archive> cargo build --release -p steno-audio-linux`
-(sans cette variable, le script de compilation de `sherpa-onnx-sys` télécharge lui-même
-l'archive). La fonction `aec` (par défaut) compile WebRTC avec meson et ninja.
+By hand: `SHERPA_ONNX_ARCHIVE_DIR=<archive-dir> cargo build --release -p steno-audio-linux`
+(without this variable, the `sherpa-onnx-sys` build script downloads the archive itself). The
+`aec` feature (on by default) builds WebRTC with meson and ninja.
 
-Sur macOS, ce crate compile en binaire vide (le sidecar Swift sert) : `cargo test --workspace`
-reste utilisable partout.
+On macOS, this crate builds as an empty binary (the Swift sidecar is used instead):
+`cargo test --workspace` works everywhere.
 
-## Modèles
+## Models
 
-Dossier : `STENO_MODELS_DIR`, sinon `$STENO_HOME/models`, sinon `~/.local/share/Steno/models`.
-`steno-audio --prefetch-models` (lancé par `make install`) télécharge tout (≈ 700 Mo) depuis les
-publications de sherpa-onnx ; sinon chaque modèle est téléchargé à son premier usage.
+Directory: `STENO_MODELS_DIR`, otherwise `$STENO_HOME/models`, otherwise `~/.local/share/Steno/models`.
+`steno-audio --prefetch-models` (run by `make install`) downloads everything (≈ 700 MB) from the
+sherpa-onnx releases; otherwise each model is downloaded on first use.
 
-## Options et variables
+## Options and variables
 
 ```
-steno-audio                         mode protocole
-steno-audio --list-devices          micros et sorties avec leur identifiant
+steno-audio                         protocol mode
+steno-audio --list-devices          microphones and outputs with their identifier
 steno-audio --list-audio-processes [--apps teams,slack]
-                                    flux audio des applications et app reconnue pour chacun
-steno-audio --spike-record <s> <dossier> [--apps …]   enregistre me.wav et them.wav
-steno-audio --spike-transcribe <f.wav>                transcrit un fichier (VAD + Parakeet)
+                                    application audio streams and the app recognized for each
+steno-audio --spike-record <s> <dir> [--apps …]   records me.wav and them.wav
+steno-audio --spike-transcribe <f.wav>                transcribes a file (VAD + Parakeet)
 steno-audio --prefetch-models
 ```
 
-| Variable | Effet |
+| Variable | Effect |
 |---|---|
-| `STENO_TAP_MODE=global` | plan B : tout le son de la sortie par défaut au lieu des flux des apps |
-| `STENO_AEC=0` / `STENO_AEC=1` | annulation d'écho désactivée / forcée (par défaut : active seulement quand la sortie par défaut n'est pas un casque, réévalué à chaque changement de sortie) |
-| `STENO_VAD=energy` | VAD par énergie au lieu de Silero |
-| `STENO_MODELS_DIR` | dossier des modèles |
-| `STENO_PRELOAD_MODELS=1` | charge Parakeet dès le lancement |
-| `STENO_EMAIL` | adresse(s) de l'utilisateur pour repérer « moi » parmi les invités |
-| `STENO_AUDIO_DEBUG=1` | journaux détaillés |
+| `STENO_TAP_MODE=global` | plan B: all audio from the default output instead of the apps' streams |
+| `STENO_AEC=0` / `STENO_AEC=1` | echo cancellation disabled / forced (default: enabled only when the default output is not a headset, re-evaluated on every output change) |
+| `STENO_VAD=energy` | energy-based VAD instead of Silero |
+| `STENO_MODELS_DIR` | models directory |
+| `STENO_PRELOAD_MODELS=1` | loads Parakeet at startup |
+| `STENO_EMAIL` | the user's address(es), used to identify "me" among the invitees |
+| `STENO_AUDIO_DEBUG=1` | verbose logs |
 
-## Essais réalisés (serveur PulseAudio, sorties et micro virtuels)
+## Tests performed (PulseAudio server, virtual outputs and microphone)
 
-- appel simulé (faux processus `slack` qui enregistre le micro et joue la voix des participants) :
-  appel détecté, flux de l'app capté seul, phrases transcrites dans les deux canaux, `stop`,
-  diarisation (deux voix distinguées), retranscription Canary, `wake_test`, `shutdown` ;
-- écho des haut-parleurs renvoyé dans le micro à −9 dB : sans AEC la voix des participants est
-  transcrite sur le canal `me` ; avec AEC elle disparaît, et la parole de l'utilisateur reste
-  transcrite même pendant que les participants parlent ;
-- sans écho (casque) : AEC3 étouffait le début des phrases dites pendant que les participants
-  parlent, le temps de converger ; d'où l'activation automatique seulement sur haut-parleurs
-  (sortie casque : jack « headphones », Bluetooth, `device.form_factor` headset/headphone) ;
-- micro choisi débranché (`device_missing`, repli sur le défaut) puis rebranché (repris),
-  `set_input`, redémarrage du serveur son pendant l'écoute (reconnexion, flux rouverts) ;
-- chaîne complète `steno serve` → cœur → ce sidecar → compte rendu (faux agent).
+- simulated call (fake `slack` process that records the microphone and plays the participants'
+  voices): call detected, only the app's stream captured, sentences transcribed on both channels,
+  `stop`, diarization (two voices told apart), Canary re-transcription, `wake_test`, `shutdown`;
+- speaker echo fed back into the microphone at −9 dB: without AEC the participants' voices are
+  transcribed on the `me` channel; with AEC they disappear, and the user's speech is still
+  transcribed even while the participants are talking;
+- without echo (headset): AEC3 muffled the beginning of sentences spoken while the participants
+  were talking, until it converged; hence automatic activation on speakers only (headset output:
+  "headphones" jack, Bluetooth, `device.form_factor` headset/headphone);
+- selected microphone unplugged (`device_missing`, fallback to the default) then plugged back in
+  (resumed), `set_input`, sound server restart while listening (reconnection, streams reopened);
+- full chain `steno serve` → core → this sidecar → meeting notes (fake agent).
 
-Non essayé faute de matériel : vrais clients Teams for Linux / Slack / Zoom, PipeWire natif
-(seul PulseAudio a servi ; PipeWire sert la même API par pipewire-pulse), casques Bluetooth.
+Not tested for lack of hardware: real Teams for Linux / Slack / Zoom clients, native PipeWire
+(only PulseAudio was used; PipeWire serves the same API through pipewire-pulse), Bluetooth headsets.

@@ -1,111 +1,111 @@
-# Sténo — assistant de réunion local (Mac + Teams) — plan v3
+# Sténo — local meeting assistant (Mac + Teams) — plan v3
 
-> Plan de réalisation destiné à des agents de code (Orca, Claude Code, Codex…).
-> **Objectif** : l'équivalent de Granola en 100 % local, augmenté de recherches croisées
-> codebase / Jira / Confluence / Datadog, déclenchables **à la voix** pendant la réunion,
-> avec une **app de bureau légère en Rust** qui fonctionne sans Orca.
-> **Contraintes** :
-> - 0 € de coût en plus de l'abonnement IA que chaque dev a déjà (Claude Code, Codex, Gemini CLI, OpenCode…) ;
-> - agent IA **configurable** : rien dans le code ne dépend d'un fournisseur ;
-> - chaque dev compile l'outil lui-même (section 14) ;
-> - pas d'Electron : app **Tauri 2 (Rust)**, empreinte mémoire et CPU minimale.
-
----
-
-## 0. Comment utiliser ce plan
-
-1. Créer un dépôt local `steno/` (privé, jamais poussé sur un dépôt public), y déposer ce fichier.
-2. Premier agent : « Lis PLAN.md, écris `docs/contracts.md` (schéma SQLite section 3 + protocole section 4.3), puis exécute la phase 0 et rends-moi `docs/spikes.md`. »
-3. Après validation de la phase 0 : **4 agents en parallèle** (section 11).
-
-Règles pour tous les agents :
-- Français dans l'interface, les notifications et les comptes rendus.
-- **Sténo ne publie jamais rien à l'extérieur** (Slack, Jira, Confluence, GitLab, Datadog). Il lit seulement ; tout ce qui sortirait est un brouillon que l'utilisateur valide lui-même.
-- Aucun appel à une API payante. Les modèles ne sont appelés que via le **CLI officiel de l'agent choisi**, dans le cadre de l'abonnement du dev, jamais via un client maison qui réutiliserait un jeton.
-- Aucun nom de fournisseur, de modèle ou d'option de CLI en dehors des adaptateurs (`crates/steno-core/src/agents/`) et des réglages.
-- Rien de propre à un dev dans le dépôt (équipe, chemins, mot d'appel, modèles) : tout est en base.
+> Implementation plan intended for coding agents (Orca, Claude Code, Codex…).
+> **Goal**: a 100 % local equivalent of Granola, extended with cross-searches across
+> codebase / Jira / Confluence / Datadog that can be triggered **by voice** during the meeting,
+> with a **lightweight Rust desktop app** that works without Orca.
+> **Constraints**:
+> - €0 of cost on top of the AI subscription each dev already has (Claude Code, Codex, Gemini CLI, OpenCode…);
+> - **configurable** AI agent: nothing in the code depends on a provider;
+> - each dev builds the tool themselves (section 14);
+> - no Electron: a **Tauri 2 (Rust)** app, with minimal memory and CPU footprint.
 
 ---
 
-## 1. Vue d'ensemble
+## 0. How to use this plan
+
+1. Create a local `steno/` repository (private, never pushed to a public repository) and put this file in it.
+2. First agent: « Lis PLAN.md, écris `docs/contracts.md` (schéma SQLite section 3 + protocole section 4.3), puis exécute la phase 0 et rends-moi `docs/spikes.md`. » ("Read PLAN.md, write `docs/contracts.md` (SQLite schema from section 3 + protocol from section 4.3), then run phase 0 and give me `docs/spikes.md`.")
+3. Once phase 0 is validated: **4 agents in parallel** (section 11).
+
+Rules for all agents:
+- French in the UI, notifications and reports.
+- **Sténo never publishes anything externally** (Slack, Jira, Confluence, GitLab, Datadog). It only reads; anything that would go out is a draft the user validates themselves.
+- No calls to any paid API. Models are only called through the **official CLI of the chosen agent**, within the dev's subscription, never through a homemade client that would reuse a token.
+- No provider, model or CLI option names outside the adapters (`crates/steno-core/src/agents/`) and the settings.
+- Nothing dev-specific in the repository (team, paths, wake word, models): it all lives in the database.
+
+---
+
+## 1. Overview
 
 ```
 ┌──────────────────────────── Steno.app (Mac) ─────────────────────────────┐
 │                                                                            │
-│  ┌─ steno-audio (sidecar Swift, binaire embarqué dans l'app) ──────────┐  │
-│  │  Micro (AVAudioEngine + AEC)           → canal "me"   (Moi)          │  │
-│  │  Process tap Core Audio sur Teams      → canal "them" (Eux)          │  │
-│  │  Détection d'appel Teams, titre de fenêtre (Accessibilité)           │  │
-│  │  VAD Silero + ASR Parakeet TDT v3 (FluidAudio, CoreML / ANE, FR)     │  │
-│  │  ⇄ JSON lines sur stdin/stdout (section 4.3)                         │  │
+│  ┌─ steno-audio (Swift sidecar, binary embedded in the app) ────────────┐  │
+│  │  Mic (AVAudioEngine + AEC)             → "me" channel   (Moi)        │  │
+│  │  Core Audio process tap on Teams       → "them" channel (Eux)        │  │
+│  │  Teams call detection, window title (Accessibility)                  │  │
+│  │  Silero VAD + Parakeet TDT v3 ASR (FluidAudio, CoreML / ANE, FR)     │  │
+│  │  ⇄ JSON lines over stdin/stdout (section 4.3)                        │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                         │ segments                                         │
-│  ┌─ steno-core (Rust, dans le processus Tauri) ─────────────────────────┐ │
-│  │  SQLite (WAL + FTS5) : réunions, transcription, demandes, comptes     │ │
-│  │  rendus, décisions, actions, réglages                                 │ │
-│  │  Détection du mot d'appel (canal "me" uniquement)                     │ │
-│  │  File de tâches : demandes en direct, compte rendu, corrélation…      │ │
-│  │  Adaptateurs d'agent → lance claude / codex / gemini / opencode…      │ │
-│  │  Politique lecture seule commune                                      │ │
-│  └───────────────────────────────────────────────────────────────────────┘ │
+│  ┌─ steno-core (Rust, inside the Tauri process) ────────────────────────┐  │
+│  │  SQLite (WAL + FTS5): meetings, transcript, requests, reports,       │  │
+│  │  decisions, actions, settings                                        │  │
+│  │  Wake-word detection ("me" channel only)                             │  │
+│  │  Job queue: live requests, report, correlation…                      │  │
+│  │  Agent adapters → launch claude / codex / gemini / opencode…         │  │
+│  │  Shared read-only policy                                             │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                            │
-│  ┌─ UI (Tauri 2 : WKWebView système + Svelte) ───────────────────────────┐ │
-│  │  Icône de barre de menu · fenêtre Réunions / Recherche / Actions /    │ │
-│  │  Réglages · vue « en direct »                                         │ │
-│  └───────────────────────────────────────────────────────────────────────┘ │
+│  ┌─ UI (Tauri 2: system WKWebView + Svelte) ────────────────────────────┐  │
+│  │  Menu bar icon · Meetings / Search / Actions / Settings window ·     │  │
+│  │  "live" view                                                         │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────────────┘
-   steno (CLI Rust) : ask · doctor · init · export · mcp (serveur MCP local)
-          │ texte uniquement (jamais l'audio)
+   steno (Rust CLI): ask · doctor · init · export · mcp (local MCP server)
+          │ text only (never audio)
           ▼
-   Agent IA choisi par le dev (son abonnement) + ses MCP (Atlassian, Datadog, GitLab…)
+   AI agent chosen by the dev (their subscription) + their MCPs (Atlassian, Datadog, GitLab…)
 
-   Orca : facultatif. Ses agents peuvent interroger les réunions via `steno mcp`.
+   Orca: optional. Its agents can query meetings through `steno mcp`.
 ```
 
-**Principe de coût** : transcription continue en local ; l'IA n'est appelée que sur demande (voix ou texte), une fois en fin de réunion, et pour la corrélation si elle est activée.
+**Cost principle**: continuous local transcription; the AI is only called on request (voice or text), once at the end of the meeting, and for correlation if it is enabled.
 
 ---
 
-## 2. Choix techniques (à confirmer en phase 0)
+## 2. Technical choices (to be confirmed in phase 0)
 
-| Brique | Choix | Raison | Plan B |
+| Building block | Choice | Reason | Plan B |
 |---|---|---|---|
-| App de bureau | **Tauri 2** (Rust + WKWebView système), UI en **Svelte 5** + Vite, sans gros framework | Pas de Chromium embarqué : quelques dizaines de Mo de RAM au lieu de plusieurs centaines pour Electron | UI 100 % Rust native (Slint ou egui) si la WebView pose problème |
-| Cœur | Rust stable, `tokio`, `rusqlite` (feature `bundled`, FTS5 inclus), `rusqlite_migration`, `serde`, `tracing` | Un seul langage pour l'app, la CLI et le serveur MCP | — |
-| Serveur MCP | crate `rmcp` (SDK Rust officiel), transport stdio | Tous les agents parlent MCP | JSON-RPC stdio minimal fait main |
-| Audio + ASR | **Sidecar Swift** `steno-audio` : Core Audio process taps (`CATapDescription`, macOS 14.2+), `AVAudioEngine` avec voice processing, **FluidAudio** (Parakeet TDT v3 + Silero VAD, Apache 2.0) | Meilleures API Apple + transcription sur le Neural Engine, très peu de CPU | Tout en Rust : `objc2-core-audio` pour les taps + `whisper-rs` (Metal) ou `sherpa-onnx` (Parakeet ONNX) |
-| Raccourcis globaux | `tauri-plugin-global-shortcut` (événements appui/relâchement) | Mode aparté « maintenir pour parler » | — |
-| Lancement au démarrage | `tauri-plugin-autostart` | L'app vit dans la barre de menu | — |
-| Rendu markdown | `marked` + `DOMPurify` (contenu produit par l'IA, donc toujours assaini) + CSP stricte | Sécurité | — |
-| Diarisation des « Eux » | FluidAudio (pyannote), **en post-traitement** | Inutile en direct | Rester sur Moi/Eux |
+| Desktop app | **Tauri 2** (Rust + system WKWebView), UI in **Svelte 5** + Vite, no heavy framework | No embedded Chromium: a few tens of MB of RAM instead of several hundred for Electron | 100 % native Rust UI (Slint or egui) if the WebView causes problems |
+| Core | Stable Rust, `tokio`, `rusqlite` (`bundled` feature, FTS5 included), `rusqlite_migration`, `serde`, `tracing` | A single language for the app, the CLI and the MCP server | — |
+| MCP server | `rmcp` crate (official Rust SDK), stdio transport | All agents speak MCP | Minimal handmade stdio JSON-RPC |
+| Audio + ASR | **Swift sidecar** `steno-audio`: Core Audio process taps (`CATapDescription`, macOS 14.2+), `AVAudioEngine` with voice processing, **FluidAudio** (Parakeet TDT v3 + Silero VAD, Apache 2.0) | Best Apple APIs + transcription on the Neural Engine, very little CPU | All in Rust: `objc2-core-audio` for the taps + `whisper-rs` (Metal) or `sherpa-onnx` (Parakeet ONNX) |
+| Global shortcuts | `tauri-plugin-global-shortcut` (press/release events) | "Hold to talk" aside mode | — |
+| Launch at login | `tauri-plugin-autostart` | The app lives in the menu bar | — |
+| Markdown rendering | `marked` + `DOMPurify` (AI-generated content, so always sanitized) + strict CSP | Security | — |
+| Diarization of "Eux" | FluidAudio (pyannote), **as post-processing** | Not needed live | Stay with Moi/Eux |
 
-Cibles de performance (critères d'acceptation) :
-- App au repos (fenêtre fermée, pas de réunion) : **< 120 Mo de RAM** au total, CPU < 1 %.
-- En réunion : CPU moyen < 25 % sur Apple Silicon (l'ASR tourne sur le Neural Engine).
-- Ouverture de la fenêtre < 500 ms ; recherche plein texte sur 500 réunions < 200 ms.
+Performance targets (acceptance criteria):
+- Idle app (window closed, no meeting): **< 120 MB of RAM** in total, CPU < 1 %.
+- In a meeting: average CPU < 25 % on Apple Silicon (ASR runs on the Neural Engine).
+- Window opens in < 500 ms; full-text search over 500 meetings < 200 ms.
 
-Points d'attention :
-- **Permissions macOS** : micro, « Enregistrement audio du système » (`NSAudioCaptureUsageDescription` dans l'`Info.plist`), Accessibilité (titre de la fenêtre Teams). Vérifier que la permission accordée à `Steno.app` couvre bien le sidecar embarqué (spike S1).
-- **Teams** : le nouveau Teams (bundle probable `com.microsoft.teams2`) peut sortir l'audio par un processus auxiliaire → taper tout l'arbre de processus Teams.
-- **Mac géré par l'entreprise** : le MDM peut bloquer la permission audio système (spike S4).
+Points of attention:
+- **macOS permissions**: microphone, "System Audio Recording" (`NSAudioCaptureUsageDescription` in the `Info.plist`), Accessibility (Teams window title). Check that the permission granted to `Steno.app` does cover the embedded sidecar (spike S1).
+- **Teams**: the new Teams (probable bundle `com.microsoft.teams2`) may output audio through a helper process → tap the whole Teams process tree.
+- **Company-managed Mac**: MDM may block the system audio permission (spike S4).
 
 ---
 
-## 3. Données — SQLite local
+## 3. Data — local SQLite
 
-Fichier : `~/Library/Application Support/Steno/steno.db` (permissions 600 ; s'appuyer sur FileVault).
-`PRAGMA journal_mode=WAL; foreign_keys=ON; busy_timeout=5000`. Migrations versionnées.
-**Un seul écrivain principal** : `steno-core` dans l'app. La CLI ouvre la base en lecture, et pour agir elle insère une tâche dans `jobs` (que l'app traite) ; si l'app ne tourne pas, la CLI exécute la tâche elle-même.
+File: `~/Library/Application Support/Steno/steno.db` (permissions 600; rely on FileVault).
+`PRAGMA journal_mode=WAL; foreign_keys=ON; busy_timeout=5000`. Versioned migrations.
+**A single main writer**: `steno-core` inside the app. The CLI opens the database read-only, and to act it inserts a job into `jobs` (which the app processes); if the app is not running, the CLI runs the job itself.
 
 ```sql
 CREATE TABLE meetings (
-  id TEXT PRIMARY KEY,                 -- ex. 2026-11-26-1030-daily-orion
+  id TEXT PRIMARY KEY,                 -- e.g. 2026-11-26-1030-daily-orion
   title TEXT, title_source TEXT,       -- teams_window | user | inferred
   started_at TEXT NOT NULL, ended_at TEXT,
   status TEXT NOT NULL,                -- live | ended | processing | done | error
-  confidential INTEGER NOT NULL DEFAULT 0,   -- 1 = aucun appel IA pour cette réunion
+  confidential INTEGER NOT NULL DEFAULT 0,   -- 1 = no AI call for this meeting
   agent_provider TEXT, agent_session_id TEXT,
-  correlation TEXT                     -- off | on_demand | auto (copie du réglage au démarrage, modifiable)
+  correlation TEXT                     -- off | on_demand | auto (copy of the setting at start, editable)
 );
 
 CREATE TABLE segments (
@@ -115,9 +115,9 @@ CREATE TABLE segments (
   channel TEXT NOT NULL,               -- me | them
   speaker TEXT NOT NULL,               -- Moi | Eux | Eux-1…
   text TEXT NOT NULL,
-  private INTEGER NOT NULL DEFAULT 0,  -- aparté : exclu du compte rendu
+  private INTEGER NOT NULL DEFAULT 0,  -- aside: excluded from the report
   is_echo INTEGER NOT NULL DEFAULT 0,
-  request_id TEXT                      -- si l'énoncé est une commande
+  request_id TEXT                      -- if the utterance is a command
 );
 CREATE VIRTUAL TABLE segments_fts USING fts5(
   text, content='segments', content_rowid='id', tokenize='unicode61 remove_diacritics 2');
@@ -131,14 +131,14 @@ CREATE TABLE requests (
   intent TEXT,                         -- search | check | note | recap | cancel
   query TEXT, context_seconds INTEGER, tier TEXT,   -- quick | search | summary
   status TEXT, started_at TEXT, finished_at TEXT, error TEXT,
-  summary TEXT,                        -- 2 lignes max (notification)
+  summary TEXT,                        -- 2 lines max (notification)
   answer_md TEXT, tools_used TEXT      -- JSON
 );
 
 CREATE TABLE reports (
   meeting_id TEXT PRIMARY KEY, markdown TEXT, generated_at TEXT,
   provider TEXT, model TEXT, correlated INTEGER DEFAULT 0, version INTEGER DEFAULT 1);
-CREATE TABLE report_refs (             -- liens produits par la corrélation
+CREATE TABLE report_refs (             -- links produced by correlation
   id INTEGER PRIMARY KEY, meeting_id TEXT, kind TEXT,  -- code | jira | confluence | datadog | gitlab | autre
   ref TEXT, title TEXT, url TEXT, verified INTEGER, note TEXT);
 CREATE TABLE decisions (id INTEGER PRIMARY KEY, meeting_id TEXT, text TEXT, created_at TEXT);
@@ -155,36 +155,36 @@ CREATE TABLE jobs (
 CREATE TABLE repos (
   id INTEGER PRIMARY KEY, label TEXT, path TEXT UNIQUE,
   use_live INTEGER DEFAULT 1, use_correlation INTEGER DEFAULT 1, exclude_globs TEXT);
-CREATE TABLE connectors (               -- MCP détectés chez l'agent choisi
+CREATE TABLE connectors (               -- MCPs detected in the chosen agent
   id INTEGER PRIMARY KEY, provider TEXT, name TEXT, status TEXT, detected_at TEXT,
   use_live INTEGER DEFAULT 0, use_correlation INTEGER DEFAULT 0,
-  write_blockable INTEGER NOT NULL);    -- 0 = ne peut pas être activé (section 5.3)
+  write_blockable INTEGER NOT NULL);    -- 0 = cannot be enabled (section 5.3)
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);   -- JSON
 ```
 
-- **Audio** : jamais en base. Tampon temporaire dans `~/Library/Caches/Steno/`, supprimé après traitement (réglage « conserver l'audio N jours », 0 par défaut).
-- **Rétention** : réglage « supprimer les transcriptions après N jours » (vide = jamais). Les comptes rendus peuvent être gardés plus longtemps.
-- **Sauvegarde** : copie quotidienne (`VACUUM INTO`) dans `backups/`, 7 dernières conservées.
-- **Export** : markdown par réunion à la demande, ou export automatique vers un dossier (réglage, désactivé par défaut).
+- **Audio**: never in the database. Temporary buffer in `~/Library/Caches/Steno/`, deleted after processing ("keep audio for N days" setting, 0 by default).
+- **Retention**: "delete transcripts after N days" setting (empty = never). Reports can be kept longer.
+- **Backup**: daily copy (`VACUUM INTO`) into `backups/`, last 7 kept.
+- **Export**: markdown per meeting on demand, or automatic export to a folder (setting, disabled by default).
 
 ---
 
-## 4. Composant A — `steno-audio` (sidecar Swift)
+## 4. Component A — `steno-audio` (Swift sidecar)
 
-### 4.1 Rôle
-Uniquement audio → segments de texte. Aucune logique métier, aucun accès à la base.
+### 4.1 Role
+Audio → text segments only. No business logic, no database access.
 
-### 4.2 Fonctions
-1. **Détection d'appel** dans les apps de visio surveillées (Teams, Slack, Zoom, Webex, Discord, FaceTime, navigateur pour Meet ; liste réglable, message `call` par app) (sert au titre de la réunion et à **proposer** de démarrer par une notification ; l'écoute ne démarre **jamais** toute seule) : le processus Teams utilise le micro (`kAudioProcessPropertyIsRunningInput`, interrogé périodiquement) → événement `teams_call`. Titre lu dans la fenêtre de réunion via l'API d'accessibilité (`AXTitle`).
-2. **Capture** de deux flux séparés, rééchantillonnés en 16 kHz mono : micro (voice processing activé, donc annulation d'écho) et tap sur l'arbre de processus Teams.
-3. **VAD + ASR** : un énoncé est clos après 0,8 à 1,2 s de silence ou 25 s au maximum ; transcription Parakeet v3 ; **< 3 s** entre la fin de la phrase et l'émission du segment.
-4. **Vocabulaire** : reçu au démarrage (mot d'appel, noms de services) ; injecté si le moteur le permet, sinon correction par dictionnaire après coup.
-5. **Mode aparté** : tant que la commande `aside on` est active, les segments du micro sont marqués `private`.
-6. **Robustesse** : changement de périphérique (AirPods), veille et réveil, redémarrage de Teams → recréer le tap sans perdre le fil.
-7. **Test du mot d'appel** (section 6.4) : enregistre N secondes de micro et renvoie la transcription brute.
+### 4.2 Functions
+1. **Call detection** in the watched video-call apps (Teams, Slack, Zoom, Webex, Discord, FaceTime, browser for Meet; configurable list, one `call` message per app) (used for the meeting title and to **offer** to start via a notification; listening **never** starts on its own): the Teams process uses the microphone (`kAudioProcessPropertyIsRunningInput`, polled periodically) → `teams_call` event. Title read from the meeting window through the accessibility API (`AXTitle`).
+2. **Capture** of two separate streams, resampled to 16 kHz mono: microphone (voice processing enabled, hence echo cancellation) and a tap on the Teams process tree.
+3. **VAD + ASR**: an utterance is closed after 0.8 to 1.2 s of silence or 25 s at most; Parakeet v3 transcription; **< 3 s** between the end of the sentence and the segment being emitted.
+4. **Vocabulary**: received at start (wake word, service names); injected if the engine supports it, otherwise corrected afterwards with a dictionary.
+5. **Aside mode**: while the `aside on` command is active, microphone segments are marked `private`.
+6. **Robustness**: device change (AirPods), sleep and wake, Teams restart → recreate the tap without losing the thread.
+7. **Wake-word test** (section 6.4): records N seconds of microphone and returns the raw transcript.
 
-### 4.3 Protocole (JSON lines)
-Sidecar → core (stdout) :
+### 4.3 Protocol (JSON lines)
+Sidecar → core (stdout):
 ```json
 {"type":"ready","version":"0.1.0","asr":"parakeet-tdt-v3"}
 {"type":"teams_call","active":true,"title":"Daily ORION"}
@@ -193,7 +193,7 @@ Sidecar → core (stdout) :
 {"type":"state","state":"listening|paused|stopped"}
 {"type":"error","code":"tap_failed","message":"…","recoverable":true}
 ```
-Core → sidecar (stdin) :
+Core → sidecar (stdin):
 ```json
 {"cmd":"start","vocabulary":["Sténo","Atlas"],"silence_ms":1000}
 {"cmd":"stop"}
@@ -201,132 +201,132 @@ Core → sidecar (stdin) :
 {"cmd":"wake_test","seconds":8}
 ```
 
-### 4.4 Critères d'acceptation
-- Appel Teams de 30 min : transcription complète, Moi et Eux séparés, aucun plantage.
-- Débrancher et rebrancher le casque : reprise en moins de 5 s.
-- Aucun fichier audio restant après traitement si la rétention vaut 0.
+### 4.4 Acceptance criteria
+- 30-minute Teams call: complete transcript, Moi and Eux separated, no crash.
+- Unplug and replug the headset: recovery in under 5 s.
+- No audio file left after processing if retention is 0.
 
 ---
 
-## 5. Composant B — `steno-core` (Rust) : base, tâches, agents
+## 5. Component B — `steno-core` (Rust): database, jobs, agents
 
-### 5.1 Réception des segments
-- Écrit les segments en base et alimente la vue « en direct ».
-- **Anti-écho** : un segment `me` qui ressemble à plus de 80 % à un segment `them` dans une fenêtre de ±2 s → `is_echo = 1`, ignoré.
-- **Détection du mot d'appel** sur les segments `me` non écho (section 6).
+### 5.1 Receiving segments
+- Writes segments to the database and feeds the "live" view.
+- **Anti-echo**: a `me` segment more than 80 % similar to a `them` segment within a ±2 s window → `is_echo = 1`, ignored.
+- **Wake-word detection** on non-echo `me` segments (section 6).
 
-### 5.2 File de tâches
-- Tâches `request`, `report`, `correlate`, `diarize`, `export`, avec 2 tâches IA en parallèle au maximum (réglable), délai maximal, et reprise au redémarrage de l'app.
-- Pour une `request` : le prompt contient la demande, les `context_seconds` dernières secondes de transcription (pour résoudre « ça », « ce ticket ») et les notes.
-- **Une session d'agent par réunion** quand l'agent sait reprendre une session (identifiant dans `meetings.agent_session_id`) ; sinon, l'adaptateur rejoue un résumé des échanges précédents.
-- Réunion marquée `confidential` → **aucune tâche IA** n'est créée (seulement la transcription, et seulement si l'utilisateur la garde).
-- Notifications macOS : « 🔎 Je cherche : … » puis « ✅ <résumé en 2 lignes> » (clic → ouvre la réponse dans l'app).
+### 5.2 Job queue
+- `request`, `report`, `correlate`, `diarize`, `export` jobs, with at most 2 AI jobs in parallel (configurable), a maximum duration, and resumption when the app restarts.
+- For a `request`: the prompt contains the request, the last `context_seconds` seconds of transcript (to resolve "that", "this ticket") and the notes.
+- **One agent session per meeting** when the agent can resume a session (ID in `meetings.agent_session_id`); otherwise the adapter replays a summary of the previous exchanges.
+- Meeting marked `confidential` → **no AI job** is created (transcript only, and only if the user keeps it).
+- macOS notifications: « 🔎 Je cherche : … » ("Searching: …") then « ✅ <résumé en 2 lignes> » ("✅ <2-line summary>") (click → opens the answer in the app).
 
-### 5.3 Adaptateurs d'agent (IA au choix)
+### 5.3 Agent adapters (AI of your choice)
 ```rust
 #[async_trait]
 pub trait AgentAdapter: Send + Sync {
     fn id(&self) -> &'static str;                 // "claude-code", "codex", "gemini", "opencode", "custom"
-    async fn detect(&self) -> Detection;          // installé ? version ?
+    async fn detect(&self) -> Detection;          // installed? version?
     fn capabilities(&self) -> Capabilities;       // resume_session, stream_json, read_only_files, tool_deny_list, extra_dirs
-    async fn list_mcp(&self) -> Result<Vec<McpServer>>;            // pour l'écran Connecteurs
-    async fn sync_instructions(&self, agent_dir: &Path) -> Result<()>; // génère CLAUDE.md / AGENTS.md / GEMINI.md
+    async fn list_mcp(&self) -> Result<Vec<McpServer>>;            // for the Connectors screen
+    async fn sync_instructions(&self, agent_dir: &Path) -> Result<()>; // generates CLAUDE.md / AGENTS.md / GEMINI.md
     async fn apply_policy(&self, policy: &ReadOnlyPolicy, run_dir: &Path) -> Result<()>;
     async fn run(&self, req: RunRequest, events: Sender<AgentEvent>) -> Result<RunResult>;
 }
 ```
 
-| Adaptateur | Lancement non interactif | Reprise | Consignes | Statut visé |
+| Adapter | Non-interactive launch | Resume | Instructions | Target status |
 |---|---|---|---|---|
-| `claude-code` | `claude -p` (`--model`, `--add-dir`, `--output-format stream-json`) | `--session-id` / `--resume` | `CLAUDE.md` + skills | **supporté** (référence) |
-| `codex` | `codex exec` (bac à sable lecture seule, sortie JSON) | `codex exec resume` | `AGENTS.md` | supporté |
-| `gemini` | `gemini -p` | selon la version | `GEMINI.md` | expérimental |
-| `opencode` | `opencode run` | selon la version | `AGENTS.md` | expérimental |
-| `custom` | modèle de commande saisi dans les réglages | non | fichier passé dans le prompt | générique |
+| `claude-code` | `claude -p` (`--model`, `--add-dir`, `--output-format stream-json`) | `--session-id` / `--resume` | `CLAUDE.md` + skills | **supported** (reference) |
+| `codex` | `codex exec` (read-only sandbox, JSON output) | `codex exec resume` | `AGENTS.md` | supported |
+| `gemini` | `gemini -p` | depends on version | `GEMINI.md` | experimental |
+| `opencode` | `opencode run` | depends on version | `AGENTS.md` | experimental |
+| `custom` | command template entered in the settings | no | file passed in the prompt | generic |
 
-Les options de ces CLI évoluent vite : l'agent qui implémente les **vérifie sur la version installée** (`--help`) et note les versions testées dans `docs/adapters.md`.
+These CLIs' options change fast: the agent implementing them **checks them against the installed version** (`--help`) and records the tested versions in `docs/adapters.md`.
 
-**Niveaux de modèle** : le code ne connaît que `quick` (notes, récap), `search` (recherche croisée) et `summary` (compte rendu). La correspondance avec les vrais modèles se fait dans les réglages (vide = modèle par défaut du CLI).
+**Model tiers**: the code only knows `quick` (notes, recap), `search` (cross-search) and `summary` (report). Mapping to actual models is done in the settings (empty = the CLI's default model).
 
-**Claude Code et MCP en mode `-p`** : les connecteurs du compte Claude sont censés être disponibles depuis la v2.1.83 (sauf avec `--bare`), mais des régressions ont été signalées → spike S3 ; plan B : MCP ajoutés localement (`claude mcp add --transport http …`).
+**Claude Code and MCP in `-p` mode**: the Claude account's connectors are supposed to be available since v2.1.83 (except with `--bare`), but regressions have been reported → spike S3; plan B: MCPs added locally (`claude mcp add --transport http …`).
 
-### 5.4 Politique lecture seule commune
-`agent/policy.toml` : dépôts lisibles (ceux cochés dans les réglages), aucun dossier inscriptible, commandes shell autorisées (`rg`, `git log|show|blame|grep`, `glab mr view|list`…), et motifs d'outils MCP interdits (`*send*`, `*post*`, `*create*`, `*update*`, `*edit*`, `*delete*`, `*transition*`, `*comment*`, `*merge*`, `*push*`). Chaque adaptateur la traduit dans le mécanisme de son CLI.
-**Règle de sécurité** : si un adaptateur ne sait pas interdire les outils MCP en écriture, ses connecteurs sont marqués `write_blockable = 0` et **ne peuvent pas être activés** (case grisée dans l'UI, avec l'explication). L'agent ne fait que lire et répond sur sa sortie standard : c'est `steno-core` qui écrit en base.
+### 5.4 Shared read-only policy
+`agent/policy.toml`: readable repositories (those checked in the settings), no writable folder, allowed shell commands (`rg`, `git log|show|blame|grep`, `glab mr view|list`…), and forbidden MCP tool patterns (`*send*`, `*post*`, `*create*`, `*update*`, `*edit*`, `*delete*`, `*transition*`, `*comment*`, `*merge*`, `*push*`). Each adapter translates it into its CLI's mechanism.
+**Safety rule**: if an adapter cannot forbid write MCP tools, its connectors are marked `write_blockable = 0` and **cannot be enabled** (checkbox greyed out in the UI, with the explanation). The agent only reads and answers on its standard output: `steno-core` is what writes to the database.
 
-### 5.5 Consignes de l'agent (`agent/`)
-- Une seule source : `agent/INSTRUCTIONS.md` + `agent/playbooks/*.md`, générés à la volée vers le format de chaque CLI dans un dossier d'exécution temporaire.
-- Profil du dev (rôle, équipe), saisi dans les réglages et injecté dans les consignes.
-- Règles : répondre en français, court en direct, **toujours citer ses sources** (ticket, page Confluence, `fichier:ligne`, lien Datadog), distinguer « vérifié » et « supposé ».
-- Procédure `recherche-croisee` :
-  1. extraire les entités (`APP-\d+` ou motif de clé Jira configurable, services, fonctions, endpoints, environnements, plages horaires) ;
-  2. Jira (tickets cités + JQL sur les mots-clés) ;
-  3. Confluence ;
-  4. code : `rg`, `git log -S`, MR liées via `glab` en lecture ;
-  5. Datadog : logs, monitors et incidents sur la fenêtre de temps pertinente ;
-  6. synthèse : TL;DR de 2 lignes, constats par source, contradictions (« le ticket dit X, le code fait Y »), ce qui reste à vérifier.
-  - Budget en direct : 15 appels d'outils au maximum (réglable), puis proposer « approfondir après la réunion ».
-- Procédures `note` et `recap` : niveau `quick`, aucun outil externe.
+### 5.5 Agent instructions (`agent/`)
+- A single source: `agent/INSTRUCTIONS.md` + `agent/playbooks/*.md`, generated on the fly into each CLI's format in a temporary run folder.
+- Dev profile (role, team), entered in the settings and injected into the instructions.
+- Rules: answer in French, briefly when live, **always cite sources** (ticket, Confluence page, `fichier:ligne`, Datadog link), distinguish "verified" from "assumed".
+- `recherche-croisee` procedure:
+  1. extract entities (`APP-\d+` or a configurable Jira key pattern, services, functions, endpoints, environments, time ranges);
+  2. Jira (cited tickets + JQL on the keywords);
+  3. Confluence;
+  4. code: `rg`, `git log -S`, related MRs via read-only `glab`;
+  5. Datadog: logs, monitors and incidents over the relevant time window;
+  6. synthesis: 2-line TL;DR, findings per source, contradictions ("the ticket says X, the code does Y"), what remains to be checked.
+  - Live budget: at most 15 tool calls (configurable), then offer to "dig deeper after the meeting".
+- `note` and `recap` procedures: `quick` tier, no external tool.
 
-### 5.6 Critères d'acceptation (testables sans audio, avec les fichiers d'exemple)
-- Une demande texte « où est géré le verrou de créneau et quel ticket en parle ? » renvoie une réponse en moins de 90 s, avec au moins une source Jira et au moins une référence `fichier:ligne`.
-- Une relance réutilise la session de la réunion.
-- « Poste ça sur Slack » est refusé ; aucun outil d'écriture n'apparaît dans `tools_used`.
-- Ces tests passent pour chaque adaptateur marqué « supporté ».
+### 5.6 Acceptance criteria (testable without audio, with the sample files)
+- A text request « où est géré le verrou de créneau et quel ticket en parle ? » ("where is the slot lock handled and which ticket mentions it?") returns an answer in under 90 s, with at least one Jira source and at least one `fichier:ligne` reference.
+- A follow-up reuses the meeting's session.
+- « Poste ça sur Slack » ("Post this on Slack") is refused; no write tool appears in `tools_used`.
+- These tests pass for every adapter marked "supported".
 
 ---
 
-## 6. Commande vocale et mot d'appel
+## 6. Voice command and wake word
 
-### 6.1 Deux modes
-1. **À voix haute** (les participants entendent) : « Sténo, cherche les erreurs Datadog sur ms-booking depuis hier. »
-2. **En aparté** : couper son micro dans Teams et **maintenir le raccourci d'aparté** (par défaut ⌃⌥Espace) pendant qu'on parle. Sténo capte le micro indépendamment de Teams, il n'y a pas besoin de mot d'appel, et ces phrases sont marquées `private`, donc exclues du compte rendu.
+### 6.1 Two modes
+1. **Out loud** (participants hear it): « Sténo, cherche les erreurs Datadog sur ms-booking depuis hier. » ("Sténo, look for Datadog errors on ms-booking since yesterday.")
+2. **Aside**: mute yourself in Teams and **hold the aside shortcut** (⌃⌥Space by default) while speaking. Sténo captures the microphone independently of Teams, no wake word is needed, and these sentences are marked `private`, hence excluded from the report.
 
-### 6.2 Mot d'appel configurable (Réglages → Voix)
-- **Mot d'appel** : champ texte, « Sténo » par défaut. L'utilisateur choisit le sien.
-- **Mode strict** (case à cocher) : exige un préfixe (« OK Sténo », « Dis Sténo ») pour réduire encore les faux déclenchements.
-- **Variantes acceptées** : générées automatiquement (variantes phonétiques en français, erreurs de transcription courantes) et modifiables. Le mot est ajouté au vocabulaire de l'ASR.
-- **Mots interdits comme variantes** : liste intégrée de mots courants en réunion de dev (« script », « description », « inscrit », « prescrire »…) + le vocabulaire de l'équipe. Une variante qui entre en conflit est refusée, avec l'explication.
-- **Contrôles à la saisie** (avertissements, pas des blocages) :
-  - moins de 2 syllabes, ou mot très courant en français → ⚠️ risque de faux déclenchements ;
-  - **analyse de l'historique** : « ce mot apparaît 14 fois dans vos 20 dernières réunions sans être une commande » → ⚠️ ;
-  - prénom d'un collègue repéré dans les transcriptions → ⚠️.
-- **Bouton « Tester »** (section 6.4).
-- **Retour sonore** discret quand une commande est détectée (réglable : aucun / son système / son dans le casque uniquement).
+### 6.2 Configurable wake word (Settings → Voice)
+- **Wake word**: text field, « Sténo » by default. Users pick their own.
+- **Strict mode** (checkbox): requires a prefix (« OK Sténo », « Dis Sténo ») to further reduce false triggers.
+- **Accepted variants**: generated automatically (French phonetic variants, common transcription errors) and editable. The word is added to the ASR vocabulary.
+- **Words forbidden as variants**: built-in list of words common in dev meetings (« script », « description », « inscrit », « prescrire »…) + the team's vocabulary. A conflicting variant is refused, with the explanation.
+- **Checks on entry** (warnings, not blockers):
+  - fewer than 2 syllables, or a very common French word → ⚠️ risk of false triggers;
+  - **history analysis**: "this word appears 14 times in your last 20 meetings without being a command" → ⚠️;
+  - a colleague's first name spotted in the transcripts → ⚠️.
+- **« Tester » ("Test") button** (section 6.4).
+- Discreet **audio feedback** when a command is detected (configurable: none / system sound / sound in the headset only).
 
-### 6.3 Règles de détection (mode à voix haute)
-- **Uniquement sur le canal `me`** (et hors écho) : un participant ne peut jamais déclencher Sténo.
-- Le mot d'appel (ou le préfixe + le mot en mode strict) doit se trouver **dans les 2 premiers mots de la phrase**.
-- Il doit être suivi d'un verbe reconnu ou d'une pause, puis de la demande :
+### 6.3 Detection rules (out-loud mode)
+- **Only on the `me` channel** (and excluding echo): a participant can never trigger Sténo.
+- The wake word (or prefix + word in strict mode) must be **within the first 2 words of the sentence**.
+- It must be followed by a recognized verb or a pause, then the request:
   - `cherche|recherche|regarde|trouve` → `search`
   - `vérifie|confirme` → `check`
-  - `note|ajoute une action|retiens` → `note` (niveau `quick`, aucune recherche)
+  - `note|ajoute une action|retiens` → `note` (`quick` tier, no search)
   - `résume|récap` → `recap`
-  - `annule` → `cancel` (dernière demande en cours)
-  - `arrête l'écoute|termine la réunion|fin de la réunion` → `stop` (arrête l'écoute et lance le compte rendu)
-  - Les verbes sont modifiables dans les réglages (fichier de grammaire en base).
-- Fin de commande : on fusionne les phrases `me` qui se suivent à moins de 2 s d'écart, jusqu'à 1,5 s de silence.
-- **Jamais de synthèse vocale dans l'audio de Teams.**
+  - `annule` → `cancel` (latest pending request)
+  - `arrête l'écoute|termine la réunion|fin de la réunion` → `stop` (stops listening and starts the report)
+  - The verbs can be edited in the settings (grammar file in the database).
+- End of command: consecutive `me` sentences less than 2 s apart are merged, until 1.5 s of silence.
+- **Never any speech synthesis in the Teams audio.**
 
-### 6.4 Bouton « Tester »
-1. L'utilisateur prononce 5 fois « <mot d'appel>, cherche quelque chose » → taux de détection affiché (objectif : 5/5).
-2. Il lit un court texte piège qui contient les mots interdits et des mots proches → objectif : 0 déclenchement.
-3. Si le taux est insuffisant, l'app propose d'ajouter les transcriptions ratées comme variantes.
+### 6.4 « Tester » ("Test") button
+1. The user says « <mot d'appel>, cherche quelque chose » ("<wake word>, search for something") 5 times → detection rate shown (target: 5/5).
+2. They read a short trap text containing the forbidden words and similar-sounding words → target: 0 triggers.
+3. If the rate is too low, the app offers to add the missed transcriptions as variants.
 
-### 6.5 Critères d'acceptation
-- Avec le mot par défaut, 20 commandes lues : au moins 18 détectées avec la bonne intention.
-- 1 h d'audio de réunion contenant « script », « description », « inscrit » : **0 faux déclenchement**.
-- La même commande dite par un participant (canal `them`) : 0 déclenchement. Avec des haut-parleurs au lieu d'un casque : 0 déclenchement dû à l'écho.
-- Changer le mot d'appel dans les réglages prend effet sans redémarrage.
+### 6.5 Acceptance criteria
+- With the default word, 20 commands read aloud: at least 18 detected with the right intent.
+- 1 h of meeting audio containing « script », « description », « inscrit »: **0 false triggers**.
+- The same command said by a participant (`them` channel): 0 triggers. With speakers instead of a headset: 0 echo-induced triggers.
+- Changing the wake word in the settings takes effect without a restart.
 
 ---
 
-## 7. Compte rendu et corrélation
+## 7. Report and correlation
 
-### 7.1 Compte rendu (fin de réunion, toujours, sauf réunion confidentielle)
-Déclenché quand la réunion passe à `ended`, c'est-à-dire **uniquement à l'arrêt demandé par l'utilisateur** (menu de la barre d'état, raccourci, app, ou « Sténo, arrête l'écoute »). La fin de l'appel Teams n'arrête pas l'écoute.
-1. Diarisation hors ligne du canal `them` (Eux-1, Eux-2…). Claude propose des noms quand ils sont prononcés (« merci Marie ») ; l'utilisateur valide dans l'app.
-2. Agent, niveau `summary`, **sans outils externes** (rapide, ne consomme pas d'appels de recherche) :
+### 7.1 Report (end of meeting, always, except for confidential meetings)
+Triggered when the meeting moves to `ended`, i.e. **only when the user asks to stop** (status bar menu, shortcut, app, or « Sténo, arrête l'écoute » ("Sténo, stop listening")). The end of the Teams call does not stop listening.
+1. Offline diarization of the `them` channel (Eux-1, Eux-2…). Claude suggests names when they are spoken (« merci Marie » ("thanks Marie")); the user validates in the app.
+2. Agent, `summary` tier, **without external tools** (fast, does not use up search calls):
    ```
    # <Titre> — <date>
    ## En bref (3 lignes)
@@ -337,122 +337,122 @@ Déclenché quand la réunion passe à `ended`, c'est-à-dire **uniquement à l'
    ## Recherches faites pendant la réunion
    ## Mes notes (fusionnées, comme dans Granola)
    ```
-   Les phrases `private` ne sont jamais utilisées.
-3. Décisions et actions extraites dans leurs tables ; brouillons éventuels (commentaires Jira proposés…) rangés dans l'app, **jamais publiés automatiquement**.
-4. Suppression de l'audio selon la rétention ; notification « 📝 Compte rendu prêt ».
+   `private` sentences are never used.
+3. Decisions and actions extracted into their tables; any drafts (proposed Jira comments…) stored in the app, **never published automatically**.
+4. Audio deleted according to retention; « 📝 Compte rendu prêt » ("Report ready") notification.
 
-### 7.2 Corrélation avec la codebase et les connecteurs (réglable)
-- **Mode global** (Réglages → Corrélation) : `Désactivée` / `À la demande` (bouton « Corréler » sur le compte rendu) / `Automatique` (lancée juste après le compte rendu).
-- **Sources** : cases à cocher par dépôt et par connecteur (`use_correlation`), indépendantes des sources utilisées en direct (`use_live`).
-- **Exclusions** : ne jamais corréler les réunions dont le titre contient certains mots (par défaut : « 1:1 », « RH », « entretien », « perso ») ; jamais pour une réunion confidentielle.
-- **Budget** : nombre maximal d'appels d'outils par corrélation (30 par défaut).
-- **Ce que fait la tâche `correlate`** : reprend les « Points techniques évoqués » et les questions ouvertes, applique la procédure `recherche-croisee` sur les sources cochées, remplit `report_refs` (chaque lien marqué vérifié ou non), puis ajoute au compte rendu une section **« Liens avec le code et les outils »** avec des alertes (« la décision X contredit le comportement actuel de `fichier:ligne` »). Le compte rendu passe en `version + 1` ; la version précédente reste consultable.
+### 7.2 Correlation with the codebase and connectors (configurable)
+- **Global mode** (Settings → Correlation): `Désactivée` (off) / `À la demande` (on demand; « Corréler » ("Correlate") button on the report) / `Automatique` (automatic; runs right after the report).
+- **Sources**: checkboxes per repository and per connector (`use_correlation`), independent of the sources used live (`use_live`).
+- **Exclusions**: never correlate meetings whose title contains certain words (default: « 1:1 », « RH », « entretien », « perso »); never for a confidential meeting.
+- **Budget**: maximum number of tool calls per correlation (30 by default).
+- **What the `correlate` job does**: takes the "Points techniques évoqués" (technical points raised) and the open questions, applies the `recherche-croisee` procedure to the checked sources, fills `report_refs` (each link marked verified or not), then appends to the report a **« Liens avec le code et les outils »** ("Links to code and tools") section with alerts ("decision X contradicts the current behaviour of `fichier:ligne`"). The report moves to `version + 1`; the previous version remains viewable.
 
-### 7.3 Critères d'acceptation
-- Transcription d'exemple de 45 min : compte rendu en moins de 2 min, au moins 1 décision et 1 action correctement attribuées, aucun contenu `private`.
-- Corrélation désactivée : aucune tâche `correlate` n'est créée ; à la demande : seulement après un clic ; exclusions respectées (test sur une réunion « 1:1 »).
+### 7.3 Acceptance criteria
+- 45-minute sample transcript: report in under 2 min, at least 1 decision and 1 action correctly attributed, no `private` content.
+- Correlation disabled: no `correlate` job is created; on demand: only after a click; exclusions respected (tested on a « 1:1 » meeting).
 
 ---
 
-## 8. App de bureau (Tauri 2)
+## 8. Desktop app (Tauri 2)
 
-### 8.1 Barre de menu (toujours présente)
-Icône dans la barre d'état macOS (à côté de l'heure), menu natif au clic : état (« ● Écoute en cours — titre » / « Appel Teams détecté : titre » / « En attente »), **Démarrer / Arrêter l'écoute**, « Réunion confidentielle », « Demande rapide… » (panneau : champ de demande, 5 dernières réponses), « Voir la transcription en direct », « Ouvrir Sténo », « Réglages… », « Quitter ». Un « ● » s'affiche à côté de l'icône pendant l'écoute.
+### 8.1 Menu bar (always present)
+Icon in the macOS status bar (next to the clock), native menu on click: status (« ● Écoute en cours — titre » / « Appel Teams détecté : titre » / « En attente » — "● Listening — title" / "Teams call detected: title" / "Idle"), **« Démarrer / Arrêter l'écoute »** (Start / Stop listening), « Réunion confidentielle » (Confidential meeting), « Demande rapide… » (Quick request…; panel: request field, last 5 answers), « Voir la transcription en direct » (View live transcript), « Ouvrir Sténo » (Open Sténo), « Réglages… » (Settings…), « Quitter » (Quit). A "●" is shown next to the icon while listening.
 
-### 8.2 Fenêtre principale
-- **Réunions** : liste par date avec recherche plein texte (FTS5 sur transcriptions et comptes rendus), filtres (période, corrélée ou non, avec actions ouvertes).
-- **Détail d'une réunion**, en onglets :
-  - **Compte rendu** : markdown rendu, versions, bouton « Corréler », « Régénérer », export markdown ou copie ;
-  - **Transcription** : horodatée, couleurs par intervenant, renommage des intervenants (Eux-1 → Marie), phrases privées masquées par défaut ;
-  - **Demandes** : chaque demande avec sa réponse, ses sources et les outils utilisés ;
-  - **Notes** : éditables.
-  - Actions : renommer, marquer confidentielle, supprimer (avec confirmation).
-- **En direct** : transcription qui défile, champ « Demander à Sténo », fil des demandes en cours.
-- **Recherche** : plein texte dans toutes les réunions, plus « Demander à l'IA » (question sur l'historique, via l'agent et le serveur MCP Sténo).
-- **Décisions & actions** : toutes les actions de toutes les réunions, case « fait », filtres par personne et par date.
+### 8.2 Main window
+- **Meetings**: list by date with full-text search (FTS5 over transcripts and reports), filters (period, correlated or not, with open actions).
+- **Meeting detail**, in tabs:
+  - **Report**: rendered markdown, versions, « Corréler » (Correlate) and « Régénérer » (Regenerate) buttons, markdown export or copy;
+  - **Transcript**: timestamped, colours per speaker, speaker renaming (Eux-1 → Marie), private sentences hidden by default;
+  - **Requests**: each request with its answer, its sources and the tools used;
+  - **Notes**: editable.
+  - Actions: rename, mark confidential, delete (with confirmation).
+- **Live**: scrolling transcript, « Demander à Sténo » (Ask Sténo) field, feed of pending requests.
+- **Search**: full text across all meetings, plus « Demander à l'IA » (Ask the AI; a question about the history, via the agent and the Sténo MCP server).
+- **Decisions & actions**: all actions from all meetings, "done" checkbox, filters by person and by date.
 
-### 8.3 Réglages
-| Section | Contenu |
+### 8.3 Settings
+| Section | Content |
 |---|---|
-| **Agent IA** | Agent détecté parmi ceux installés (liste), modèle par niveau (`quick`, `search`, `summary`), modèle de commande pour `custom`, bouton « Tester l'agent », « Autoriser l'utilisation d'une clé API » (désactivé par défaut) |
-| **Dépôts** | Ajouter un dossier (sélecteur), libellé, utilisé en direct / pour la corrélation, exclusions (globs) |
-| **Connecteurs** | Liste des MCP de l'agent choisi (via `list_mcp`), état, cases direct / corrélation, ❌ grisé si l'agent ne sait pas bloquer leurs outils en écriture, bouton « Rafraîchir » |
-| **Corrélation** | Mode (désactivée / à la demande / automatique), budget, mots d'exclusion |
-| **Voix** | Mot d'appel, mode strict, variantes, verbes, retour sonore, bouton « Tester » (section 6) |
-| **Audio & transcription** | Micro, détection automatique de Teams, silence de fin de phrase, vocabulaire (noms de services, équipe), raccourcis (démarrer/arrêter, aparté, note rapide) |
-| **Confidentialité** | Rétention de l'audio et des transcriptions, export automatique, réunions exclues, « Tout supprimer » |
-| **Profil** | Rôle, équipe, motif des clés Jira |
-| **Import / export** | Exporter / importer les réglages en TOML (pour partager une config de départ dans l'équipe, sans chemins ni données perso) |
+| **AI agent** | Agent detected among those installed (list), model per tier (`quick`, `search`, `summary`), command template for `custom`, « Tester l'agent » (Test the agent) button, « Autoriser l'utilisation d'une clé API » (Allow using an API key; disabled by default) |
+| **Repositories** | Add a folder (picker), label, used live / for correlation, exclusions (globs) |
+| **Connectors** | List of the chosen agent's MCPs (via `list_mcp`), status, live / correlation checkboxes, ❌ greyed out if the agent cannot block their write tools, « Rafraîchir » (Refresh) button |
+| **Correlation** | Mode (off / on demand / automatic), budget, exclusion words |
+| **Voice** | Wake word, strict mode, variants, verbs, audio feedback, « Tester » (Test) button (section 6) |
+| **Audio & transcription** | Microphone, automatic Teams detection, end-of-sentence silence, vocabulary (service names, team), shortcuts (start/stop, aside, quick note) |
+| **Privacy** | Audio and transcript retention, automatic export, excluded meetings, « Tout supprimer » (Delete everything) |
+| **Profile** | Role, team, Jira key pattern |
+| **Import / export** | Export / import settings as TOML (to share a starter config within the team, without paths or personal data) |
 
-### 8.4 Contraintes UI
-Pas de framework lourd ; bundle front < 300 Ko gzip ; thème clair et sombre suivant le système ; navigation au clavier ; aucune requête réseau depuis la WebView (CSP `default-src 'self'`).
+### 8.4 UI constraints
+No heavy framework; front-end bundle < 300 KB gzip; light and dark theme following the system; keyboard navigation; no network request from the WebView (CSP `default-src 'self'`).
 
 ---
 
-## 9. CLI, serveur MCP et Orca (facultatif)
+## 9. CLI, MCP server and Orca (optional)
 
-- `steno ask "qu'a-t-on décidé sur l'export Brindille ?"` : recherche dans l'historique, puis éventuellement une recherche croisée.
-- `steno doctor` : permissions macOS, Teams, sidecar, agent et version, MCP visibles en mode non interactif, et **test automatique de la politique lecture seule** (« poste sur Slack » doit échouer) → ✅ / ⚠️ / ❌ avec la marche à suivre.
-- `steno init` : premier lancement en ligne de commande (équivalent de l'assistant de l'app).
+- `steno ask "qu'a-t-on décidé sur l'export Brindille ?"`: searches the history, then possibly runs a cross-search.
+- `steno doctor`: macOS permissions, Teams, sidecar, agent and version, MCPs visible in non-interactive mode, and an **automatic test of the read-only policy** (« poste sur Slack » ("post on Slack") must fail) → ✅ / ⚠️ / ❌ with the steps to follow.
+- `steno init`: first-run setup from the command line (equivalent of the app's wizard).
 - `steno export <id|--all> --format md`.
-- `steno mcp` : **serveur MCP local (stdio, lecture seule)** pour n'importe quel agent, y compris dans Orca :
-  - `search_meetings(query, from?, to?)`, `get_meeting(id)`, `get_transcript(id, from_ts?, to_ts?)` (sans les phrases privées), `get_report(id)`, `list_decisions(since?)`, `list_actions(status?, owner?)`.
-  - Pour l'utiliser dans un agent : `claude mcp add steno -- steno mcp` (ou l'équivalent du CLI).
-- **Orca n'est plus nécessaire** ; pour ceux qui l'utilisent, `steno mcp` donne accès aux réunions depuis leurs agents.
+- `steno mcp`: **local MCP server (stdio, read-only)** for any agent, including in Orca:
+  - `search_meetings(query, from?, to?)`, `get_meeting(id)`, `get_transcript(id, from_ts?, to_ts?)` (without private sentences), `get_report(id)`, `list_decisions(since?)`, `list_actions(status?, owner?)`.
+  - To use it in an agent: `claude mcp add steno -- steno mcp` (or the CLI's equivalent).
+- **Orca is no longer required**; for those who use it, `steno mcp` gives their agents access to meetings.
 
 ---
 
 ## 10. Phases
 
-### Phase 0 — Spikes (1 j) : **bloquant**
-| Spike | Livrable | Critère |
+### Phase 0 — Spikes (1 d): **blocking**
+| Spike | Deliverable | Criterion |
 |---|---|---|
-| S1 Capture | sidecar minimal qui écrit `me.wav` + `them.wav` pendant un vrai appel Teams, **lancé depuis une app Tauri vide** | deux pistes audibles, permissions accordées à l'app et valables pour le sidecar |
-| S2 ASR | transcription de S1 avec FluidAudio/Parakeet v3 (comparaison avec WhisperKit) | français lisible, noms techniques compris, < 1 s par phrase |
-| S3 Agents | demander à Claude Code puis à Codex, en mode non interactif, de lister leurs outils MCP ; tenter un outil d'écriture interdit | MCP visibles ; écriture bloquée ; sinon plan B documenté |
-| S4 Poste de travail | permissions micro, audio système et accessibilité sur le Mac pro | accordées ; sinon arrêter et prévenir l'utilisateur |
-| S5 Empreinte | app Tauri vide + barre de menu, mesure de la RAM au repos | < 120 Mo |
+| S1 Capture | minimal sidecar that writes `me.wav` + `them.wav` during a real Teams call, **launched from an empty Tauri app** | two audible tracks, permissions granted to the app and valid for the sidecar |
+| S2 ASR | transcription of S1 with FluidAudio/Parakeet v3 (compared with WhisperKit) | readable French, technical names understood, < 1 s per sentence |
+| S3 Agents | ask Claude Code, then Codex, in non-interactive mode, to list their MCP tools; try a forbidden write tool | MCPs visible; writing blocked; otherwise plan B documented |
+| S4 Workstation | microphone, system audio and accessibility permissions on the work Mac | granted; otherwise stop and tell the user |
+| S5 Footprint | empty Tauri app + menu bar, idle RAM measurement | < 120 MB |
 
-### Phase 1 — Socle
-`steno-core` (schéma, migrations, file de tâches), sidecar (capture + transcription), vue « en direct » minimale.
+### Phase 1 — Foundation
+`steno-core` (schema, migrations, job queue), sidecar (capture + transcription), minimal "live" view.
 
-### Phase 2 — Compte rendu + historique
-Compte rendu de fin de réunion, écrans Réunions / Détail, recherche plein texte.
+### Phase 2 — Report + history
+End-of-meeting report, Meetings / Detail screens, full-text search.
 
-### Phase 3 — Agents et recherche croisée
-Adaptateurs `claude-code` puis `codex`, politique lecture seule, demandes tapées, écrans Agent IA / Dépôts / Connecteurs.
+### Phase 3 — Agents and cross-search
+`claude-code` then `codex` adapters, read-only policy, typed requests, AI agent / Repositories / Connectors screens.
 
-### Phase 4 — Voix
-Détection du mot d'appel, mode aparté, écran Voix avec le bouton « Tester ».
+### Phase 4 — Voice
+Wake-word detection, aside mode, Voice screen with the « Tester » (Test) button.
 
-### Phase 5 — Corrélation + finitions
-Tâche `correlate`, écran Corrélation, décisions et actions, CLI `ask` / `export`, serveur `steno mcp`, import/export des réglages.
+### Phase 5 — Correlation + polish
+`correlate` job, Correlation screen, decisions and actions, `ask` / `export` CLI, `steno mcp` server, settings import/export.
 
-### Phase 6 — Équipe
-`make install`, assistant de premier lancement, `steno doctor` complet, adaptateurs `gemini` et `opencode` (expérimentaux), README.
+### Phase 6 — Team
+`make install`, first-run wizard, complete `steno doctor`, `gemini` and `opencode` adapters (experimental), README.
 
 ---
 
-## 11. Découpage en agents (après la phase 0)
+## 11. Split into agents (after phase 0)
 
-Prérequis commun, fait par le premier agent : `docs/contracts.md` (schéma SQL + protocole du sidecar + trait `AgentAdapter`) et `fixtures/` avec une **transcription synthétique en français** de 45 min (daily fictif : tickets, un service `ms-*`, une décision, deux actions, une commande vocale, une phrase privée, des mots pièges comme « script »).
+Shared prerequisite, done by the first agent: `docs/contracts.md` (SQL schema + sidecar protocol + `AgentAdapter` trait) and `fixtures/` with a 45-minute **synthetic French transcript** (fictional daily: tickets, an `ms-*` service, a decision, two actions, a voice command, a private sentence, trap words such as « script »).
 
-| Worktree | Agent | Périmètre | Testable sans |
+| Worktree | Agent | Scope | Testable without |
 |---|---|---|---|
-| `steno-audio` | A | `audio/` (sidecar Swift) | base, UI |
-| `steno-core` | B | `crates/steno-core` : base, tâches, adaptateurs, politique, mot d'appel | audio (fichiers d'exemple) |
-| `steno-post` | C | compte rendu, corrélation, `crates/steno-cli` (ask, export, mcp, doctor) | audio, UI |
-| `steno-app` | D | `app/` (Tauri + Svelte) : barre de menu, écrans, réglages | audio (données d'exemple en base) |
+| `steno-audio` | A | `audio/` (Swift sidecar) | database, UI |
+| `steno-core` | B | `crates/steno-core`: database, jobs, adapters, policy, wake word | audio (sample files) |
+| `steno-post` | C | report, correlation, `crates/steno-cli` (ask, export, mcp, doctor) | audio, UI |
+| `steno-app` | D | `app/` (Tauri + Svelte): menu bar, screens, settings | audio (sample data in the database) |
 
-Arborescence :
+Directory layout:
 ```
 steno/
   PLAN.md
   docs/{contracts.md, spikes.md, adapters.md}
-  audio/StenoAudio/            # Swift package, exécutable sidecar
-  crates/steno-core/           # lib Rust : db, jobs, agents/, policy, wake/
-  crates/steno-cli/            # bin `steno` : ask, doctor, init, export, mcp
-  app/src-tauri/                # Rust (dépend de steno-core), embarque le sidecar
+  audio/StenoAudio/            # Swift package, sidecar executable
+  crates/steno-core/           # Rust lib: db, jobs, agents/, policy, wake/
+  crates/steno-cli/            # `steno` bin: ask, doctor, init, export, mcp
+  app/src-tauri/                # Rust (depends on steno-core), embeds the sidecar
   app/ui/                       # Svelte 5 + Vite
   agent/                        # INSTRUCTIONS.md, playbooks/, policy.toml
   fixtures/
@@ -461,46 +461,46 @@ steno/
 
 ---
 
-## 12. Coûts et quota
+## 12. Costs and quota
 
-- Audio, transcription, diarisation, base, app : **local, 0 €**.
-- IA : uniquement via le CLI officiel de l'agent choisi, donc dans le cadre de l'abonnement de chaque dev. Ordres de grandeur : 1 h de transcription ≈ 15 000 tokens ; ce qui consomme le plus, ce sont les **recherches croisées** et la **corrélation**, d'où leurs budgets et le mode « à la demande ».
-- Garde-fous : niveau `quick` pour `note` et `recap`, compte rendu sans outils, 2 tâches IA en parallèle au maximum, pas de résumé en continu.
-- Clé API : jamais, sauf activation explicite dans les réglages.
-- Distribution : compilation locale avec signature ad hoc, donc pas de compte développeur Apple payant.
+- Audio, transcription, diarization, database, app: **local, €0**.
+- AI: only through the official CLI of the chosen agent, hence within each dev's subscription. Orders of magnitude: 1 h of transcript ≈ 15,000 tokens; what consumes the most is **cross-searches** and **correlation**, hence their budgets and the "on demand" mode.
+- Safeguards: `quick` tier for `note` and `recap`, report without tools, at most 2 AI jobs in parallel, no continuous summarization.
+- API key: never, unless explicitly enabled in the settings.
+- Distribution: local build with ad hoc signing, so no paid Apple developer account.
 
 ---
 
-## 13. Risques et garde-fous
+## 13. Risks and safeguards
 
-| Risque | Mesure |
+| Risk | Mitigation |
 |---|---|
-| Le MDM bloque la permission audio système | Spike S4 en premier ; arrêter et prévenir si c'est bloqué |
-| La permission accordée à l'app ne couvre pas le sidecar | Spike S1 ; plan B : capture en Rust (`objc2-core-audio`) dans le processus principal |
-| Teams sort l'audio par un processus auxiliaire | Taper tout l'arbre de processus Teams ; plan B : tap global en excluant Sténo |
-| Écho (haut-parleurs) | AEC + déduplication + casque recommandé |
-| Faux déclenchements | Mot d'appel en début de phrase + verbe, mode strict, mots interdits, analyse de l'historique, canal `me` seul, tests |
-| Un CLI d'agent change ses options | Adaptateurs isolés, versions testées notées, `steno doctor` signale tout écart |
-| Un agent ne sait pas bloquer les MCP en écriture | Connecteurs non activables pour cet adaptateur |
-| L'agent écrit à l'extérieur | Politique en refus explicite + test automatique dans `doctor` et dans la CI |
-| Contenu IA malveillant dans l'UI | Markdown assaini (DOMPurify) + CSP stricte |
-| Confidentialité | Audio jamais envoyé ni stocké durablement ; base locale en 600 ; réunions confidentielles sans IA ; rétention réglable |
-| Consentement | Informer les participants que la réunion est transcrite (RGPD) ; pour un usage à l'échelle de l'entreprise : validation sécurité / RGPD (et probablement CSE) |
+| MDM blocks the system audio permission | Spike S4 first; stop and tell the user if it is blocked |
+| The permission granted to the app does not cover the sidecar | Spike S1; plan B: Rust capture (`objc2-core-audio`) in the main process |
+| Teams outputs audio through a helper process | Tap the whole Teams process tree; plan B: global tap excluding Sténo |
+| Echo (speakers) | AEC + deduplication + headset recommended |
+| False triggers | Wake word at the start of the sentence + verb, strict mode, forbidden words, history analysis, `me` channel only, tests |
+| An agent CLI changes its options | Isolated adapters, tested versions recorded, `steno doctor` reports any mismatch |
+| An agent cannot block write MCPs | Connectors cannot be enabled for that adapter |
+| The agent writes externally | Explicit-deny policy + automatic test in `doctor` and in CI |
+| Malicious AI content in the UI | Sanitized markdown (DOMPurify) + strict CSP |
+| Privacy | Audio never sent nor stored long-term; local database at 600; confidential meetings without AI; configurable retention |
+| Consent | Inform participants that the meeting is being transcribed (GDPR); for company-wide use: security / GDPR review (and probably the works council (CSE)) |
 
 ---
 
-## 14. Utilisation par d'autres devs (compilation sur leur poste)
+## 14. Use by other devs (building on their machine)
 
-Objectif : cloner, compiler et être opérationnel en moins de 15 minutes.
+Goal: clone, build and be up and running in under 15 minutes.
 
-- **Prérequis** (README) : macOS 14.2+ sur Apple Silicon, Xcode (pour le sidecar Swift), Rust stable (`rustup`), Node 22 (seulement pour compiler l'UI), au moins un CLI d'agent installé et connecté.
-- **`make install`** : compile le sidecar, l'UI et l'app Tauri, applique la signature ad hoc, copie `Steno.app` dans `~/Applications`, installe la CLI `steno`, télécharge les modèles audio.
-- **Assistant de premier lancement** (dans l'app, ou `steno init`) :
-  1. permissions macOS, guidées étape par étape ;
-  2. choix de l'agent parmi ceux détectés, puis test ;
-  3. dépôts à rendre lisibles ;
-  4. connecteurs à activer (seulement ceux dont l'écriture peut être bloquée) ;
-  5. mot d'appel, puis test ;
-  6. mode de corrélation (par défaut : à la demande).
-- **Config d'équipe** : un fichier TOML de réglages de départ, sans chemins ni données perso (vocabulaire des services, verbes, exclusions), importable depuis l'écran Réglages.
-- **Mise à jour** : `git pull && make install` ; migrations de base automatiques, avec sauvegarde juste avant.
+- **Prerequisites** (README): macOS 14.2+ on Apple Silicon, Xcode (for the Swift sidecar), stable Rust (`rustup`), Node 22 (only to build the UI), at least one agent CLI installed and signed in.
+- **`make install`**: builds the sidecar, the UI and the Tauri app, applies ad hoc signing, copies `Steno.app` into `~/Applications`, installs the `steno` CLI, downloads the audio models.
+- **First-run wizard** (in the app, or `steno init`):
+  1. macOS permissions, guided step by step;
+  2. choice of agent among those detected, then a test;
+  3. repositories to make readable;
+  4. connectors to enable (only those whose writes can be blocked);
+  5. wake word, then a test;
+  6. correlation mode (default: on demand).
+- **Team config**: a TOML file of starter settings, without paths or personal data (service vocabulary, verbs, exclusions), importable from the Settings screen.
+- **Update**: `git pull && make install`; automatic database migrations, with a backup right before.

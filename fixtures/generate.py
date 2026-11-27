@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Génère fixtures/daily-45min.jsonl : une daily fictive de 45 min, en français, au format
-du protocole du sidecar (docs/contracts.md §2). Déterministe (graine fixe).
+"""Generates fixtures/daily-45min.jsonl: a made-up 45-minute daily, in French, in the
+sidecar protocol format (docs/contracts.md §2). Deterministic (fixed seed).
 
-Contenu imposé (PLAN §11) : tickets APP-…, service ms-booking, une décision, deux actions,
-une commande vocale, une phrase privée, des mots pièges (« script », « description »,
-« inscrit »), un écho, et une commande prononcée par un participant (canal them).
+Required content (PLAN §11): APP-… tickets, ms-booking service, one decision, two actions,
+a voice command, a private sentence, trap words ("script", "description", "inscrit"),
+an echo, and a command spoken by another participant (them channel).
 """
 import json
 import random
@@ -30,7 +30,7 @@ def seg(t, channel, text, private=False, dur=None):
     return t + d
 
 
-# Scènes imposées, à des instants fixes (secondes).
+# Required scenes, at fixed times (seconds).
 SCRIPTED = {
     30: [("them", "Bonjour à tous, on commence la daily ?"), ("me", "Bonjour, oui allons-y.")],
     120: [("them", "Hier j'ai avancé sur le APP-1234, le verrou de créneau côté ms-booking."),
@@ -93,7 +93,7 @@ slots = sorted(SCRIPTED)
 events.append({"type": "teams_call", "active": True, "title": "Daily ORION"})
 events.append({"type": "state", "state": "listening"})
 for slot in slots + [DURATION]:
-    # Remplissage jusqu'au prochain moment imposé.
+    # Filler up to the next required moment.
     while t + 12 < slot:
         t += random.uniform(0.8, 2.5)
         if random.random() < 0.7:
@@ -105,7 +105,7 @@ for slot in slots + [DURATION]:
     t = max(t, slot)
     for ch, text in SCRIPTED[slot]:
         if ch == "me@echo":
-            # Écho : le micro capte les haut-parleurs 0,4 s après le canal Teams.
+            # Echo: the microphone picks up the speakers 0.4 s after the Teams channel.
             last = events[-1]
             seg(last["t0"] + 0.4, "me", text, dur=last["t1"] - last["t0"])
             continue
@@ -133,4 +133,4 @@ expected = {
     "segments": sum(1 for e in events if e["type"] == "segment"),
 }
 out.with_name("expected.json").write_text(json.dumps(expected, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-print(f"{out.name} : {expected['segments']} segments, {t / 60:.1f} min")
+print(f"{out.name}: {expected['segments']} segments, {t / 60:.1f} min")

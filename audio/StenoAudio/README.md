@@ -1,134 +1,134 @@
-# steno-audio — sidecar audio de Sténo
+# steno-audio — Sténo's audio sidecar
 
-Binaire Swift lancé par le cœur de Sténo. Il ne fait que de l'audio vers du texte :
+Swift binary launched by the Sténo core. It only turns audio into text:
 
-- capture du **micro** (canal `me`) avec `AVAudioEngine` et voice processing (annulation d'écho) ;
-- capture du **son des apps de visio** (canal `them`) par un *process tap* Core Audio sur tout
-  l'arbre de processus des apps captées : Teams, Slack, Zoom, navigateur… (macOS 14.2+) ;
-- rééchantillonnage en 16 kHz mono, **VAD** (Silero via FluidAudio, repli par énergie),
-  découpage en énoncés (fin après `silence_ms` de silence ou 25 s), **transcription Parakeet TDT v3**
-  sur le Neural Engine, correction par le vocabulaire ;
-- détection des appels dans les apps de visio surveillées (liste fixée par le cœur, commande
-  `watch`) et lecture du titre de l'appel (accessibilité) ;
-- diarisation hors ligne de `them.wav` à la demande ;
-- liste des **périphériques audio** (micros, sorties), choix du micro (au `start` ou pendant la
-  capture) et signal sonore discret de détection sur la sortie choisie.
+- **microphone** capture (`me` channel) with `AVAudioEngine` and voice processing (echo cancellation);
+- capture of **video-call app audio** (`them` channel) through a Core Audio *process tap* on the
+  whole process tree of the captured apps: Teams, Slack, Zoom, browser… (macOS 14.2+);
+- resampling to 16 kHz mono, **VAD** (Silero via FluidAudio, energy-based fallback), splitting into
+  utterances (ending after `silence_ms` of silence or 25 s), **Parakeet TDT v3 transcription**
+  on the Neural Engine, vocabulary correction;
+- call detection in the watched video-call apps (list set by the core, `watch` command) and
+  reading of the call title (accessibility);
+- on-demand offline diarization of `them.wav`;
+- listing of **audio devices** (microphones, outputs), microphone selection (at `start` or during
+  capture) and a discreet detection sound cue on the chosen output.
 
-Il dialogue avec le cœur en **JSON lines** sur stdin/stdout, selon `docs/contracts.md` §2.
-Les journaux vont **uniquement sur stderr**. Aucune donnée ne quitte le Mac (seul le premier
-lancement télécharge les modèles depuis Hugging Face, via FluidAudio).
+It talks to the core in **JSON lines** over stdin/stdout, as specified in `docs/contracts.md` §2.
+Logs go **only to stderr**. No data leaves the Mac (only the first launch downloads the models
+from Hugging Face, via FluidAudio).
 
-## Prérequis
+## Requirements
 
-- macOS 14.2 ou plus récent, Apple Silicon ;
-- Xcode 16 (Swift 5.10 / 6.0) ou plus récent ;
-- accès réseau au premier lancement (dépendance FluidAudio et modèles).
+- macOS 14.2 or later, Apple Silicon;
+- Xcode 16 (Swift 5.10 / 6.0) or later;
+- network access on first launch (FluidAudio dependency and models).
 
-## Compilation
+## Build
 
 ```sh
 cd audio/StenoAudio
-swift build -c release            # binaire : .build/release/steno-audio
-swift test                        # tests sans matériel (protocole, vocabulaire, segmenteur…)
-.build/release/steno-audio --prefetch-models   # télécharge et compile les modèles (≈ 1 Go)
+swift build -c release            # binary: .build/release/steno-audio
+swift test                        # hardware-free tests (protocol, vocabulary, segmenter…)
+.build/release/steno-audio --prefetch-models   # downloads and compiles the models (≈ 1 GB)
 ```
 
-`Package.swift` embarque `Info.plist` dans le binaire (section `__TEXT,__info_plist`) pour que les
-descriptions d'usage existent même quand le sidecar est lancé seul.
+`Package.swift` embeds `Info.plist` into the binary (`__TEXT,__info_plist` section) so that the
+usage descriptions exist even when the sidecar is launched on its own.
 
-Variables d'environnement utiles :
+Useful environment variables:
 
-| Variable | Effet |
+| Variable | Effect |
 |---|---|
-| `STENO_TAP_MODE=global` | plan B : tap sur tout le son du Mac sauf Sténo (si une app sort l'audio par un processus non repéré) |
-| `STENO_VAD=energy` | VAD par énergie au lieu de Silero |
-| `STENO_MODELS_DIR=<dossier>` | dossier des modèles (sinon le cache par défaut de FluidAudio) |
-| `STENO_AUDIO_DEBUG=1` | journaux détaillés sur stderr |
+| `STENO_TAP_MODE=global` | plan B: tap on all of the Mac's audio except Sténo (if an app outputs audio through an unidentified process) |
+| `STENO_VAD=energy` | energy-based VAD instead of Silero |
+| `STENO_MODELS_DIR=<dir>` | models directory (otherwise FluidAudio's default cache) |
+| `STENO_AUDIO_DEBUG=1` | verbose logs on stderr |
 
-Autres commandes : `--version`, `--help`, `--list-devices` (micros et sorties avec leur UID, tels
-que le message `devices` les présente, puis tous les périphériques du HAL avec la raison de leur
-exclusion éventuelle), `--list-audio-processes [--apps teams,slack]`
-(diagnostic des processus audio vus par Core Audio, avec l'app reconnue pour chacun : Teams seul
-par défaut), `--prefetch-models`, et les deux modes spike décrits plus bas. L'option `--apps`
-accepte les identifiants du catalogue intégré : `teams`, `slack`, `zoom`, `meet` (navigateurs).
+Other commands: `--version`, `--help`, `--list-devices` (microphones and outputs with their UID, as
+the `devices` message presents them, then every HAL device with the reason it was excluded, if
+any), `--list-audio-processes [--apps teams,slack]`
+(diagnostic of the audio processes seen by Core Audio, with the app recognized for each: Teams
+only by default), `--prefetch-models`, and the two spike modes described below. The `--apps`
+option accepts the IDs of the built-in catalog: `teams`, `slack`, `zoom`, `meet` (browsers).
 
-## Apps de visio surveillées
+## Watched video-call apps
 
-Le cœur fixe la liste par `{"cmd":"watch","apps":[{"id","name","bundles":[préfixes]}]}`, juste
-après `ready` puis à chaque changement de réglages. Avant le premier `watch`, seul Teams est
-surveillé (`com.microsoft.teams2`, `com.microsoft.teams`). Une liste vide ne surveille plus rien.
+The core sets the list with `{"cmd":"watch","apps":[{"id","name","bundles":[préfixes]}]}`, right
+after `ready` and then on every settings change. Before the first `watch`, only Teams is
+watched (`com.microsoft.teams2`, `com.microsoft.teams`). An empty list stops watching anything.
 
-- **Appartenance** : un processus appartient à une app si son bundle ID **commence par** l'un de
-  ses préfixes (sans casse ; le plus long préfixe l'emporte si deux apps se chevauchent), ce qui
-  couvre les auxiliaires (`com.microsoft.teams2.helper…`). Un processus audio sans bundle reconnu
-  appartient à l'app dont il descend (PID parent). Sténo lui-même n'est jamais compté.
-- **Appel** : toutes les ~2 s, une app est « en appel » dès qu'un de ses processus utilise l'entrée
-  audio (`kAudioProcessPropertyIsRunningInput`) ; fin après deux relevés négatifs consécutifs. L'état
-  est **séparé par app** : chaque changement émet `{"type":"call","active":…,"app":"<id>","title":…}`
-  (plusieurs appels peuvent être actifs en même temps). L'ancien message `teams_call` n'est plus
-  émis. Retirer d'un `watch` une app en appel émet sa fin d'appel.
-- **Titre** (accessibilité, `CallTitleHeuristics`) : Teams, fenêtre de réunion séparée (heuristique
-  d'origine) ; Slack, fenêtre du huddle (« Huddle… », « Appel… » avec le canal), sinon `null` ;
-  Zoom, fenêtre « Zoom Meeting » / « Réunion Zoom » (sujet s'il figure dans le titre) ; navigateurs,
-  onglet actif « Meet – … » (« Google Meet » si seul le code de réunion est visible) ; autres apps,
-  titre de la fenêtre au premier plan, sauf titre générique (nom de l'app, vide). Le titre est figé
-  dès qu'un titre plausible est trouvé ; `null` si l'accessibilité est refusée ou si rien ne convient.
-- **Capture** : `start.apps` (ex. `["slack"]`) choisit les apps dont le son va sur le canal `them` ;
-  absent ou vide = toutes les apps surveillées. Les identifiants inconnus sont ignorés (journal) ;
-  s'il n'en reste aucun, toutes les apps surveillées sont captées. Le tap couvre l'union des
-  processus de ces apps et il est recréé quand cette liste change (redémarrage, nouvel auxiliaire,
-  `watch`). Si aucun processus ne correspond au `start` (app pas encore lancée ou sans audio
-  ouvert), le micro démarre quand même, un `error` `tap_failed` récupérable l'explique, et le tap
-  est créé dès que les processus apparaissent.
+- **Ownership**: a process belongs to an app if its bundle ID **starts with** one of the app's
+  prefixes (case-insensitive; the longest prefix wins if two apps overlap), which covers helper
+  processes (`com.microsoft.teams2.helper…`). An audio process without a recognized bundle belongs
+  to the app it descends from (parent PID). Sténo itself is never counted.
+- **Call**: every ~2 s, an app is "in a call" as soon as one of its processes uses audio input
+  (`kAudioProcessPropertyIsRunningInput`); the call ends after two consecutive negative readings.
+  State is **tracked per app**: each change emits `{"type":"call","active":…,"app":"<id>","title":…}`
+  (several calls can be active at once). The old `teams_call` message is no longer emitted.
+  Removing an app that is in a call from a `watch` emits its call end.
+- **Title** (accessibility, `CallTitleHeuristics`): Teams, separate meeting window (original
+  heuristic); Slack, huddle window (« Huddle… », « Appel… » with the channel), otherwise `null`;
+  Zoom, « Zoom Meeting » / « Réunion Zoom » window (topic if it appears in the title); browsers,
+  active « Meet – … » tab (« Google Meet » if only the meeting code is visible); other apps,
+  title of the frontmost window, unless it is generic (app name, empty). The title is frozen as
+  soon as a plausible one is found; `null` if accessibility is denied or nothing fits.
+- **Capture**: `start.apps` (e.g. `["slack"]`) selects the apps whose audio goes to the `them`
+  channel; absent or empty = all watched apps. Unknown IDs are ignored (logged); if none remain,
+  all watched apps are captured. The tap covers the union of these apps' processes and is
+  recreated when that list changes (restart, new helper process, `watch`). If no process matches
+  the `start` (app not launched yet or with no open audio), the microphone starts anyway, a
+  recoverable `tap_failed` `error` explains why, and the tap is created as soon as the processes
+  appear.
 
-## Périphériques
+## Devices
 
-Code : `AudioDevices.swift` (énumération, filtrage, tri, écouteurs), `FeedbackPlayer.swift`
-(signal sonore), `MicCapture.swift` (choix du micro), `CaptureSession` / `Controller` (commandes).
+Code: `AudioDevices.swift` (enumeration, filtering, sorting, listeners), `FeedbackPlayer.swift`
+(sound cue), `MicCapture.swift` (microphone selection), `CaptureSession` / `Controller` (commands).
 
-- **Liste** : `{"type":"devices","inputs":[…],"outputs":[…]}`, chaque entrée avec `id` (UID Core
-  Audio, `kAudioDevicePropertyDeviceUID`), `name`, `default` et `transport`
-  (`builtin | usb | bluetooth | virtual | aggregate | other`, d'après
-  `kAudioDevicePropertyTransportType` : Bluetooth et Bluetooth LE → `bluetooth`, agrégats manuels
-  et automatiques → `aggregate`, PCI, HDMI, DisplayPort, AirPlay, Thunderbolt, Continuity… →
-  `other`). Tri : périphérique par défaut d'abord, puis par nom (sans casse ni accents, nombres
-  dans l'ordre naturel), puis par UID.
-- **Filtrage** : `inputs` ne garde que les périphériques ayant au moins un canal d'entrée, `outputs`
-  au moins un canal de sortie ; sont exclus les entrées dont l'UID ou le nom est vide, les doublons
-  d'UID et les agrégats privés : celui du tap de Sténo (`steno-tap-…`, nom `Steno-Tap`) et ceux
-  qu'AVAudioEngine crée dans notre processus (`CADefaultDeviceAggregate…`,
-  `VPAUAggregateAudioDevice…`). Un agrégat créé par l'utilisateur reste proposé.
-- **Émission** : après `ready` (et `permissions`), en réponse à `{"cmd":"devices"}`, et à chaque
-  changement de la liste ou des périphériques par défaut (écouteurs HAL sur
-  `kAudioHardwarePropertyDevices`, `…DefaultInputDevice`, `…DefaultOutputDevice`), après un
-  anti-rebond de 300 ms et seulement si le message change (la création de l'agrégat du tap modifie
-  la liste HAL sans changer `devices`).
-- **Choix du micro** : `start.input_device` (`null` = micro par défaut du système, en suivant ses
-  changements ; champ absent = dernier choix mémorisé, sinon micro par défaut). Le micro choisi est
-  réglé sur l'unité du nœud d'entrée d'AVAudioEngine (`kAudioOutputUnitProperty_CurrentDevice`)
-  **avant** l'activation du voice processing, puis relu après : s'il a été perdu, il est réglé de
-  nouveau (le journal le dit). Si l'UID est introuvable, ou si le micro est débranché pendant la
-  capture, le micro par défaut prend le relais et le sidecar émet, une fois par absence,
+- **List**: `{"type":"devices","inputs":[…],"outputs":[…]}`, each entry with `id` (Core Audio
+  UID, `kAudioDevicePropertyDeviceUID`), `name`, `default` and `transport`
+  (`builtin | usb | bluetooth | virtual | aggregate | other`, from
+  `kAudioDevicePropertyTransportType`: Bluetooth and Bluetooth LE → `bluetooth`, manual and
+  automatic aggregates → `aggregate`, PCI, HDMI, DisplayPort, AirPlay, Thunderbolt, Continuity… →
+  `other`). Sorting: default device first, then by name (ignoring case and accents, numbers
+  in natural order), then by UID.
+- **Filtering**: `inputs` only keeps devices with at least one input channel, `outputs`
+  those with at least one output channel; excluded are entries with an empty UID or name,
+  duplicate UIDs and private aggregates: Sténo's tap aggregate (`steno-tap-…`, name `Steno-Tap`)
+  and those AVAudioEngine creates in our process (`CADefaultDeviceAggregate…`,
+  `VPAUAggregateAudioDevice…`). A user-created aggregate is still offered.
+- **Emission**: after `ready` (and `permissions`), in response to `{"cmd":"devices"}`, and on every
+  change of the list or of the default devices (HAL listeners on
+  `kAudioHardwarePropertyDevices`, `…DefaultInputDevice`, `…DefaultOutputDevice`), after a
+  300 ms debounce and only if the message changes (creating the tap aggregate modifies the HAL
+  list without changing `devices`).
+- **Microphone selection**: `start.input_device` (`null` = system default microphone, following its
+  changes; field absent = last remembered choice, otherwise the default microphone). The chosen
+  microphone is set on the AVAudioEngine input node's unit (`kAudioOutputUnitProperty_CurrentDevice`)
+  **before** voice processing is enabled, then read back afterwards: if it was lost, it is set
+  again (the log says so). If the UID cannot be found, or if the microphone is unplugged during
+  capture, the default microphone takes over and the sidecar emits, once per absence,
   `{"type":"error","code":"device_missing","message":"Micro « <uid> » introuvable : micro par défaut utilisé.","recoverable":true}`.
-  Dès que le micro réapparaît dans la liste des périphériques, il est repris.
-- **`set_input`** : `{"cmd":"set_input","device":"<uid>"|null}` change de micro pendant la capture en
-  ne redémarrant que le moteur micro (le tap continue). L'horloge `t0/t1` continue ; le court trou
-  est comblé comme lors d'un changement de périphérique (silence dans `me.wav`, horloge du
-  segmenteur avancée) et le rééchantillonneur suit la fréquence du nouveau micro. Hors capture, le
-  choix est mémorisé pour le prochain `start` (y compris pour `wake_test` hors réunion). `device`
-  est obligatoire (`bad_command` sinon).
-- **`play`** : `{"cmd":"play","sound":"detect","device":"<uid>"|null}` joue deux notes douces (mi5
-  puis la5, 55 + 65 ms ≈ 120 ms, crête ≈ −15 dBFS, fondus de 8 ms) sur la sortie demandée (`null` ou
-  sortie introuvable = sortie par défaut). Moteur `AVAudioEngine` séparé, créé à la demande
-  (`AVAudioPlayerNode` + buffer PCM synthétisé), sortie réglée par
-  `kAudioOutputUnitProperty_CurrentDevice` sur `outputNode`, arrêté après 3 s d'inactivité. Le son
-  part de notre processus : il ne passe jamais par l'app d'appel et n'est pas capté par le tap (qui
-  ne vise que les processus des apps de visio, ou tout sauf Sténo en mode global). La commande
-  rend la main immédiatement. `sound` absent = `detect` ; son inconnu = `bad_command`.
+  As soon as the microphone reappears in the device list, it is used again.
+- **`set_input`**: `{"cmd":"set_input","device":"<uid>"|null}` switches microphone during capture,
+  restarting only the microphone engine (the tap keeps running). The `t0/t1` clock continues; the
+  short gap is filled as for a device change (silence in `me.wav`, segmenter clock advanced) and
+  the resampler follows the new microphone's sample rate. Outside capture, the choice is
+  remembered for the next `start` (including for `wake_test` outside a meeting). `device`
+  is required (`bad_command` otherwise).
+- **`play`**: `{"cmd":"play","sound":"detect","device":"<uid>"|null}` plays two soft notes (E5
+  then A5, 55 + 65 ms ≈ 120 ms, peak ≈ −15 dBFS, 8 ms fades) on the requested output (`null` or
+  output not found = default output). Separate `AVAudioEngine`, created on demand
+  (`AVAudioPlayerNode` + synthesized PCM buffer), output set through
+  `kAudioOutputUnitProperty_CurrentDevice` on `outputNode`, stopped after 3 s of inactivity. The
+  sound comes from our process: it never goes through the call app and is not captured by the tap
+  (which only targets the video-call apps' processes, or everything except Sténo in global mode).
+  The command returns immediately. `sound` absent = `detect`; unknown sound = `bad_command`.
 
-## Intégration dans Steno.app (`externalBin` Tauri)
+## Integration into Steno.app (Tauri `externalBin`)
 
-Tauri attend le binaire suffixé par le triplet de la cible :
+Tauri expects the binary suffixed with the target triple:
 
 ```sh
 cd audio/StenoAudio
@@ -138,168 +138,172 @@ cp .build/arm64-apple-macosx/release/steno-audio \
    ../../app/src-tauri/binaries/steno-audio-aarch64-apple-darwin
 ```
 
-Dans `app/src-tauri/tauri.conf.json` :
+In `app/src-tauri/tauri.conf.json`:
 
 ```json
 { "bundle": { "externalBin": ["binaries/steno-audio"] } }
 ```
 
-Tauri copie alors le binaire dans `Steno.app/Contents/MacOS/steno-audio` et le signe avec l'app
-(signature ad hoc suffisante). Côté Rust, le cœur le lance avec `tauri-plugin-shell`
-(`app.shell().sidecar("steno-audio")`) ou `std::process::Command`, écrit les commandes sur stdin
-et lit stdout ligne par ligne. Fermer stdin (ou envoyer `{"cmd":"shutdown"}`) arrête le sidecar
-proprement.
+Tauri then copies the binary to `Steno.app/Contents/MacOS/steno-audio` and signs it with the app
+(ad hoc signing is enough). On the Rust side, the core launches it with `tauri-plugin-shell`
+(`app.shell().sidecar("steno-audio")`) or `std::process::Command`, writes commands to stdin
+and reads stdout line by line. Closing stdin (or sending `{"cmd":"shutdown"}`) stops the sidecar
+cleanly.
 
-L'`Info.plist` de **Steno.app** (`app/src-tauri/Info.plist`) doit contenir les mêmes clés que
-`audio/StenoAudio/Info.plist` : `NSMicrophoneUsageDescription` et `NSAudioCaptureUsageDescription`.
+The `Info.plist` of **Steno.app** (`app/src-tauri/Info.plist`) must contain the same keys as
+`audio/StenoAudio/Info.plist`: `NSMicrophoneUsageDescription` and `NSAudioCaptureUsageDescription`.
 
-### Permissions TCC : qui les porte ?
+### TCC permissions: who holds them?
 
-macOS attribue les demandes de permission (micro, enregistrement audio du système) au **processus
-responsable**, c'est-à-dire l'app qui a lancé le sidecar. Les permissions sont donc demandées et
-accordées **à Steno.app**, avec les textes de son `Info.plist` ; le sidecar en hérite tant qu'il est
-lancé par l'app. C'est le processus parent qui en est responsable : le sidecar ne fait que constater
-l'état (`permissions`) et signaler les refus (`mic_denied`, `system_audio_denied`).
+macOS attributes permission requests (microphone, system audio recording) to the **responsible
+process**, i.e. the app that launched the sidecar. Permissions are therefore requested and
+granted **to Steno.app**, with the texts from its `Info.plist`; the sidecar inherits them as long
+as it is launched by the app. The parent process is responsible for them: the sidecar only
+observes the state (`permissions`) and reports denials (`mic_denied`, `system_audio_denied`).
 
-Conséquences pratiques :
+Practical consequences:
 
-- lancé depuis un terminal (spikes, `cargo tauri dev`), c'est **le terminal** (Terminal, iTerm…) qui
-  reçoit les demandes et doit être autorisé ;
-- l'accessibilité (titre de l'appel) est accordée à Steno.app dans Réglages Système ›
-  Confidentialité et sécurité › Accessibilité ;
-- **à vérifier au spike S1** : que l'autorisation accordée à Steno.app couvre bien le sidecar.
-  **Plan B** si ce n'est pas le cas : faire la capture en Rust (`objc2-core-audio` pour le tap,
-  `objc2-avf-audio` pour le micro) dans le processus principal de l'app, et ne garder dans le sidecar
-  que la VAD et la transcription (l'audio lui serait alors envoyé par un tube).
+- when launched from a terminal (spikes, `cargo tauri dev`), **the terminal** (Terminal, iTerm…)
+  receives the requests and must be authorized;
+- accessibility (call title) is granted to Steno.app in Réglages Système ›
+  Confidentialité et sécurité › Accessibilité (System Settings › Privacy & Security › Accessibility);
+- **to verify in spike S1**: that the authorization granted to Steno.app does cover the sidecar.
+  **Plan B** if it does not: do the capture in Rust (`objc2-core-audio` for the tap,
+  `objc2-avf-audio` for the microphone) in the app's main process, and keep only VAD and
+  transcription in the sidecar (the audio would then be sent to it through a pipe).
 
-## Spikes à exécuter sur le Mac (phase 0)
+## Spikes to run on the Mac (phase 0)
 
-### S1 — Capture (bloquant)
+### S1 — Capture (blocking)
 
-But : deux pistes audibles pendant un vrai appel Teams, permissions valables pour le sidecar.
-Les étapes 1 à 7 visent Teams ; **S1-bis** les refait avec Slack et Zoom.
+Goal: two audible tracks during a real Teams call, with permissions valid for the sidecar.
+Steps 1 to 7 target Teams; **S1-bis** repeats them with Slack and Zoom.
 
-1. Compiler : `swift build -c release`.
-2. Lancer un appel Teams (réunion avec un collègue, ou Paramètres › Appareils › « Passer un appel
-   test »). Parler et faire parler l'autre participant.
-3. Repérer les processus audio de Teams :
+1. Build: `swift build -c release`.
+2. Start a Teams call (meeting with a colleague, or Paramètres › Appareils › « Passer un appel
+   test » (Settings › Devices › "Make a test call")). Speak and have the other participant speak.
+3. Identify Teams' audio processes:
    `.build/release/steno-audio --list-audio-processes`
-   → noter les bundles marqués `teams` dans la colonne « app » et vérifier qu'aucun autre processus (ex.
-   `com.apple.WebKit.GPU`, assistant Edge WebView) ne joue le son de l'appel sans être repéré.
-4. Depuis le terminal (le terminal doit être autorisé pour le micro et l'audio système) :
+   → note the bundles marked `teams` in the « app » column and check that no other process (e.g.
+   `com.apple.WebKit.GPU`, Edge WebView helper) plays the call audio without being identified.
+4. From the terminal (the terminal must be authorized for the microphone and system audio):
    `.build/release/steno-audio --spike-record 60 ~/Desktop/s1`
-   → le niveau de « moi » et « eux » s'affiche chaque seconde ; à la fin, ouvrir
-   `~/Desktop/s1/me.wav` et `them.wav` dans QuickTime : les deux pistes doivent être audibles,
-   séparées, et l'écho de « eux » quasi absent de `me.wav` (AEC).
-5. Pendant l'enregistrement, débrancher puis rebrancher le casque : stderr doit indiquer
-   « micro reparti » en moins de 5 s.
-6. **Critère décisif** : refaire l'étape 4 depuis une **app Tauri vide** qui lance le sidecar avec
-   les mêmes arguments (`sidecar("steno-audio").args(["--spike-record","60","/tmp/s1"])`), après
-   avoir **retiré** l'autorisation du terminal. Vérifier que les invites système nomment l'app, que
-   les deux WAV sont audibles, et que Réglages Système liste l'app (pas `steno-audio`).
-7. Si `them.wav` est silencieux alors que Teams joue du son : réessayer avec
-   `STENO_TAP_MODE=global` (tap global) ; si ça marche, l'audio passe par un processus non repéré
-   (étape 3) → noter son bundle dans `docs/spikes.md`.
+   → the « moi » ("me") and « eux » ("them") levels are shown every second; at the end, open
+   `~/Desktop/s1/me.wav` and `them.wav` in QuickTime: both tracks must be audible,
+   separate, and the echo of « eux » almost absent from `me.wav` (AEC).
+5. During recording, unplug then replug the headset: stderr must report
+   « micro reparti » ("microphone restarted") within 5 s.
+6. **Decisive criterion**: redo step 4 from an **empty Tauri app** that launches the sidecar with
+   the same arguments (`sidecar("steno-audio").args(["--spike-record","60","/tmp/s1"])`), after
+   **revoking** the terminal's authorization. Check that the system prompts name the app, that
+   both WAVs are audible, and that System Settings lists the app (not `steno-audio`).
+7. If `them.wav` is silent while Teams is playing sound: retry with
+   `STENO_TAP_MODE=global` (global tap); if that works, the audio goes through an unidentified
+   process (step 3) → note its bundle in `docs/spikes.md`.
 
-### S1-ter — Périphériques : à refaire (changement de micro, AirPods)
+### S1-ter — Devices: to redo (microphone change, AirPods)
 
-But : vérifier la liste des périphériques, le choix du micro, le changement de micro pendant
-l'écoute et le repli quand des AirPods sont branchés puis débranchés.
+Goal: check the device list, microphone selection, switching microphones while listening and
+the fallback when AirPods are connected then disconnected.
 
-1. `.build/release/steno-audio --list-devices` sans puis avec les AirPods connectés : noter les UID
-   du micro intégré et des AirPods ; vérifier `transport` (`builtin`, `bluetooth`), le défaut, et
-   qu'aucun agrégat privé n'apparaît dans les deux premières listes. Refaire pendant une capture
-   (`--spike-record` dans un autre terminal) : l'agrégat `Steno-Tap` et les agrégats
-   d'AVAudioEngine doivent être marqués « agrégat privé » dans la dernière liste (sinon, ajouter leur
-   préfixe à `AudioDeviceCatalog.privateAggregateUIDPrefixes`).
-2. Mode protocole, commandes envoyées par un tube nommé pour pouvoir agir entre deux commandes :
+1. `.build/release/steno-audio --list-devices` without then with the AirPods connected: note the UIDs
+   of the built-in microphone and of the AirPods; check `transport` (`builtin`, `bluetooth`), the
+   default, and that no private aggregate appears in the first two lists. Redo during a capture
+   (`--spike-record` in another terminal): the `Steno-Tap` aggregate and AVAudioEngine's
+   aggregates must be marked « agrégat privé » ("private aggregate") in the last list (otherwise,
+   add their prefix to `AudioDeviceCatalog.privateAggregateUIDPrefixes`).
+2. Protocol mode, with commands sent through a named pipe so you can act between two commands:
 
    ```sh
    mkfifo /tmp/steno-in
    .build/release/steno-audio < /tmp/steno-in > /tmp/steno-out.jsonl &
-   exec 3>/tmp/steno-in            # garde le tube ouvert
-   tail -f /tmp/steno-out.jsonl    # dans un autre terminal
+   exec 3>/tmp/steno-in            # keeps the pipe open
+   tail -f /tmp/steno-out.jsonl    # in another terminal
    echo '{"cmd":"start","keep_audio":true,"audio_dir":"/tmp/s1-ter","input_device":"BuiltInMicrophoneDevice"}' >&3
-   # parler 20 s, puis :
-   echo '{"cmd":"set_input","device":"<UID des AirPods>"}' >&3
-   # parler 20 s dans les AirPods, puis les ranger dans leur boîtier (débranchement), parler 20 s,
-   # les ressortir, parler 20 s, puis :
+   # speak for 20 s, then:
+   echo '{"cmd":"set_input","device":"<AirPods UID>"}' >&3
+   # speak for 20 s into the AirPods, then put them back in their case (disconnection), speak for 20 s,
+   # take them out again, speak for 20 s, then:
    echo '{"cmd":"set_input","device":null}' >&3
    echo '{"cmd":"play","sound":"detect","device":null}' >&3
-   echo '{"cmd":"play","sound":"detect","device":"<UID des AirPods>"}' >&3
+   echo '{"cmd":"play","sound":"detect","device":"<AirPods UID>"}' >&3
    echo '{"cmd":"stop"}' >&3; exec 3>&-
    ```
 
-   Attendu : `devices` juste après `ready` / `permissions`, puis à chaque connexion / déconnexion des
-   AirPods (un seul message par changement grâce à l'anti-rebond) ; stderr « micro démarré : « AirPods
-   … » » après `set_input` sans redémarrage du tap ; au rangement des AirPods, un `error`
-   `device_missing` (une seule fois) et la capture qui continue sur le micro par défaut ; à leur
-   retour, « micro « … » de nouveau disponible : repris ». Le journal dit si le second réglage du
-   périphérique (après activation du voice processing) a été nécessaire.
-3. Ouvrir `/tmp/s1-ter/me.wav` : la parole des quatre périodes est présente, les trous de
-   changement de micro durent moins d'une seconde et `me.wav` reste aligné sur `them.wav` (même
-   durée à ±0,5 s) ; les segments `me` ont des `t0/t1` continus.
-4. `start` avec un UID inexistant (`"input_device":"inexistant"`) → `device_missing` avec ce texte,
-   capture sur le micro par défaut. `set_input` hors capture puis `start` sans `input_device` → le
-   micro mémorisé est utilisé (journal « capture démarrée (micro « … »…) »).
-5. Signal `play` : bref, discret, entendu sur la sortie demandée (AirPods) ou par défaut ; il ne
-   doit **pas** être entendu par l'autre participant d'un appel Teams, ni apparaître dans
-   `them.wav`. Vérifier aussi qu'il n'est pas atténué par le voice processing du micro.
-6. Pendant un appel avec les AirPods comme micro et sortie : AEC toujours actif (`AEC actif` dans le
-   journal) et son de l'appel non baissé.
+   Expected: `devices` right after `ready` / `permissions`, then on every connection / disconnection
+   of the AirPods (a single message per change thanks to the debounce); stderr « micro démarré : « AirPods
+   … » » ("microphone started") after `set_input` without the tap restarting; when the AirPods are
+   put away, one `error` `device_missing` (only once) and capture continuing on the default
+   microphone; when they come back, « micro « … » de nouveau disponible : repris » ("available
+   again: resumed"). The log says whether the second device setting (after voice processing is
+   enabled) was needed.
+3. Open `/tmp/s1-ter/me.wav`: speech from all four periods is present, the microphone-switch
+   gaps last less than a second and `me.wav` stays aligned with `them.wav` (same
+   duration within ±0.5 s); `me` segments have continuous `t0/t1`.
+4. `start` with a nonexistent UID (`"input_device":"inexistant"`) → `device_missing` with that text,
+   capture on the default microphone. `set_input` outside capture then `start` without `input_device` →
+   the remembered microphone is used (log « capture démarrée (micro « … »…) » ("capture started")).
+5. `play` cue: short, discreet, heard on the requested output (AirPods) or the default one; it
+   must **not** be heard by the other participant of a Teams call, nor appear in
+   `them.wav`. Also check that it is not attenuated by the microphone's voice processing.
+6. During a call with the AirPods as microphone and output: AEC still active (`AEC actif` in the
+   log) and call audio not lowered.
 
-### S1-bis — Slack, Zoom (et Meet) : à refaire
+### S1-bis — Slack, Zoom (and Meet): to redo
 
-But : vérifier la détection d'appel, le titre et la capture pour chaque app, avec les préfixes de
-bundle que le cœur enverra dans `watch`.
+Goal: check call detection, title and capture for each app, with the bundle prefixes the core
+will send in `watch`.
 
-1. Pour chaque app (huddle Slack dans un canal, réunion Zoom, Google Meet dans Chrome et Safari) :
-   pendant l'appel, `.build/release/steno-audio --list-audio-processes --apps slack,zoom,meet`
-   → noter les bundles qui ont `entrée = oui` ou `sortie = oui` et l'app reconnue (colonne « app »).
-   Un processus qui joue le son de l'appel avec « — » dans la colonne app est un préfixe manquant
-   (ou un processus XPC hors descendance, ex. `com.apple.WebKit.GPU` pour Safari).
-2. `.build/release/steno-audio --spike-record 60 ~/Desktop/s1-slack --apps slack` (puis `zoom`,
-   `meet`) : la sortie affiche, par app, les processus trouvés, si le micro est utilisé et le
-   **titre** lu par l'accessibilité ; `them.wav` doit contenir les participants et rien d'autre.
-3. Noter dans `docs/spikes.md` les titres de fenêtre réels (huddle Slack agrandi ou réduit, Zoom en
-   français, onglet Meet avec et sans événement d'agenda) pour ajuster `CallTitleHeuristics`.
-4. Mode protocole, app pas encore lancée : envoyer `watch` (Slack) puis `start` avec
-   `"apps":["slack"]` Slack fermé → `error tap_failed` récupérable ; lancer Slack et un huddle →
-   le journal indique « processus de Slack apparus » et `them` reçoit le son.
-5. Deux appels simultanés (ex. Teams et un huddle Slack) : deux événements `call` distincts, et la
-   fin de l'un n'affecte pas l'autre.
+1. For each app (Slack huddle in a channel, Zoom meeting, Google Meet in Chrome and Safari):
+   during the call, `.build/release/steno-audio --list-audio-processes --apps slack,zoom,meet`
+   → note the bundles with `entrée = oui` or `sortie = oui` (input / output = yes) and the
+   recognized app (« app » column). A process that plays the call audio with « — » in the app
+   column is a missing prefix (or an XPC process outside the process tree, e.g.
+   `com.apple.WebKit.GPU` for Safari).
+2. `.build/release/steno-audio --spike-record 60 ~/Desktop/s1-slack --apps slack` (then `zoom`,
+   `meet`): the output shows, per app, the processes found, whether the microphone is in use and
+   the **title** read through accessibility; `them.wav` must contain the participants and nothing else.
+3. Record in `docs/spikes.md` the real window titles (Slack huddle expanded or collapsed, Zoom in
+   French, Meet tab with and without a calendar event) to tune `CallTitleHeuristics`.
+4. Protocol mode, app not launched yet: send `watch` (Slack) then `start` with
+   `"apps":["slack"]` while Slack is closed → recoverable `error tap_failed`; launch Slack and a
+   huddle → the log shows « processus de Slack apparus » ("Slack processes appeared") and `them`
+   receives the audio.
+5. Two simultaneous calls (e.g. Teams and a Slack huddle): two distinct `call` events, and the
+   end of one does not affect the other.
 
 ### S2 — Transcription
 
-But : français lisible, noms techniques compris, moins d'une seconde par phrase.
+Goal: readable French, technical names understood, under one second per sentence.
 
-1. `.build/release/steno-audio --prefetch-models` (premier téléchargement des modèles).
+1. `.build/release/steno-audio --prefetch-models` (first model download).
 2. `.build/release/steno-audio --spike-transcribe ~/Desktop/s1/them.wav`
-   puis la même chose sur `me.wav`.
-3. Lire la sortie : chaque phrase avec ses bornes et son temps de transcription ; le résumé final
-   indique le temps moyen, le maximum et le facteur temps réel. Critère : maximum < 1 s.
-4. Noter les noms techniques mal transcrits : ils iront dans le vocabulaire (correction après coup).
-5. Facultatif : comparer avec WhisperKit (`whisperkit-cli transcribe --audio-path …`) sur les mêmes
-   fichiers et consigner la comparaison dans `docs/spikes.md`.
-6. Vérifier les points FluidAudio marqués « À VÉRIFIER (spike S2) » dans `FluidAudioBackend.swift`.
+   then the same on `me.wav`.
+3. Read the output: each sentence with its bounds and transcription time; the final summary
+   gives the average time, the maximum and the real-time factor. Criterion: maximum < 1 s.
+4. Note the mistranscribed technical names: they will go into the vocabulary (after-the-fact correction).
+5. Optional: compare with WhisperKit (`whisperkit-cli transcribe --audio-path …`) on the same
+   files and record the comparison in `docs/spikes.md`.
+6. Check the FluidAudio points marked « À VÉRIFIER (spike S2) » (to verify) in `FluidAudioBackend.swift`.
 
-### S4 — Poste de travail (Mac géré par l'entreprise)
+### S4 — Workstation (company-managed Mac)
 
-But : savoir tout de suite si le MDM bloque une permission.
+Goal: find out right away whether MDM blocks a permission.
 
-1. Lister les profils de configuration : `sudo profiles show -type configuration` et chercher une
-   charge utile `com.apple.TCC.configuration-profile-policy` (règles `Microphone`,
-   `ScreenCapture`/`AudioCapture`, `Accessibility`).
-2. Réglages Système › Confidentialité et sécurité : vérifier que Micro, « Enregistrement audio du
-   système » (ou « Enregistrement de l'écran et audio du système ») et Accessibilité sont
-   modifiables (pas grisés).
-3. Lancer `printf '{"cmd":"permissions"}\n' | .build/release/steno-audio` : on doit voir `ready`
-   puis deux messages `permissions` (micro `granted`, accessibilité `granted` une fois autorisée).
-4. Refaire S1 étape 4. Si la création du tap échoue, la sortie indique « accès à l'audio système
-   refusé » (protocole : `system_audio_denied`). **Si une permission est bloquée : arrêter et
-   prévenir l'utilisateur** (PLAN §13).
+1. List the configuration profiles: `sudo profiles show -type configuration` and look for a
+   `com.apple.TCC.configuration-profile-policy` payload (`Microphone`,
+   `ScreenCapture`/`AudioCapture`, `Accessibility` rules).
+2. Réglages Système › Confidentialité et sécurité (System Settings › Privacy & Security): check
+   that Micro, « Enregistrement audio du système » (System Audio Recording) (or « Enregistrement
+   de l'écran et audio du système », Screen & System Audio Recording) and Accessibilité are
+   editable (not greyed out).
+3. Run `printf '{"cmd":"permissions"}\n' | .build/release/steno-audio`: you should see `ready`
+   then two `permissions` messages (microphone `granted`, accessibility `granted` once authorized).
+4. Redo S1 step 4. If tap creation fails, the output says « accès à l'audio système
+   refusé » ("system audio access denied") (protocol: `system_audio_denied`). **If a permission is
+   blocked: stop and notify the user** (PLAN §13).
 
-### Essai du protocole à la main
+### Trying the protocol by hand
 
 ```sh
 ( echo '{"cmd":"watch","apps":[{"id":"teams","name":"Microsoft Teams","bundles":["com.microsoft.teams2","com.microsoft.teams"]},{"id":"slack","name":"Slack","bundles":["com.tinyspeck.slackmacgap"]}]}'
@@ -314,134 +318,134 @@ But : savoir tout de suite si le MDM bloque une permission.
 ) | .build/release/steno-audio
 ```
 
-Attendu : `ready`, `permissions`, `devices`, `call` à chaque début ou fin d'appel Teams ou Slack,
-`state listening`, des `level` (4 par seconde au plus), des
-`segment` (ceux dits pendant l'aparté avec `"private":true`), `state stopped`, puis `diarization`.
-La fin de stdin arrête le sidecar.
+Expected: `ready`, `permissions`, `devices`, `call` at each start or end of a Teams or Slack call,
+`state listening`, `level` messages (at most 4 per second),
+`segment` messages (those spoken during the aside with `"private":true`), `state stopped`, then `diarization`.
+End of stdin stops the sidecar.
 
-## Organisation du code
+## Code layout
 
-| Fichier | Rôle |
+| File | Role |
 |---|---|
-| `Sources/StenoAudio/main.swift` | point d'entrée (appelle `StenoAudioMain.run`) |
-| `StenoAudioMain.swift` | arguments, thread de lecture de stdin, signaux, boucle de commandes |
-| `Protocol.swift` | messages des deux sens (Codable), apps surveillées (`WatchedApp`), choix de périphérique (`DeviceSelection`), erreurs `bad_command`, horodatage ISO 8601 |
-| `Output.swift` | sortie stdout sérialisée (une ligne par message), journaux stderr, utilitaires |
-| `Controller.swift` | traitement des commandes, cycle de vie de la capture |
-| `CaptureSession.swift` | micro + tap + deux canaux, recréation du tap (processus apparus ou modifiés), aparté, niveaux |
-| `ChannelPipeline.swift` | par canal : trous du flux, WAV, VAD, segmenteur, ASR, vocabulaire |
-| `CallMonitor.swift` | apps surveillées (toutes les 2 s) : processus par app, appel par app avec anti-rebond, lecture des fenêtres (accessibilité) |
-| `CallTitleHeuristics.swift` | heuristiques pures de titre d'appel (Teams, Slack, Zoom, Meet, par défaut) |
-| `ProcessTap.swift` | process tap Core Audio + agrégat privé + IOProc |
-| `MicCapture.swift` | micro `AVAudioEngine` avec AEC, choix du micro, repli et reprise, redémarrage sur changement de périphérique |
-| `AudioDevices.swift` | périphériques : lecture HAL, classement du transport, filtrage, tri (fonctions pures), écouteurs avec anti-rebond, réglage du périphérique d'un nœud AVAudioEngine |
-| `FeedbackPlayer.swift` | signal sonore `play` : synthèse (pure) et moteur de lecture séparé |
-| `Resampler.swift` | mixage mono, `AVAudioConverter` vers 16 kHz |
-| `Segmenter.swift` | protocole VAD, VAD énergie, segmenteur d'énoncés |
-| `Transcriber.swift` | protocoles `SpeechRecognizer` / `SpeechBackend`, chargement des modèles |
-| `VocabularyCorrector.swift` | correction par dictionnaire (casse, accents, séparateurs) |
-| `FluidAudioBackend.swift` | **seul fichier dépendant de FluidAudio** (Parakeet, Silero, diarisation) |
-| `Diarizer.swift` | mise en forme des tours de parole (`S1`, `S2`…) |
-| `WavWriter.swift` | WAV 16 bits 16 kHz mono (seulement si `keep_audio`), fichiers en 0600 |
-| `Permissions.swift` | état micro / audio système / accessibilité |
-| `Levels.swift` | niveaux RMS en dBFS, émis au plus 4 fois par seconde |
-| `CoreAudioUtils.swift` | accès aux propriétés du HAL, écouteurs de propriétés |
-| `Spikes.swift` | modes `--spike-record`, `--spike-transcribe`, diagnostics (`--list-audio-processes`, `--list-devices`), préchargement |
+| `Sources/StenoAudio/main.swift` | entry point (calls `StenoAudioMain.run`) |
+| `StenoAudioMain.swift` | arguments, stdin reader thread, signals, command loop |
+| `Protocol.swift` | messages in both directions (Codable), watched apps (`WatchedApp`), device selection (`DeviceSelection`), `bad_command` errors, ISO 8601 timestamps |
+| `Output.swift` | serialized stdout output (one line per message), stderr logs, utilities |
+| `Controller.swift` | command handling, capture lifecycle |
+| `CaptureSession.swift` | microphone + tap + two channels, tap recreation (processes appeared or changed), aside, levels |
+| `ChannelPipeline.swift` | per channel: stream gaps, WAV, VAD, segmenter, ASR, vocabulary |
+| `CallMonitor.swift` | watched apps (every 2 s): processes per app, debounced call state per app, window reading (accessibility) |
+| `CallTitleHeuristics.swift` | pure call-title heuristics (Teams, Slack, Zoom, Meet, default) |
+| `ProcessTap.swift` | Core Audio process tap + private aggregate + IOProc |
+| `MicCapture.swift` | `AVAudioEngine` microphone with AEC, microphone selection, fallback and resumption, restart on device change |
+| `AudioDevices.swift` | devices: HAL reading, transport classification, filtering, sorting (pure functions), debounced listeners, setting the device of an AVAudioEngine node |
+| `FeedbackPlayer.swift` | `play` sound cue: (pure) synthesis and separate playback engine |
+| `Resampler.swift` | mono mixdown, `AVAudioConverter` to 16 kHz |
+| `Segmenter.swift` | VAD protocol, energy VAD, utterance segmenter |
+| `Transcriber.swift` | `SpeechRecognizer` / `SpeechBackend` protocols, model loading |
+| `VocabularyCorrector.swift` | dictionary-based correction (case, accents, separators) |
+| `FluidAudioBackend.swift` | **only file depending on FluidAudio** (Parakeet, Silero, diarization) |
+| `Diarizer.swift` | formatting of speaker turns (`S1`, `S2`…) |
+| `WavWriter.swift` | 16-bit 16 kHz mono WAV (only if `keep_audio`), files with mode 0600 |
+| `Permissions.swift` | microphone / system audio / accessibility state |
+| `Levels.swift` | RMS levels in dBFS, emitted at most 4 times per second |
+| `CoreAudioUtils.swift` | HAL property access, property listeners |
+| `Spikes.swift` | `--spike-record`, `--spike-transcribe` modes, diagnostics (`--list-audio-processes`, `--list-devices`), prefetching |
 
-Choix notables :
+Notable choices:
 
-- `ts` d'un segment = heure locale (avec fuseau) de la **fin** de l'énoncé ; `t0`/`t1` = secondes
-  depuis `start`, sur une horloge monotone. Quand le tap disparaît (Teams redémarre, veille), le
-  trou est détecté et comblé (silence dans le WAV, horloge avancée) : `t0`/`t1` et `them.wav`
-  restent alignés sur le `start`, ce qui permet au cœur de croiser diarisation et segments.
-- Un énoncé `me` est `private` si l'aparté a été actif à un moment quelconque pendant l'énoncé.
-- Fin d'appel déclarée, app par app, après deux relevés négatifs consécutifs (≈ 4 s) ; le délai
-  de grâce de 60 s reste du ressort du cœur.
-- Le titre de l'appel est figé dès qu'un titre plausible est trouvé pendant l'appel ; un titre
-  générique ou douteux donne `null` plutôt qu'un titre faux (ex. Slack sans fenêtre de huddle).
-- `watch` : entrées sans `id` ou sans préfixe de bundle ignorées, doublons d'`id` ignorés (le
-  premier gagne), `name` absent = `id`. Un champ de mauvais type donne `bad_command`.
-- Le catalogue intégré (`teams`, `slack`, `zoom`, `meet`) ne sert qu'aux modes en ligne de
-  commande ; en mode protocole, seule la liste `watch` du cœur compte.
-- Codes d'erreur de `diarize` : `bad_command` (them.wav absent), `model_missing` (modèles de
-  diarisation indisponibles), `asr_failed` (échec du traitement).
-- `stop` attend la transcription des énoncés en cours (au plus 15 s) avant d'émettre
+- A segment's `ts` = local time (with time zone) of the **end** of the utterance; `t0`/`t1` = seconds
+  since `start`, on a monotonic clock. When the tap disappears (Teams restarts, sleep), the
+  gap is detected and filled (silence in the WAV, clock advanced): `t0`/`t1` and `them.wav`
+  stay aligned with `start`, which lets the core match diarization against segments.
+- A `me` utterance is `private` if the aside was active at any point during the utterance.
+- Call end is declared, app by app, after two consecutive negative readings (≈ 4 s); the 60 s
+  grace period remains the core's responsibility.
+- The call title is frozen as soon as a plausible title is found during the call; a generic or
+  dubious title yields `null` rather than a wrong title (e.g. Slack without a huddle window).
+- `watch`: entries without `id` or without a bundle prefix are ignored, duplicate `id`s are ignored
+  (the first wins), `name` absent = `id`. A field of the wrong type yields `bad_command`.
+- The built-in catalog (`teams`, `slack`, `zoom`, `meet`) is only used by the command-line modes;
+  in protocol mode, only the core's `watch` list counts.
+- `diarize` error codes: `bad_command` (them.wav missing), `model_missing` (diarization models
+  unavailable), `asr_failed` (processing failure).
+- `stop` waits for in-progress utterances to be transcribed (at most 15 s) before emitting
   `state stopped`.
-- Périphériques : `start.input_device` absent ≠ `null` (absent = dernier choix mémorisé). Le choix
-  du micro survit d'une capture à l'autre. `device_missing` n'est émis qu'une fois par absence du
-  micro (pas de limiteur de 30 s, contrairement aux autres erreurs de capture). Le classement du
-  transport recopie les codes `kAudioDeviceTransportType…` pour rester une fonction pure testable.
+- Devices: `start.input_device` absent ≠ `null` (absent = last remembered choice). The microphone
+  choice persists from one capture to the next. `device_missing` is emitted only once per absence
+  of the microphone (no 30 s rate limiter, unlike other capture errors). Transport classification
+  copies the `kAudioDeviceTransportType…` codes so that it stays a testable pure function.
 
-## Points À VÉRIFIER sur le Mac
+## Points À VÉRIFIER (to verify) on the Mac
 
-Le code a été écrit sans toolchain Swift ni SDK macOS : il doit être compilé et éprouvé sur le Mac.
-Points incertains, par ordre de priorité :
+The code was written without a Swift toolchain or macOS SDK: it must be built and tested on the Mac.
+Uncertain points, in order of priority:
 
-1. **Héritage TCC** par le sidecar lancé depuis Steno.app (S1, étape 6) ; sinon plan B Rust.
-2. **API FluidAudio** (relevée sur la v0.18.4, détails en tête de `FluidAudioBackend.swift`) :
+1. **TCC inheritance** by the sidecar launched from Steno.app (S1, step 6); otherwise Rust plan B.
+2. **FluidAudio API** (taken from v0.18.4, details at the top of `FluidAudioBackend.swift`):
    `AsrModels.downloadAndLoad(to:version:)`, `AsrManager.transcribe(_:decoderState:language:)`
-   (le README de FluidAudio montre encore `transcribe(samples)`), `language: .french`,
+   (FluidAudio's README still shows `transcribe(samples)`), `language: .french`,
    `VadManager.processStreamingChunk`, `OfflineDiarizerManager.prepareModels()/process(_:)`.
-3. **Processus audio des apps** (S1, S1-bis) : bundles réels de Teams (`com.microsoft.teams2*` ?),
-   Slack (`com.tinyspeck.slackmacgap*`), Zoom (`us.zoom.xos`, `us.zoom.CptHost` ? — préfixes du
-   catalogue intégré) et des navigateurs ; existence d'un processus de rendu hors préfixe et hors
-   descendance (ex. XPC `com.apple.WebKit.GPU` pour Safari, non couvert : Meet dans Safari ne sera
-   probablement ni détecté ni capté) → `--list-audio-processes --apps …`.
-4. **`CATapDescription`** : init `stereoMixdownOfProcesses:` avec `[AudioObjectID]`, propriétés
-   `name`, `isPrivate`, `muteBehavior`, init `stereoGlobalTapButExcludeProcesses:` (plan B).
-5. **Refus de l'audio système** : code OSStatus renvoyé (hypothèse `'nope'` ou `'!hog'`), ou tap
-   créé normalement mais silencieux (alors l'état reste `unknown` ; `granted` dès que de l'audio non
-   nul arrive).
-6. **Voice processing** : canal 0 = voix traitée ; réglage
-   `voiceProcessingOtherAudioDuckingConfiguration` (le son de Teams ne doit pas baisser) ; besoin de
-   `mainMixerNode` ; repli sans AEC si le démarrage échoue.
-7. **Boucle de reconfiguration** : vérifier que la création de l'agrégat privé du tap ne déclenche
-   pas `AVAudioEngineConfigurationChange` sur le moteur micro (redémarrages en boucle).
-8. **Titres de fenêtre** réels (`CallTitleHeuristics`) : nouveau Teams en français ; fenêtre du
-   huddle Slack (titre exact, existe-t-elle quand le huddle est réduit ?) ; Zoom en français
-   (« Réunion Zoom » ?) ; onglet Meet (« Meet – <événement> », séparateur exact) ; attributs `AXMain`
-   et `AXFocusedWindow` (comparaison par `CFEqual`).
-9. `proc_pidinfo` / `PROC_PIDTBSDINFO` accessibles via `import Darwin` (descendance des processus).
-10. Réception de `NSWorkspace.didWakeNotification` dans un binaire sans `NSApplication`
-    (boucle `RunLoop.main.run()`).
-11. Option d'édition de liens `-sectcreate __TEXT __info_plist` (`unsafeFlags`) acceptée par
-    `swift build` pour le paquet racine.
-12. Latence réelle fin de phrase → segment (< 3 s visé) avec `silence_ms = 1000` et des trames VAD
-    de 256 ms.
-13. **`NSWorkspace.shared.runningApplications`** lu sur la file du moniteur (hors fil principal)
-    dans un binaire sans `NSApplication` : liste à jour ? (sinon revenir à
-    `NSRunningApplication.runningApplications(withBundleIdentifier:)` par préfixe connu). Filtre
-    `activationPolicy != .prohibited` pour ne pas interroger l'accessibilité des auxiliaires.
-14. **Tap multi-apps** : `CATapDescription(stereoMixdownOfProcesses:)` avec les processus de
-    plusieurs apps (union) ; recréation sans clic audible quand un auxiliaire apparaît.
-15. **Faux positifs de détection** : un navigateur surveillé qui utilise le micro hors Meet
-    déclenche un `call` ; Slack peut ouvrir le micro hors huddle (test du micro dans les
-    préférences).
-16. **Micro choisi et voice processing** (S1-ter) : `kAudioOutputUnitProperty_CurrentDevice` sur
-    l'`AudioUnit` de `inputNode` réglé avant `setVoiceProcessingEnabled(true)` est-il conservé, ou
-    faut-il le second réglage (après) ? Avec VoiceProcessingIO, la propriété vise-t-elle bien
-    l'entrée (et pas la sortie) ? Le voice processing accepte-t-il un micro autre que celui par
-    défaut (sinon : repli sans AEC, visible dans le journal) ?
-17. **Sortie du signal sonore** : `kAudioOutputUnitProperty_CurrentDevice` sur `outputNode` d'un
-    moteur sans entrée, réglé avant la connexion du mixeur ; mono centré sur les deux canaux ;
-    signal non atténué par le « ducking » du voice processing du micro.
-18. **Agrégats privés visibles** dans `kAudioHardwarePropertyDevices` de notre processus : préfixes
-    réels (`steno-tap-`, `CADefaultDeviceAggregate`, `VPAUAggregateAudioDevice`) ; à défaut, lire
-    la clé `private` de `kAudioAggregateDevicePropertyComposition`.
-19. **AirPods** : canaux d'entrée visibles dès l'apparition dans la liste (sinon le micro est
-    repris au prochain changement de la liste ou de configuration, pas immédiatement) ; délai de
-    bascule A2DP → HFP lors du passage au micro des AirPods (trou plus long qu'avec un micro filaire).
-20. **Retrait d'un écouteur HAL depuis sa propre file** (`AudioObjectRemovePropertyListenerBlock`
-    appelé sur la file de rappel, dans `MicCapture.stop()` et `AudioDeviceWatcher.stop()`) : pas
-    d'interblocage.
+3. **App audio processes** (S1, S1-bis): actual bundles of Teams (`com.microsoft.teams2*`?),
+   Slack (`com.tinyspeck.slackmacgap*`), Zoom (`us.zoom.xos`, `us.zoom.CptHost`? — prefixes of the
+   built-in catalog) and browsers; whether a rendering process exists outside the prefixes and
+   outside the process tree (e.g. XPC `com.apple.WebKit.GPU` for Safari, not covered: Meet in Safari
+   will probably be neither detected nor captured) → `--list-audio-processes --apps …`.
+4. **`CATapDescription`**: `stereoMixdownOfProcesses:` init with `[AudioObjectID]`, properties
+   `name`, `isPrivate`, `muteBehavior`, `stereoGlobalTapButExcludeProcesses:` init (plan B).
+5. **System audio denial**: OSStatus code returned (assumed `'nope'` or `'!hog'`), or tap
+   created normally but silent (then the state stays `unknown`; `granted` as soon as non-zero
+   audio arrives).
+6. **Voice processing**: channel 0 = processed voice; the
+   `voiceProcessingOtherAudioDuckingConfiguration` setting (Teams audio must not be lowered); whether
+   `mainMixerNode` is needed; fallback without AEC if startup fails.
+7. **Reconfiguration loop**: check that creating the tap's private aggregate does not trigger
+   `AVAudioEngineConfigurationChange` on the microphone engine (restart loop).
+8. **Real window titles** (`CallTitleHeuristics`): new Teams in French; Slack huddle window
+   (exact title, does it exist when the huddle is collapsed?); Zoom in French
+   (« Réunion Zoom »?); Meet tab (« Meet – <événement> », exact separator); `AXMain`
+   and `AXFocusedWindow` attributes (compared with `CFEqual`).
+9. `proc_pidinfo` / `PROC_PIDTBSDINFO` reachable through `import Darwin` (process ancestry).
+10. Receiving `NSWorkspace.didWakeNotification` in a binary without `NSApplication`
+    (`RunLoop.main.run()` loop).
+11. Linker option `-sectcreate __TEXT __info_plist` (`unsafeFlags`) accepted by
+    `swift build` for the root package.
+12. Actual end-of-sentence → segment latency (< 3 s targeted) with `silence_ms = 1000` and 256 ms
+    VAD frames.
+13. **`NSWorkspace.shared.runningApplications`** read on the monitor queue (off the main thread)
+    in a binary without `NSApplication`: is the list up to date? (otherwise go back to
+    `NSRunningApplication.runningApplications(withBundleIdentifier:)` per known prefix). Filter
+    `activationPolicy != .prohibited` to avoid querying accessibility on helper processes.
+14. **Multi-app tap**: `CATapDescription(stereoMixdownOfProcesses:)` with the processes of
+    several apps (union); recreation without an audible click when a helper process appears.
+15. **Detection false positives**: a watched browser using the microphone outside Meet
+    triggers a `call`; Slack may open the microphone outside a huddle (microphone test in the
+    preferences).
+16. **Chosen microphone and voice processing** (S1-ter): is `kAudioOutputUnitProperty_CurrentDevice` on
+    the `inputNode`'s `AudioUnit`, set before `setVoiceProcessingEnabled(true)`, kept, or is the
+    second setting (after) needed? With VoiceProcessingIO, does the property really target the
+    input (and not the output)? Does voice processing accept a microphone other than the default
+    one (otherwise: fallback without AEC, visible in the log)?
+17. **Sound cue output**: `kAudioOutputUnitProperty_CurrentDevice` on the `outputNode` of an
+    engine with no input, set before the mixer is connected; mono centered on both channels;
+    cue not attenuated by the microphone voice processing's "ducking".
+18. **Private aggregates visible** in our process's `kAudioHardwarePropertyDevices`: actual
+    prefixes (`steno-tap-`, `CADefaultDeviceAggregate`, `VPAUAggregateAudioDevice`); failing that, read
+    the `private` key of `kAudioAggregateDevicePropertyComposition`.
+19. **AirPods**: input channels visible as soon as they appear in the list (otherwise the microphone is
+    resumed on the next list or configuration change, not immediately); A2DP → HFP switch delay
+    when moving to the AirPods microphone (longer gap than with a wired microphone).
+20. **Removing a HAL listener from its own queue** (`AudioObjectRemovePropertyListenerBlock`
+    called on the callback queue, in `MicCapture.stop()` and `AudioDeviceWatcher.stop()`): no
+    deadlock.
 
-## À tester en priorité sur un Mac
+## To test first on a Mac
 
-1. `swift build -c release` puis `swift test` (corriger les éventuelles erreurs de compilation).
-2. Spike S1 complet, surtout l'étape 6 (lancement depuis une app Tauri vide), puis S1-bis (Slack,
+1. `swift build -c release` then `swift test` (fix any compilation errors).
+2. Full spike S1, especially step 6 (launch from an empty Tauri app), then S1-bis (Slack,
    Zoom, Meet).
-3. Spike S2 sur les enregistrements de S1 (`--spike-transcribe`).
-4. Spike S4 sur le Mac professionnel.
-5. Essai du protocole à la main (ci-dessus), puis débranchement du casque pendant la capture.
-6. Spike S1-ter (périphériques) : `--list-devices`, `set_input` pendant l'écoute, AirPods rangés
-   puis ressortis, `play` sur les AirPods et sur la sortie par défaut.
+3. Spike S2 on the S1 recordings (`--spike-transcribe`).
+4. Spike S4 on the work Mac.
+5. Manual protocol test (above), then unplug the headset during capture.
+6. Spike S1-ter (devices): `--list-devices`, `set_input` while listening, AirPods put away
+   then taken out, `play` on the AirPods and on the default output.
