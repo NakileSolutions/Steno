@@ -1,7 +1,11 @@
 import { mount } from 'svelte';
+import { applyPlatformClasses } from './lib/platform';
 import './app.css';
 import App from './App.svelte';
 import { isTauri } from './lib/api';
+
+// Très tôt : `native-vibrancy` (Tauri sur macOS) rend la fenêtre transparente avant le premier rendu.
+applyPlatformClasses();
 
 // Les erreurs de l'interface sont consignées dans le journal de l'app (logs/scribe.log).
 if (isTauri) {

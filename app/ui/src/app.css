@@ -25,6 +25,12 @@
   --t-fast: 120ms;
   --t: 160ms;
   --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1);
+
+  /* Grain imperceptible des grandes surfaces sombres (SVG en ligne, aucune ressource distante). */
+  --noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --noise-opacity: 0.045;
 
   --navy-1: #1f2433;
   --navy-2: #171b26;
@@ -76,8 +82,14 @@
   --offer-ic-bg: rgba(79, 94, 232, 0.12);
   --offer-ic: #4352d6;
 
-  /* Barre latérale (identique dans les deux thèmes, un peu plus profonde en sombre) */
-  --side-bg: linear-gradient(180deg, #1f2433 0%, #171b26 100%);
+  /* Barre latérale (identique dans les deux thèmes, un peu plus profonde en sombre).
+     Dégradé très doux, une lueur indigo à peine perceptible en haut. */
+  --side-bg:
+    radial-gradient(120% 60% at 0% 0%, rgba(124, 137, 255, 0.075), transparent 60%),
+    linear-gradient(180deg, #1f2433 0%, #191d29 55%, #161a24 100%);
+  /* Aperçu flottant (mode réduit) : verre bleu nuit */
+  --peek-bg: rgba(30, 34, 48, 0.95);
+  --peek-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(10, 12, 20, 0.18), 0 22px 60px -10px rgba(10, 12, 24, 0.6);
   --side-text: rgba(236, 238, 245, 0.9);
   --side-text-2: rgba(236, 238, 245, 0.56);
   --side-text-3: rgba(236, 238, 245, 0.38);
@@ -142,8 +154,12 @@
     --offer-ic-bg: rgba(124, 137, 255, 0.16);
     --offer-ic: #aab3ff;
 
-    --side-bg: linear-gradient(180deg, #1b1f2b 0%, #13161e 100%);
+    --side-bg:
+      radial-gradient(120% 60% at 0% 0%, rgba(124, 137, 255, 0.06), transparent 60%),
+      linear-gradient(180deg, #1b1f2b 0%, #161921 55%, #121419 100%);
     --side-line: rgba(255, 255, 255, 0.06);
+    --peek-bg: rgba(29, 32, 44, 0.95);
+    --peek-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.8), 0 2px 6px rgba(0, 0, 0, 0.3), 0 22px 60px -10px rgba(0, 0, 0, 0.75);
 
     --sp-me: #9aa4ff;
     --sp-1: #4fc7c7;
@@ -179,6 +195,54 @@ body {
 
 #app {
   height: 100%;
+}
+
+/* ---------- Matière native macOS (Tauri) ----------
+   La fenêtre est transparente avec l'effet « sidebar » (NSVisualEffectView) ; le panneau de barre de
+   menu avec l'effet « popover ». La barre latérale laisse voir la matière en gardant sa teinte bleu nuit ;
+   le contenu reste opaque. */
+html.native-vibrancy,
+html.native-vibrancy body {
+  background: transparent;
+}
+html.native-vibrancy {
+  --side-bg:
+    radial-gradient(120% 60% at 0% 0%, rgba(124, 137, 255, 0.07), transparent 60%),
+    linear-gradient(180deg, rgba(31, 36, 51, 0.6) 0%, rgba(23, 27, 38, 0.64) 100%);
+  --peek-bg: rgba(28, 32, 45, 0.84);
+  --noise-opacity: 0.03;
+  --content-ring: 0 0 0 0.5px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.12), 0 8px 30px rgba(0, 0, 0, 0.16);
+}
+@media (prefers-color-scheme: dark) {
+  html.native-vibrancy {
+    --side-bg:
+      radial-gradient(120% 60% at 0% 0%, rgba(124, 137, 255, 0.06), transparent 60%),
+      linear-gradient(180deg, rgba(27, 31, 43, 0.58) 0%, rgba(18, 20, 25, 0.64) 100%);
+    --peek-bg: rgba(26, 29, 40, 0.86);
+    --content-ring: 0 0 0 0.5px rgba(255, 255, 255, 0.09), 0 1px 3px rgba(0, 0, 0, 0.3), 0 8px 30px rgba(0, 0, 0, 0.35);
+  }
+}
+
+/* ---------- Transitions entre vues (View Transitions API) ---------- */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+::view-transition-old(content) {
+  animation: vt-out 110ms var(--ease) both;
+}
+::view-transition-new(content) {
+  animation: vt-in 190ms var(--ease-out) both;
+}
+::view-transition-group(content) {
+  animation-duration: 190ms;
+}
+@keyframes vt-out { to { opacity: 0; } }
+@keyframes vt-in { from { opacity: 0; transform: translateY(5px); } }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) { animation: none !important; }
 }
 
 h1, h2, h3, h4 {
