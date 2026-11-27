@@ -1,36 +1,36 @@
 # Phase 0 — spikes
 
-> **État** : le code a été écrit dans un environnement **Linux** (sans Mac, sans Teams, sans
-> abonnement d'agent). Tout ce qui ne dépend pas de macOS a été vérifié ici (voir « Fait » plus
-> bas). Les spikes S1 à S5 **restent à exécuter sur un Mac** : ils sont bloquants avant un usage
-> réel. Les procédures détaillées du sidecar sont dans `audio/StenoAudio/README.md`.
+> **Status**: the code was written in a **Linux** environment (no Mac, no Teams, no agent
+> subscription). Everything that does not depend on macOS was verified here (see "Done" further
+> down). Spikes S1 to S5 **still have to be run on a Mac**: they are blocking before any real
+> use. The detailed sidecar procedures are in `audio/StenoAudio/README.md`.
 
-## Résumé
+## Summary
 
-| Spike | État | Ce qui a été fait ici | Ce qu'il reste à faire sur le Mac |
+| Spike | Status | What was done here | What remains to do on the Mac |
 |---|---|---|---|
-| S1 Capture | ⏳ à faire | Sidecar Swift écrit (process tap sur tout l'arbre Teams, AVAudioEngine + voice processing, `--spike-record`) ; **non compilé** (pas de toolchain Swift ici) | Compiler, enregistrer `me.wav` + `them.wav` pendant un vrai appel, **lancé depuis Steno.app** |
-| S2 ASR | ⏳ à faire | Intégration FluidAudio (Parakeet TDT v3, Silero VAD) derrière un protocole ; `--spike-transcribe` | Mesurer la qualité en français et la latence (< 1 s par phrase) ; comparer WhisperKit si besoin |
-| S3 Agents | 🟡 en partie | Options de `claude` 2.1.332 vérifiées (`--help`) ; politique lecture seule testée de bout en bout avec un faux `claude` qui appelle réellement le crochet | `steno doctor --live` avec le vrai Claude Code puis Codex : MCP visibles en `-p`, écriture refusée |
-| S4 Poste de travail | ⏳ à faire | `steno doctor` affiche l'état des permissions remontées par le sidecar et la marche à suivre | Accorder micro, audio système, accessibilité sur le Mac pro ; si le MDM bloque : **arrêter et prévenir** |
-| S5 Empreinte | ⏳ à faire | App Tauri compilée et lancée sous Linux (Xvfb) avec le vrai cœur | Mesurer la RAM au repos de Steno.app (objectif < 120 Mo) |
+| S1 Capture | ⏳ to do | Swift sidecar written (process tap on the whole Teams tree, AVAudioEngine + voice processing, `--spike-record`); **not compiled** (no Swift toolchain here) | Compile, record `me.wav` + `them.wav` during a real call, **launched from Steno.app** |
+| S2 ASR | ⏳ to do | FluidAudio integration (Parakeet TDT v3, Silero VAD) behind a protocol; `--spike-transcribe` | Measure French quality and latency (< 1 s per sentence); compare WhisperKit if needed |
+| S3 Agents | 🟡 partly | `claude` 2.1.332 options checked (`--help`); read-only policy tested end to end with a fake `claude` that actually calls the hook | `steno doctor --live` with the real Claude Code then Codex: MCP visible in `-p`, writes denied |
+| S4 Workstation | ⏳ to do | `steno doctor` shows the permission state reported by the sidecar and the steps to follow | Grant microphone, system audio, accessibility on the work Mac; if MDM blocks it: **stop and report** |
+| S5 Footprint | ⏳ to do | Tauri app compiled and launched on Linux (Xvfb) with the real core | Measure Steno.app idle RAM (target < 120 MB) |
 
-## S1 — Capture (bloquant)
+## S1 — Capture (blocking)
 
-But : deux pistes audibles (`me.wav`, `them.wav`) pendant un vrai appel Teams, **avec le sidecar
-lancé par l'app** (la permission « Enregistrement audio du système » accordée à Steno.app
-doit couvrir le sidecar embarqué).
+Goal: two audible tracks (`me.wav`, `them.wav`) during a real Teams call, **with the sidecar
+launched by the app** (the « Enregistrement audio du système » ("System Audio Recording")
+permission granted to Steno.app must cover the embedded sidecar).
 
 ```bash
 cd audio/StenoAudio && swift build -c release
-.build/release/steno-audio --list-audio-processes        # repérer les processus audio de Teams
-.build/release/steno-audio --spike-record 60 ~/Desktop/s1 # en direct depuis le Terminal
-make install && open ~/Applications/Steno.app             # puis démarrer une réunion depuis l'app
+.build/release/steno-audio --list-audio-processes        # find Teams' audio processes
+.build/release/steno-audio --spike-record 60 ~/Desktop/s1 # directly from the Terminal
+make install && open ~/Applications/Steno.app             # then start a meeting from the app
 ```
 
-Critères : pistes audibles et séparées ; débrancher / rebrancher le casque → reprise < 5 s.
-Si la permission ne couvre pas le sidecar : plan B = capture en Rust (`objc2-core-audio`) dans
-le processus principal (le protocole JSON lines reste le même, le transport devient interne).
+Criteria: audible, separate tracks; unplug / replug the headset → recovery < 5 s.
+If the permission does not cover the sidecar: plan B = capture in Rust (`objc2-core-audio`) in
+the main process (the JSON lines protocol stays the same, the transport becomes internal).
 
 ## S2 — Transcription
 
@@ -39,9 +39,9 @@ le processus principal (le protocole JSON lines reste le même, le transport dev
 .build/release/steno-audio --spike-transcribe ~/Desktop/s1/them.wav
 ```
 
-Critères : français lisible, noms techniques (ms-booking, APP-1234) compris ou corrigés par le
-vocabulaire, < 1 s par phrase sur Apple Silicon. Points à vérifier dans le code :
-`audio/StenoAudio/README.md` § « Points À VÉRIFIER » (API FluidAudio 0.18.x notamment).
+Criteria: readable French, technical names (ms-booking, APP-1234) understood or corrected by the
+vocabulary, < 1 s per sentence on Apple Silicon. Points to check in the code:
+`audio/StenoAudio/README.md` § « Points À VÉRIFIER » (notably the FluidAudio 0.18.x API).
 
 ## S3 — Agents
 
@@ -49,47 +49,47 @@ vocabulaire, < 1 s par phrase sur Apple Silicon. Points à vérifier dans le cod
 steno doctor --live
 ```
 
-1. Claude Code : `claude mcp list`, puis vérifier dans Sténo (Réglages → Connecteurs →
-   Rafraîchir) que les connecteurs du compte apparaissent et qu'une demande en direct peut les
-   utiliser en mode `-p`. Plan B si absents : `claude mcp add --transport http …`.
-2. Tenter un outil d'écriture : `doctor --live` demande à l'agent de poster sur Slack et de
-   créer un ticket ; aucun outil d'écriture ne doit apparaître dans `tools_used`.
-3. Codex : vérifier `codex exec --json`, `codex exec resume`, `-c mcp_servers={}`
-   (voir `docs/adapters.md`).
+1. Claude Code: `claude mcp list`, then check in Sténo (Réglages → Connecteurs →
+   Rafraîchir, i.e. Settings → Connectors → Refresh) that the account's connectors appear and that a live request can
+   use them in `-p` mode. Plan B if missing: `claude mcp add --transport http …`.
+2. Try a write tool: `doctor --live` asks the agent to post on Slack and to
+   create a ticket; no write tool may appear in `tools_used`.
+3. Codex: check `codex exec --json`, `codex exec resume`, `-c mcp_servers={}`
+   (see `docs/adapters.md`).
 
-Vérifié ici (`cargo test -p steno-cli --test acceptance`) avec `fixtures/fake-bin/claude`, qui
-imite `claude -p --output-format stream-json` et appelle le crochet déclaré dans `--settings` :
-- l'appel `mcp__slack__slack_send_message` est refusé par le crochet même si le connecteur
-  Slack est coché ; `git push` est refusé ; `rg` passe ;
-- une relance dans la même réunion reprend la session (`--resume <id>`) ;
-- « Poste ça sur Slack » est refusé localement, sans appel à l'agent.
+Verified here (`cargo test -p steno-cli --test acceptance`) with `fixtures/fake-bin/claude`, which
+mimics `claude -p --output-format stream-json` and calls the hook declared in `--settings`:
+- the `mcp__slack__slack_send_message` call is denied by the hook even if the Slack
+  connector is checked; `git push` is denied; `rg` goes through;
+- a follow-up in the same meeting resumes the session (`--resume <id>`);
+- « Poste ça sur Slack » ("Post this on Slack") is refused locally, without calling the agent.
 
-## S4 — Poste de travail
+## S4 — Workstation
 
-Sur le Mac professionnel : lancer Steno.app, accepter les trois demandes, puis `steno doctor`.
-Si « Audio du système » est refusé ou absent des Réglages Système (profil MDM) :
-**arrêter le projet sur ce poste et prévenir** (pas de contournement).
+On the work Mac: launch Steno.app, accept the three prompts, then `steno doctor`.
+If « Audio du système » ("System audio") is denied or missing from System Settings (MDM profile):
+**stop the project on this machine and report it** (no workaround).
 
-## S5 — Empreinte
+## S5 — Footprint
 
 ```bash
 make install && open ~/Applications/Steno.app
-# fenêtre fermée, pas de réunion, après 1 min :
-ps -o rss=,comm= -p $(pgrep -f Steno.app/Contents/MacOS) | awk '{s+=$1} END {print s/1024 " Mo"}'
+# window closed, no meeting, after 1 min:
+ps -o rss=,comm= -p $(pgrep -f Steno.app/Contents/MacOS) | awk '{s+=$1} END {print s/1024 " MB"}'
 ```
 
-Objectif : < 120 Mo au total (app + WebKit + sidecar), CPU < 1 %. Le sidecar au repos ne fait
-que surveiller Teams (un relevé toutes les 2 s) ; les modèles ne sont chargés qu'au `start`.
+Target: < 120 MB in total (app + WebKit + sidecar), CPU < 1%. At idle the sidecar only
+watches Teams (one check every 2 s); models are only loaded on `start`.
 
-## Fait dans cet environnement (Linux)
+## Done in this environment (Linux)
 
-- `cargo test --workspace --exclude steno-app` : 60+ tests unitaires + 4 tests d'acceptation
-  (§5.6 demandes sourcées / session / refus, §6.5 mot d'appel 18+/20 et 0 faux déclenchement,
-  §7.3 compte rendu et corrélation, exclusions, confidentialité).
-- Performance : recherche plein texte sur 500 réunions / 150 000 phrases : ~16 ms ; liste
-  filtrée : ~75 ms (`cargo test -p steno-core --release --test perf -- --ignored`).
-- `steno simulate fixtures/daily-45min.jsonl` : la daily de 45 min passe par tout le
-  pipeline (sidecar simulé → réunion → 2 commandes vocales → compte rendu).
-- App Tauri lancée sous Xvfb avec le vrai cœur, le sidecar simulé et le faux agent :
-  assistant, réunion en direct, demandes, compte rendu, corrélation vérifiés à l'écran.
-- UI : `npm run check` sans erreur, bundle ~104 Ko gzip (objectif < 300 Ko).
+- `cargo test --workspace --exclude steno-app`: 60+ unit tests + 4 acceptance tests
+  (§5.6 sourced requests / session / refusals, §6.5 wake word 18+/20 and 0 false triggers,
+  §7.3 report and correlation, exclusions, confidentiality).
+- Performance: full-text search over 500 meetings / 150,000 sentences: ~16 ms; filtered
+  list: ~75 ms (`cargo test -p steno-core --release --test perf -- --ignored`).
+- `steno simulate fixtures/daily-45min.jsonl`: the 45-min daily goes through the whole
+  pipeline (simulated sidecar → meeting → 2 voice commands → report).
+- Tauri app launched under Xvfb with the real core, the simulated sidecar and the fake agent:
+  wizard, live meeting, requests, report, correlation checked on screen.
+- UI: `npm run check` with no errors, bundle ~104 KB gzip (target < 300 KB).

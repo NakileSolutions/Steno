@@ -1,7 +1,7 @@
-name: Publication
+name: Release
 
-# Un tag vX.Y.Z (signé, poussé par un administrateur : tags protégés) publie la version sur
-# GitHub. Les apps Sténo installées la détectent et proposent la mise à jour.
+# A vX.Y.Z tag (signed, pushed by an administrator: tags are protected) publishes the release on
+# GitHub. Installed Sténo apps detect it and offer the update.
 on:
   push:
     tags: ["v*.*.*"]
@@ -11,16 +11,16 @@ permissions:
 
 jobs:
   release:
-    name: Publier la version
+    name: Publish the release
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: La version du tag correspond au code
+      - name: Tag version matches the code
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           CODE=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          test "$TAG" = "$CODE" || { echo "::error::tag v$TAG, mais Cargo.toml indique $CODE (scripts/bump-version.sh)"; exit 1; }
-      - name: Créer la version (notes générées depuis les pull requests)
+          test "$TAG" = "$CODE" || { echo "::error::tag v$TAG, but Cargo.toml says $CODE (scripts/bump-version.sh)"; exit 1; }
+      - name: Create the release (notes generated from pull requests)
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "Sténo ${GITHUB_REF_NAME#v}"
