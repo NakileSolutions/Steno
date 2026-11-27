@@ -573,6 +573,11 @@ test.describe('apps de visio', () => {
     await expect(live.getByRole('heading', { name: 'Huddle dans #equipe-flotte' })).toBeVisible();
     await expect(live.getByRole('meter', { name: 'Slack' })).toBeVisible();
     await live.getByRole('button', { name: 'Arrêter l’écoute' }).click();
+    // L'arrêt ouvre la page de la réunion : rédaction différée, « Rédiger maintenant ».
+    await expect(page.getByRole('heading', { name: /Rédaction du compte rendu dans/ })).toBeVisible();
+    await page.getByRole('button', { name: 'Rédiger maintenant' }).click();
+    await expect(page.locator('article.report')).toBeVisible({ timeout: 8000 });
+    await open(page, '/live');
     await expect(live.getByText('Appel Slack détecté : Huddle dans #equipe-flotte')).toBeVisible({ timeout: 8000 });
   });
 

@@ -154,7 +154,7 @@ export function normalizeLiveState(input: LiveState): LiveState {
 export const DEFAULT_CONSENT_MESSAGE =
   "Pour information : j\'utilise Scribe pour transcrire cette réunion et en préparer un compte rendu. La transcription reste sur mon ordinateur ; un assistant IA s\'en sert pour rédiger le compte rendu. Dites-le-moi si vous préférez que je ne transcrive pas.";
 
-export const DEFAULT_REPORT_SETTINGS = { default_template: 'standard', ask_context_on_stop: false, templates: [] };
+export const DEFAULT_REPORT_SETTINGS = { default_template: 'standard', ask_context_on_stop: false, context_delay_s: 60, templates: [] };
 
 export function normalizeSettings(input: Settings): Settings {
   let s = normalizeAgentSettings(input);

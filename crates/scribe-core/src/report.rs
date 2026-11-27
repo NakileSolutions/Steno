@@ -261,6 +261,68 @@ pub fn meeting_date(m: &Meeting) -> String {
 }
 
 /// Génère (ou régénère) le compte rendu d'une réunion.
+/// Marge laissée après une modification du contexte avant que la rédaction ne parte.
+pub const CONTEXT_EDIT_MARGIN_S: i64 = 30;
+
+fn to_utc(iso: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::parse_from_rfc3339(iso).ok().map(|d| d.with_timezone(&chrono::Utc))
+}
+
+fn utc_str(d: chrono::DateTime<chrono::Utc>) -> String {
+    d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+/// Heure de départ de la rédaction après la fin de la réunion : fin + délai de contexte, et au
+/// moins 30 s après la dernière modification du contexte. `None` = tout de suite.
+pub fn scheduled_start(inner: &Inner, m: &Meeting) -> Result<Option<String>> {
+    if inner.report_now.lock().unwrap().remove(&m.id) {
+        return Ok(None);
+    }
+    let delay = inner.settings().report.context_delay_s as i64;
+    if delay == 0 {
+        return Ok(None);
+    }
+    let now = chrono::Utc::now();
+    let mut start = m.ended_at.as_deref().and_then(to_utc).map(|e| e + chrono::Duration::seconds(delay));
+    if let Some(t) = inner.db.context_updated_at(&m.id)?.as_deref().and_then(to_utc) {
+        let t = t + chrono::Duration::seconds(CONTEXT_EDIT_MARGIN_S);
+        start = Some(start.map_or(t, |s| s.max(t)));
+    }
+    Ok(start.filter(|s| *s > now).map(utc_str))
+}
+
+/// Une modification du contexte repousse une rédaction encore en attente (au moins 30 s).
+pub fn context_touched(inner: &Inner, meeting_id: &str) -> Result<()> {
+    inner.db.touch_meeting_context(meeting_id)?;
+    if let Some(Some(at)) = inner.db.pending_job_start("report", meeting_id)? {
+        let min = crate::db::queries_utc_in(CONTEXT_EDIT_MARGIN_S);
+        if at < min {
+            inner.db.set_job_start("report", meeting_id, Some(&min))?;
+        }
+    }
+    Ok(())
+}
+
+/// Heure de départ prévue de la rédaction si elle attend encore (pour le compte à rebours).
+pub fn report_at(inner: &Inner, m: &Meeting) -> Result<Option<String>> {
+    if let Some(start) = inner.db.pending_job_start("report", &m.id)? {
+        return Ok(start.filter(|s| *s > crate::db::queries_utc_in(0)));
+    }
+    // Retranscription et diarisation en cours : la rédaction suivra au plus tôt à cette heure.
+    if inner.db.has_job("diarize", &m.id, &["pending", "running"])? && !inner.report_now.lock().unwrap().contains(&m.id) {
+        let delay = inner.settings().report.context_delay_s as i64;
+        if delay > 0 {
+            let mut start = m.ended_at.as_deref().and_then(to_utc).map(|e| e + chrono::Duration::seconds(delay));
+            if let Some(t) = inner.db.context_updated_at(&m.id)?.as_deref().and_then(to_utc) {
+                let t = t + chrono::Duration::seconds(CONTEXT_EDIT_MARGIN_S);
+                start = Some(start.map_or(t, |s| s.max(t)));
+            }
+            return Ok(start.filter(|s| *s > chrono::Utc::now()).map(utc_str));
+        }
+    }
+    Ok(None)
+}
+
 /// Contexte, documents et modèle de la réunion, pour la demande de compte rendu.
 pub fn report_context(inner: &Inner, meeting: &Meeting) -> Result<crate::prompts::ReportContext> {
     let c = inner.db.meeting_context(&meeting.id)?;

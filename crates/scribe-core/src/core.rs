@@ -34,6 +34,9 @@ pub struct Inner {
     pub hook_exe: Option<PathBuf>,
     pub jobs_notify: Notify,
     pub cancels: Mutex<HashMap<String, CancellationToken>>,
+    /// Réunions dont le compte rendu doit partir sans attendre (« Rédiger maintenant » cliqué
+    /// avant que la tâche de rédaction n'existe).
+    pub report_now: Mutex<std::collections::HashSet<String>>,
     meeting_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     agent_override: Option<Arc<dyn AgentAdapter>>,
     pub live_state: Mutex<LiveState>,
@@ -281,6 +284,7 @@ impl Core {
                 hook_exe: opts.hook_exe,
                 jobs_notify: Notify::new(),
                 cancels: Mutex::new(HashMap::new()),
+                report_now: Mutex::new(Default::default()),
                 meeting_locks: Mutex::new(HashMap::new()),
                 agent_override: opts.agent_override,
                 live_state: Mutex::new(LiveState::default()),
@@ -555,8 +559,10 @@ impl Core {
     // ---------- Contexte et documents ----------
 
     pub fn meeting_context(&self, id: &str) -> Result<crate::context::MeetingContext> {
-        self.inner.db.get_meeting(id)?.context("réunion introuvable")?;
-        self.inner.db.meeting_context(id)
+        let m = self.inner.db.get_meeting(id)?.context("réunion introuvable")?;
+        let mut c = self.inner.db.meeting_context(id)?;
+        c.report_at = crate::report::report_at(&self.inner, &m)?;
+        Ok(c)
     }
 
     /// Texte libre et modèle de compte rendu (`None` = modèle par défaut des réglages).
@@ -568,7 +574,8 @@ impl Core {
         }
         let (text, _) = crate::context::cap(text.trim(), crate::context::MAX_FILE_CHARS);
         self.inner.db.set_meeting_context(id, &text, template)?;
-        self.inner.db.meeting_context(id)
+        crate::report::context_touched(&self.inner, id)?;
+        self.meeting_context(id)
     }
 
     /// Joint un document (contenu en base64) : son texte est extrait et gardé en base.
@@ -586,11 +593,25 @@ impl Core {
             .context("contenu du fichier illisible (base64 attendu)")?;
         let (kind, text, truncated) = crate::context::extract(&name, &bytes)?;
         let fid = self.inner.db.add_context_file(id, &name, kind, bytes.len() as i64, &text, truncated)?;
+        crate::report::context_touched(&self.inner, id)?;
         self.inner.db.meeting_context(id)?.files.into_iter().find(|f| f.id == fid).context("document introuvable")
     }
 
     pub fn delete_context_file(&self, file_id: i64) -> Result<()> {
-        self.inner.db.delete_context_file(file_id)?;
+        if let Some(mid) = self.inner.db.delete_context_file(file_id)? {
+            crate::report::context_touched(&self.inner, &mid)?;
+        }
+        Ok(())
+    }
+
+    /// « Rédiger maintenant » : le compte rendu part sans attendre la fin du délai de contexte.
+    pub fn report_now(&self, id: &str) -> Result<()> {
+        self.inner.db.get_meeting(id)?.context("réunion introuvable")?;
+        if self.inner.db.set_job_start("report", id, None)? == 0 {
+            self.inner.report_now.lock().unwrap().insert(id.to_string());
+        }
+        self.inner.jobs_notify.notify_one();
+        self.inner.emit(CoreEvent::MeetingsChanged);
         Ok(())
     }
 

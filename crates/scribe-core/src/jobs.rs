@@ -304,7 +304,12 @@ async fn run_diarize(inner: &Inner, job: &Job) -> Result<()> {
     }
     // Le compte rendu suit toujours, diarisation réussie ou non.
     if !inner.db.has_job("report", &mid, &["pending", "running"])? {
-        inner.db.enqueue_job("report", Some(&mid), &serde_json::json!({}))?;
+        // Délai laissé pour ajouter contexte et documents (« Rédiger maintenant » le court-circuite).
+        let start = match inner.db.get_meeting(&mid)? {
+            Some(m) => crate::report::scheduled_start(inner, &m)?,
+            None => None,
+        };
+        inner.db.enqueue_job_at("report", Some(&mid), &serde_json::json!({}), start.as_deref())?;
         inner.jobs_notify.notify_one();
     }
     Ok(())

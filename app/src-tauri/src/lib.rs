@@ -237,6 +237,7 @@ pub fn run() {
             commands::add_context_file,
             commands::delete_context_file,
             commands::list_report_templates,
+            commands::report_now,
             commands::correlate,
             commands::export_meeting,
             commands::search,

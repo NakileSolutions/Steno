@@ -46,6 +46,15 @@
 </div>
 
 <div class="field">
+  <label class="field-label" for="rep-delay">Délai avant la rédaction<span class="hint">Temps laissé après la réunion pour ajouter contexte et documents. « Rédiger maintenant » le court-circuite.</span></label>
+  <div class="field-body">
+    <select id="rep-delay" class="input w" bind:value={settings.report.context_delay_s}>
+      {#each [[0, 'Aucun (rédaction immédiate)'], [30, '30 secondes'], [60, '1 minute'], [120, '2 minutes'], [300, '5 minutes']] as [v, l] (v)}<option value={v}>{l}</option>{/each}
+    </select>
+  </div>
+</div>
+
+<div class="field">
   <div class="field-label">À l’arrêt de l’écoute<span class="hint">Désactivé : l’arrêt se fait en un clic et le compte rendu part tout de suite. Le contexte peut s’ajouter pendant la réunion (bouton « Contexte ») ou sur la page de la réunion.</span></div>
   <div class="field-body">
     <label class="check toggle"><span>Proposer contexte, documents et format à l’arrêt</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.report.ask_context_on_stop} /></label>

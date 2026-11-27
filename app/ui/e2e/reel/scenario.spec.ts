@@ -63,9 +63,11 @@ test('réunion complète : écoute manuelle, demandes, compte rendu, corrélatio
   await live.getByRole('button', { name: 'Arrêter l’écoute' }).click();
   await expect(live.getByRole('button', { name: 'Arrêter l’écoute' })).toHaveCount(0);
 
-  // Compte rendu.
-  await openMeeting(page, /Daily ORION/);
+  // Compte rendu : la page de la réunion s'ouvre avec le délai laissé pour le contexte.
   const detail = page.getByRole('region', { name: 'Détail de la réunion' });
+  await expect(detail.getByRole('heading', { name: /Rédaction du compte rendu dans/ })).toBeVisible({ timeout: 30_000 });
+  await detail.getByRole('button', { name: 'Rédiger maintenant' }).click();
+  await openMeeting(page, /Daily ORION/);
   await expect(detail.getByTitle('Appel Teams')).toBeVisible();
   const report = detail.locator('article.report');
   await expect(report).toContainText('verrou de créneau', { timeout: 90_000 });

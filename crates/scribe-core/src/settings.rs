@@ -36,12 +36,15 @@ pub struct ReportSettings {
     /// Proposer d'ajouter du contexte quand on arrête l'écoute depuis la fenêtre (désactivé :
     /// l'arrêt reste en un clic, le contexte s'ajoute pendant la réunion ou sur sa page).
     pub ask_context_on_stop: bool,
+    /// Délai (s) entre la fin de la réunion et la rédaction, pour ajouter contexte et documents.
+    /// 0 = rédaction immédiate.
+    pub context_delay_s: u32,
     pub templates: Vec<CustomTemplate>,
 }
 
 impl Default for ReportSettings {
     fn default() -> Self {
-        ReportSettings { default_template: "standard".into(), ask_context_on_stop: false, templates: vec![] }
+        ReportSettings { default_template: "standard".into(), ask_context_on_stop: false, context_delay_s: 60, templates: vec![] }
     }
 }
 
@@ -501,6 +504,7 @@ impl Settings {
         if crate::report::template(&self, &self.report.default_template).is_none() {
             self.report.default_template = "standard".into();
         }
+        self.report.context_delay_s = self.report.context_delay_s.min(600);
         if !["auto", "light", "dark"].contains(&self.profile.theme.as_str()) {
             self.profile.theme = "auto".into();
         }

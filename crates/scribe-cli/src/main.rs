@@ -405,6 +405,10 @@ async fn simulate(file: PathBuf, speed: f64, timeout: u64) -> Result<()> {
             stopped = true;
             eprintln!("{seen_segments} segments reçus ; fin de la réunion.");
             let _ = core.stop_meeting().await;
+            // Simulation : pas de délai pour ajouter du contexte, le compte rendu part tout de suite.
+            if let Some(id) = &meeting {
+                let _ = core.report_now(id);
+            }
         }
         if stopped {
             let Some(id) = &meeting else { break };

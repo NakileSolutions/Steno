@@ -285,6 +285,7 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
                "theme": "auto" },  // auto | light | dark (thème natif de toutes les fenêtres)
   "report": { "default_template": "standard",   // format utilisé quand la réunion n'en choisit pas
               "ask_context_on_stop": false,      // fenêtre de contexte à l'arrêt (sinon arrêt en un clic)
+              "context_delay_s": 60,             // délai avant la rédaction pour ajouter du contexte (0 = immédiat)
               "templates": [ { "id": "perso-note-comex", "name": "Note COMEX", "instructions": "…" } ] }
 }
 ```
@@ -405,10 +406,11 @@ type Settings = /* section 4 */;
 | `update_note` | `id: number, text` | `null` |
 | `delete_note` | `id: number` | `null` |
 | `regenerate_report` | `id` | `null` |
-| `get_meeting_context` | `id` | `MeetingContext` `{meeting_id, text, template, files: ContextFile[]}` (sans le texte des documents) |
+| `get_meeting_context` | `id` | `MeetingContext` `{meeting_id, text, template, files: ContextFile[], report_at}` (sans le texte des documents ; `report_at` : heure UTC de départ de la rédaction si elle attend encore) |
 | `set_meeting_context` | `id, text, template?` | `MeetingContext` (`template` : identifiant d'un format, `null` = format par défaut des réglages) |
 | `add_context_file` | `id, name, data` (contenu en base64, 20 Mo max) | `ContextFile` `{id, meeting_id, name, kind, size, chars, truncated, added_at}` : texte extrait à l'ajout (PDF, xlsx/xls/ods, csv, docx/doc/rtf/odt/html via `textutil`, md/txt/json…), 60 000 caractères gardés |
-| `delete_context_file` | `fileId` | `null` |
+| `delete_context_file` | `fileId` | `null` (comme toute modification du contexte : repousse d'au moins 30 s une rédaction en attente) |
+| `report_now` | `id` | `null` : la rédaction part sans attendre la fin du délai de contexte |
 | `list_report_templates` | — | `Template[]` `{id, name, description, instructions, builtin}` : formats intégrés (`standard`, `daily`, `client`, `atelier`, `arbitrage`, `mail`, `slack`) puis formats perso (`report.templates`) |
 | `correlate` | `id` | `null` |
 | `export_meeting` | `id, format?: "markdown" \| "txt" \| "srt" \| "vtt"` | `string` (markdown complet par défaut ; `txt`/`srt`/`vtt` : transcription seule) |

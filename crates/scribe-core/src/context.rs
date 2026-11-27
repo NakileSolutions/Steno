@@ -62,6 +62,10 @@ pub struct MeetingContext {
     /// Modèle de compte rendu choisi (`None` = modèle par défaut des réglages).
     pub template: Option<String>,
     pub files: Vec<ContextFile>,
+    /// Heure (UTC) à laquelle la rédaction du compte rendu démarrera, si elle attend encore :
+    /// délai laissé après la réunion pour ajouter du contexte.
+    #[serde(default)]
+    pub report_at: Option<String>,
 }
 
 fn extension(name: &str) -> String {

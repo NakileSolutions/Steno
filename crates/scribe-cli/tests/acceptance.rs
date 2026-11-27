@@ -48,6 +48,10 @@ fn core(name: &str, sidecar: Option<SidecarSpec>) -> Core {
         CoreOptions { hook_exe: Some(PathBuf::from(env!("CARGO_BIN_EXE_scribe"))), sidecar, agent_override: None },
     )
     .unwrap();
+    // Compte rendu sans délai de contexte (testé à part dans `delai_de_contexte_avant_la_redaction`).
+    let mut s = c.settings();
+    s.report.context_delay_s = 0;
+    c.save_settings(s).unwrap();
     c.start_background();
     c
 }
@@ -558,5 +562,53 @@ async fn contexte_documents_et_format_du_compte_rendu() {
     // Document retiré : il ne figure plus dans la demande suivante.
     c.delete_context_file(f.id).unwrap();
     assert!(c.meeting_context(&m.id).unwrap().files.is_empty());
+    c.shutdown();
+}
+
+/// Délai laissé après la réunion pour ajouter du contexte : la rédaction attend, une modification
+/// la repousse, « Rédiger maintenant » la lance.
+#[tokio::test(flavor = "multi_thread")]
+async fn delai_de_contexte_avant_la_redaction() {
+    let c = core("delai", None);
+    let m = scribe_core::model::Meeting {
+        id: "delai-1".into(),
+        title: Some("Point délai".into()),
+        title_source: Some("user".into()),
+        started_at: scribe_core::now_iso(),
+        ended_at: Some(scribe_core::now_iso()),
+        status: "processing".into(),
+        confidential: false,
+        agent_provider: None,
+        agent_session_id: None,
+        correlation: Some("on_demand".into()),
+        call_app: None,
+    };
+    c.db().insert_meeting(&m).unwrap();
+    c.db()
+        .insert_segment(&scribe_core::db::NewSegment {
+            meeting_id: m.id.clone(),
+            ts: scribe_core::now_iso(),
+            t0: Some(1.0),
+            t1: Some(3.0),
+            channel: "me".into(),
+            speaker: "Moi".into(),
+            text: "On valide la refonte.".into(),
+            private: false,
+            is_echo: false,
+        })
+        .unwrap();
+    let start = scribe_core::db::queries_utc_in(20);
+    c.db().enqueue_job_at("report", Some(&m.id), &serde_json::json!({}), Some(&start)).unwrap();
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    assert!(c.db().get_report(&m.id).unwrap().is_none(), "la rédaction attend la fin du délai");
+    assert_eq!(c.meeting_context(&m.id).unwrap().report_at.as_deref(), Some(start.as_str()));
+    // Une modification du contexte repousse la rédaction d'au moins 30 s.
+    c.set_meeting_context(&m.id, "Refonte du module de tarification.", None).unwrap();
+    let pushed = c.meeting_context(&m.id).unwrap().report_at.unwrap();
+    assert!(pushed > start, "{pushed} > {start}");
+    // « Rédiger maintenant ».
+    c.report_now(&m.id).unwrap();
+    assert!(c.meeting_context(&m.id).unwrap().report_at.is_none());
+    wait_until("compte rendu", 30, || c.db().get_report(&m.id).unwrap().is_some()).await;
     c.shutdown();
 }

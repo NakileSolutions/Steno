@@ -251,6 +251,37 @@ export function createMockBackend(): Backend {
   };
   setInterval(segTimer, 2800);
 
+  /** Rédactions en attente (délai laissé pour ajouter du contexte), comme la file du cœur. */
+  const pendingReports = new Map<string, { at: number; timer: ReturnType<typeof setTimeout> }>();
+
+  function writeReport(store: MeetingStore) {
+    pendingReports.delete(store.meeting.id);
+    store.meeting.status = 'done';
+    store.reports.push({
+      meeting_id: store.meeting.id, version: store.reports.length + 1, correlated: false,
+      generated_at: iso(new Date()), provider: settings.agent.provider, model: null,
+      markdown: `# ${store.meeting.title ?? 'Réunion'}\n\n## En bref\n- ${store.segments.length} interventions transcrites.\n- Estimation des tickets APP-1255 et APP-1260.\n\n## Décisions\n- APP-1260 estimé à 3 points, avec la table de référence des modèles de vélos.\n\n## Actions — qui / quoi / échéance\n| Qui | Quoi | Échéance |\n|---|---|---|\n| Moi | Analyser APP-1262 (doublons de comptes) | cette semaine |`,
+    });
+    store.decisions.push({ id: nextIds.decision(), meeting_id: store.meeting.id, text: 'APP-1260 estimé à 3 points, avec la table de référence des modèles de vélos.', created_at: iso(new Date()) });
+    store.actions.push({ id: nextIds.action(), meeting_id: store.meeting.id, owner: 'Moi', text: 'Analyser APP-1262 (doublons de comptes)', due: null, status: 'open' });
+    emit('scribe://report', { meeting_id: store.meeting.id, version: store.reports.length });
+    emit('scribe://meetings', null);
+  }
+
+  function scheduleReport(store: MeetingStore, at: number) {
+    const prev = pendingReports.get(store.meeting.id);
+    if (prev) clearTimeout(prev.timer);
+    const timer = setTimeout(() => writeReport(store), Math.max(0, at - Date.now()));
+    pendingReports.set(store.meeting.id, { at, timer });
+  }
+
+  /** Une modification du contexte repousse une rédaction en attente d'au moins 30 s. */
+  function contextTouched(id: string) {
+    const p = pendingReports.get(id);
+    const store = meetings.find((x) => x.meeting.id === id);
+    if (p && store && p.at < Date.now() + 30_000) scheduleReport(store, Date.now() + 30_000);
+  }
+
   function finishMeeting(store: MeetingStore) {
     store.meeting.status = 'processing';
     store.meeting.ended_at = iso(new Date());
@@ -258,18 +289,9 @@ export function createMockBackend(): Backend {
     live.meeting = clone(store.meeting);
     emitLive();
     emit('scribe://meetings', null);
+    if (store.meeting.confidential) store.meeting.status = 'ended';
+    else scheduleReport(store, Date.now() + Math.max(3, settings.report?.context_delay_s ?? 0) * 1000);
     setTimeout(() => {
-      store.meeting.status = store.meeting.confidential ? 'ended' : 'done';
-      if (!store.meeting.confidential) {
-        store.reports.push({
-          meeting_id: store.meeting.id, version: store.reports.length + 1, correlated: false,
-          generated_at: iso(new Date()), provider: settings.agent.provider, model: null,
-          markdown: `# ${store.meeting.title ?? 'Réunion'}\n\n## En bref\n- ${store.segments.length} interventions transcrites.\n- Estimation des tickets APP-1255 et APP-1260.\n\n## Décisions\n- APP-1260 estimé à 3 points, avec la table de référence des modèles de vélos.\n\n## Actions — qui / quoi / échéance\n| Qui | Quoi | Échéance |\n|---|---|---|\n| Moi | Analyser APP-1262 (doublons de comptes) | cette semaine |`,
-        });
-        store.decisions.push({ id: nextIds.decision(), meeting_id: store.meeting.id, text: 'APP-1260 estimé à 3 points, avec la table de référence des modèles de vélos.', created_at: iso(new Date()) });
-        store.actions.push({ id: nextIds.action(), meeting_id: store.meeting.id, owner: 'Moi', text: 'Analyser APP-1262 (doublons de comptes)', due: null, status: 'open' });
-        emit('scribe://report', { meeting_id: store.meeting.id, version: store.reports.length });
-      }
       live.state = 'idle';
       live.meeting = null;
       live.aside = false;
@@ -807,14 +829,24 @@ export function createMockBackend(): Backend {
       return null;
     },
     complete_onboarding: () => null,
-    get_meeting_context: (a) => clone(ctxOf(String(a.id))),
+    get_meeting_context: (a) => {
+      const p = pendingReports.get(String(a.id));
+      return { ...clone(ctxOf(String(a.id))), report_at: p && p.at > Date.now() + 1000 ? new Date(p.at).toISOString() : null };
+    },
+    report_now: (a) => {
+      const store = find(String(a.id));
+      if (pendingReports.has(store.meeting.id)) scheduleReport(store, Date.now() + 800);
+      emit('scribe://meetings', null);
+      return null;
+    },
     set_meeting_context: (a) => {
       const c = ctxOf(String(a.id));
       const t = (a.template as string | null) || null;
       if (t && !templatesList().some((x) => x.id === t)) throw `Format de compte rendu inconnu : ${t}`;
       c.text = String(a.text ?? '').trim();
       c.template = t;
-      return clone(c);
+      contextTouched(c.meeting_id);
+      return handlers.get_meeting_context({ id: c.meeting_id });
     },
     add_context_file: (a) => {
       const c = ctxOf(String(a.id));
@@ -824,6 +856,7 @@ export function createMockBackend(): Backend {
       const size = Math.floor((String(a.data).length * 3) / 4);
       const f: ContextFile = { id: nextFileId++, meeting_id: c.meeting_id, name, kind, size, chars: Math.min(size, 60000), truncated: size > 60000, added_at: iso(new Date()) };
       c.files.push(f);
+      contextTouched(c.meeting_id);
       return clone(f);
     },
     delete_context_file: (a) => {

@@ -253,6 +253,8 @@ export const api = {
     call<ContextFile>('add_context_file', { id, name: file.name, data: await fileBase64(file) }),
   deleteContextFile: (fileId: number) => call<null>('delete_context_file', { fileId }),
   listReportTemplates: () => call<ReportTemplate[]>('list_report_templates'),
+  /** La rédaction du compte rendu part sans attendre la fin du délai de contexte. */
+  reportNow: (id: string) => call<null>('report_now', { id }),
   correlate: (id: string) => call<null>('correlate', { id }),
   exportMeeting: (id: string, format: 'markdown' | 'txt' | 'srt' | 'vtt' = 'markdown') =>
     call<string>('export_meeting', format === 'markdown' ? { id } : { id, format }),

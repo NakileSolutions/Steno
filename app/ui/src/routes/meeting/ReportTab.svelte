@@ -130,16 +130,52 @@
   // Contexte : résumé dans l'en-tête du panneau ; un changement invite à régénérer.
   let ctxSummary = $state('');
   let ctxDirty = $state(false);
+  // Délai avant la rédaction (pour ajouter du contexte) : compte à rebours et « Rédiger maintenant ».
+  let reportAt = $state<number | null>(null);
+  let nowMs = $state(Date.now());
+  const remaining = $derived(reportAt ? Math.max(0, Math.ceil((reportAt - nowMs) / 1000)) : 0);
+  const countdown = $derived(`${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`);
+  async function refreshSchedule() {
+    try {
+      const c = await api.getMeetingContext(m.id);
+      reportAt = c.report_at ? Date.parse(c.report_at) : null;
+    } catch {
+      reportAt = null;
+    }
+  }
+  $effect(() => {
+    if (!reportAt) return;
+    const t = setInterval(() => {
+      nowMs = Date.now();
+      if (reportAt && nowMs >= reportAt) refreshSchedule();
+    }, 1000);
+    return () => clearInterval(t);
+  });
+  async function writeNow() {
+    try {
+      await api.reportNow(m.id);
+      reportAt = null;
+    } catch (e) {
+      toastError(e);
+    }
+  }
   function onContext(c: MeetingContext, user = true) {
     const bits = [];
     if (c.text.trim()) bits.push('contexte');
     if (c.files.length) bits.push(`${c.files.length} document${c.files.length > 1 ? 's' : ''}`);
     if (c.template) bits.push('format choisi');
     ctxSummary = bits.join(' · ');
-    if (user) ctxDirty = true;
+    if (user) {
+      ctxDirty = !!current;
+      refreshSchedule();
+    }
   }
   $effect(() => {
-    api.getMeetingContext(m.id).then((c) => onContext(c, false)).catch(() => {});
+    api.getMeetingContext(m.id).then((c) => {
+      onContext(c, false);
+      reportAt = c.report_at ? Date.parse(c.report_at) : null;
+      nowMs = Date.now();
+    }).catch(() => {});
   });
   const decisions = $derived(parts?.decisions && !isEmptyBody(parts.decisions.body) ? parts.decisions : null);
   const mdActions = $derived(parts?.actions && !isEmptyBody(parts.actions.body) ? parts.actions : null);
@@ -300,6 +336,10 @@
       {:else if m.status === 'live'}
         <h2>Réunion en cours</h2>
         <p>Le compte rendu sera généré à la fin de la réunion.</p>
+      {:else if remaining > 0}
+        <h2>Rédaction du compte rendu dans <span class="tnum">{countdown}</span></h2>
+        <p>Vous pouvez encore ajouter du contexte, des documents ou choisir le format ci-dessous. Chaque modification laisse au moins 30 s de plus.</p>
+        <button class="btn primary" onclick={writeNow}>Rédiger maintenant</button>
       {:else if m.status === 'processing' || pending}
         <h2>Compte rendu en préparation…</h2>
         <p>Il apparaîtra ici dès qu’il sera prêt.</p>
@@ -311,7 +351,7 @@
     {#if !m.confidential}
       <section class="ctxempty">
         <h2 class="bh"><Icon name="paperclip" size={15} />Contexte, documents et format <span class="faint small">facultatif</span></h2>
-        {#if m.status === 'processing'}<p class="faint small hint">Ajouté avant la fin de la préparation, il est pris en compte ; sinon, régénérez le compte rendu ensuite.</p>{/if}
+        {#if m.status === 'processing' && remaining === 0}<p class="faint small hint">Ajouté avant la fin de la préparation, il est pris en compte ; sinon, régénérez le compte rendu ensuite.</p>{/if}
         <ContextEditor meetingId={m.id} onchange={(c) => onContext(c, false)} />
       </section>
     {/if}

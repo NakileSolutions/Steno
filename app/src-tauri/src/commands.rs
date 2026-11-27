@@ -167,6 +167,11 @@ pub fn delete_context_file(st: State<'_, AppState>, file_id: i64) -> R<()> {
 }
 
 #[tauri::command]
+pub fn report_now(st: State<'_, AppState>, id: String) -> R<()> {
+    st.core.report_now(&id).map_err(er)
+}
+
+#[tauri::command]
 pub fn list_report_templates(st: State<'_, AppState>) -> Vec<scribe_core::report::Template> {
     st.core.report_templates()
 }

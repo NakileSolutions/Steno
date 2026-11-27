@@ -3,6 +3,7 @@
 mod queries;
 
 pub use queries::NewSegment;
+pub use queries::utc_in as queries_utc_in;
 
 use anyhow::{Context, Result};
 use rusqlite::Connection;
@@ -14,6 +15,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/001_init.sql"),
     include_str!("migrations/002_call_app.sql"),
     include_str!("migrations/003_context.sql"),
+    include_str!("migrations/004_job_not_before.sql"),
 ];
 
 fn migrations() -> Migrations<'static> {

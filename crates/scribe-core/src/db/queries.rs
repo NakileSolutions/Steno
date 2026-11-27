@@ -3,6 +3,16 @@
 use super::Db;
 use crate::model::*;
 use crate::now_iso;
+
+/// Maintenant en UTC (RFC 3339, à la seconde) : comparable comme une chaîne.
+pub fn utc_now() -> String {
+    utc_in(0)
+}
+
+/// Dans `secs` secondes, en UTC (RFC 3339).
+pub fn utc_in(secs: i64) -> String {
+    (chrono::Utc::now() + chrono::Duration::seconds(secs)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
 use anyhow::Result;
 use rusqlite::{params, OptionalExtension, Row};
 
@@ -519,7 +529,27 @@ impl Db {
                     })
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
-            Ok(crate::context::MeetingContext { meeting_id: meeting_id.into(), text, template, files })
+            Ok(crate::context::MeetingContext { meeting_id: meeting_id.into(), text, template, files, report_at: None })
+        })
+    }
+
+    /// Dernière modification du contexte (texte, format ou documents), UTC.
+    pub fn touch_meeting_context(&self, meeting_id: &str) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "INSERT INTO meeting_context (meeting_id, text, updated_at) VALUES (?1,'',?2) \
+                 ON CONFLICT(meeting_id) DO UPDATE SET updated_at=excluded.updated_at",
+                params![meeting_id, utc_now()],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn context_updated_at(&self, meeting_id: &str) -> Result<Option<String>> {
+        self.with(|c| {
+            Ok(c.query_row("SELECT updated_at FROM meeting_context WHERE meeting_id=?1", [meeting_id], |r| r.get(0))
+                .optional()?
+                .flatten())
         })
     }
 
@@ -528,7 +558,7 @@ impl Db {
             c.execute(
                 "INSERT INTO meeting_context (meeting_id, text, template, updated_at) VALUES (?1,?2,?3,?4) \
                  ON CONFLICT(meeting_id) DO UPDATE SET text=excluded.text, template=excluded.template, updated_at=excluded.updated_at",
-                params![meeting_id, text, template, now_iso()],
+                params![meeting_id, text, template, utc_now()],
             )?;
             Ok(())
         })
@@ -1065,7 +1095,48 @@ impl Db {
         })
     }
 
-    /// Réserve la plus ancienne tâche en attente parmi les types donnés.
+    /// Tâche qui ne démarrera pas avant `not_before` (UTC, RFC 3339).
+    pub fn enqueue_job_at(
+        &self,
+        kind: &str,
+        meeting_id: Option<&str>,
+        payload: &serde_json::Value,
+        not_before: Option<&str>,
+    ) -> Result<i64> {
+        self.with(|c| {
+            c.execute(
+                "INSERT INTO jobs (type, meeting_id, payload, status, attempts, created_at, not_before) \
+                 VALUES (?1,?2,?3,'pending',0,?4,?5)",
+                params![kind, meeting_id, payload.to_string(), now_iso(), not_before],
+            )?;
+            Ok(c.last_insert_rowid())
+        })
+    }
+
+    /// Heure de départ d'une tâche en attente de ce type pour la réunion : `Some(None)` = dès que
+    /// possible, `None` = aucune tâche en attente.
+    pub fn pending_job_start(&self, kind: &str, meeting_id: &str) -> Result<Option<Option<String>>> {
+        self.with(|c| {
+            c.query_row(
+                "SELECT not_before FROM jobs WHERE type=?1 AND meeting_id=?2 AND status='pending' ORDER BY id LIMIT 1",
+                params![kind, meeting_id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()
+        })
+    }
+
+    /// Change l'heure de départ des tâches en attente de ce type pour la réunion.
+    pub fn set_job_start(&self, kind: &str, meeting_id: &str, not_before: Option<&str>) -> Result<usize> {
+        self.with(|c| {
+            Ok(c.execute(
+                "UPDATE jobs SET not_before=?3 WHERE type=?1 AND meeting_id=?2 AND status='pending'",
+                params![kind, meeting_id, not_before],
+            )?)
+        })
+    }
+
+    /// Réserve la plus ancienne tâche en attente parmi les types donnés (et dont l'heure est venue).
     pub fn claim_job(&self, kinds: &[&str]) -> Result<Option<Job>> {
         if kinds.is_empty() {
             return Ok(None);
@@ -1076,9 +1147,11 @@ impl Db {
                 .query_row(
                     &format!(
                         "SELECT id, type, meeting_id, payload, status, attempts, created_at, error FROM jobs \
-                         WHERE status='pending' AND type IN ({placeholders}) ORDER BY id LIMIT 1"
+                         WHERE status='pending' AND type IN ({placeholders}) \
+                         AND (not_before IS NULL OR not_before <= ?{n}) ORDER BY id LIMIT 1",
+                        n = kinds.len() + 1
                     ),
-                    rusqlite::params_from_iter(kinds.iter()),
+                    rusqlite::params_from_iter(kinds.iter().map(|k| k.to_string()).chain(std::iter::once(utc_now()))),
                     job_row,
                 )
                 .optional()?;

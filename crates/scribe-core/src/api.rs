@@ -21,6 +21,7 @@ pub const COMMANDS: &[&str] = &[
     "get_permissions", "request_permission", "open_permission_settings", "complete_onboarding",
     "delete_segment", "set_mic_muted", "save_export", "print_window", "pause_meeting", "resume_meeting",
     "get_meeting_context", "set_meeting_context", "add_context_file", "delete_context_file", "list_report_templates",
+    "report_now",
 ];
 
 struct Args(Value);
@@ -91,6 +92,7 @@ pub async fn dispatch(core: &Core, cmd: &str, args: Value) -> Result<Value, Stri
         "add_context_file" => ok(core.add_context_file(&a.s("id")?, &a.s("name")?, &a.s("data")?).map_err(e)?),
         "delete_context_file" => ok(core.delete_context_file(a.get("fileId")?).map_err(e)?),
         "list_report_templates" => ok(core.report_templates()),
+        "report_now" => ok(core.report_now(&a.s("id")?).map_err(e)?),
         "correlate" => ok(core.correlate(&a.s("id")?).map_err(e)?),
         "export_meeting" => {
             let format: Option<String> = a.opt("format")?;

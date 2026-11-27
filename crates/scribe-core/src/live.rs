@@ -381,12 +381,19 @@ impl Session {
         } else {
             let wav = crate::paths::cache_dir().join(&m.id).join(diarize_file(&fresh));
             let kind = if wav.exists() && self.sidecar.is_some() { "diarize" } else { "report" };
-            self.inner.db.enqueue_job(kind, Some(&m.id), &serde_json::json!({}))?;
+            let start = if kind == "report" { crate::report::scheduled_start(&self.inner, &fresh)? } else { None };
+            self.inner.db.enqueue_job_at(kind, Some(&m.id), &serde_json::json!({}), start.as_deref())?;
             self.inner.jobs_notify.notify_one();
+            let delay = self.inner.settings().report.context_delay_s;
+            let body = if delay > 0 {
+                format!("Compte rendu dans {} : cliquez pour ajouter du contexte ou des documents.", crate::text::human_delay(delay))
+            } else {
+                "Compte rendu en préparation…".into()
+            };
             self.inner.emit(CoreEvent::Notify {
                 title: "Réunion terminée".into(),
-                body: "Compte rendu en préparation…".into(),
-                route: None,
+                body,
+                route: Some(format!("/meetings/{}", m.id)),
             });
         }
         self.inner.emit(CoreEvent::MeetingsChanged);

@@ -318,7 +318,7 @@ export type Settings = {
 };
 
 export type CustomTemplate = { id: string; name: string; instructions: string };
-export type ReportSettings = { default_template: string; ask_context_on_stop: boolean; templates: CustomTemplate[] };
+export type ReportSettings = { default_template: string; ask_context_on_stop: boolean; context_delay_s: number; templates: CustomTemplate[] };
 
 /** Format de compte rendu : intégré (`builtin`) ou perso. */
 export type ReportTemplate = { id: string; name: string; description: string; instructions: string; builtin: boolean };
@@ -335,7 +335,14 @@ export type ContextFile = {
 };
 
 /** Contexte d'une réunion : texte libre, format choisi (`null` = défaut) et documents joints. */
-export type MeetingContext = { meeting_id: string; text: string; template: string | null; files: ContextFile[] };
+export type MeetingContext = {
+  meeting_id: string;
+  text: string;
+  template: string | null;
+  files: ContextFile[];
+  /** Heure (UTC) de départ de la rédaction si elle attend encore le délai de contexte. */
+  report_at?: string | null;
+};
 
 export type MeetingFilter = {
   query?: string;

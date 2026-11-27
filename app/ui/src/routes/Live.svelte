@@ -6,7 +6,7 @@
   import { isDeviceMissing, missingInputLabel } from '../lib/audio';
   import type { AudioDevice } from '../lib/types';
   import { prefs, stopHint } from '../lib/prefs.svelte';
-  import { href } from '../lib/router.svelte';
+  import { href, navigate } from '../lib/router.svelte';
   import type { Request, Segment, Speaker } from '../lib/types';
   import { clockDuration, timeS } from '../lib/format';
   import { insertChrono } from '../lib/group';
@@ -201,8 +201,11 @@
   }
   async function stop() {
     busy = true;
+    const id = meeting?.id;
     try {
       await api.stopMeeting();
+      // Page de la réunion : compte à rebours de la rédaction, contexte et documents à portée.
+      if (id) navigate(`/meetings/${id}`);
     } catch (e) {
       toastError(e);
     } finally {
