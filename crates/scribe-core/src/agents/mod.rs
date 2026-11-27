@@ -363,7 +363,15 @@ pub fn parse_model_list(out: &str) -> Vec<ModelInfo> {
         if !looks_like_id || v.iter().any(|m| m.id == id) {
             continue;
         }
-        let name = if rest.is_empty() { id.to_string() } else { rest.split('|').next().unwrap_or(rest).trim().to_string() };
+        // Une colonne technique (taille de contexte « 2M », « 256k », nombre) n'est pas un nom.
+        let first = rest.split_whitespace().next().unwrap_or("");
+        let technical = !first.is_empty()
+            && first.trim_end_matches(['k', 'K', 'm', 'M', 'b', 'B']).chars().all(|c| c.is_ascii_digit() || c == '.');
+        let name = if rest.is_empty() || technical {
+            id.to_string()
+        } else {
+            rest.split('|').next().unwrap_or(rest).trim().to_string()
+        };
         v.push(ModelInfo { id: id.to_string(), name, note: None });
     }
     v
@@ -412,6 +420,7 @@ mod tests {
         assert_eq!(v[0].name, "Gemini 4 Neon (XHigh)");
         let v = parse_model_list("MODEL       CONTEXT\ngrok-4.7    2M\ngrok-4.5    256k\n");
         assert_eq!(v.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), ["grok-4.7", "grok-4.5"]);
+        assert_eq!(v[0].name, "grok-4.7", "la taille de contexte n'est pas un nom");
     }
 
     #[test]
