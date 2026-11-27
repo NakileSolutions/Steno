@@ -164,7 +164,9 @@ fn textutil_text(name: &str, bytes: &[u8]) -> Result<String> {
     if !out.status.success() {
         bail!("document illisible ({})", String::from_utf8_lossy(&out.stderr).trim());
     }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    // textutil renders line breaks (RTF `\line`, ODT `<text:line-break/>`) as U+2028 and
+    // paragraph separators as U+2029: same plain newlines as the portable reader.
+    Ok(String::from_utf8_lossy(&out.stdout).replace(['\u{2028}', '\u{2029}'], "\n"))
 }
 
 /// Texte d'un document Word, RTF, ODT ou HTML. Sur macOS, `textutil` d'abord, puis la lecture
@@ -172,6 +174,11 @@ fn textutil_text(name: &str, bytes: &[u8]) -> Result<String> {
 fn document_text(name: &str, bytes: &[u8]) -> Result<String> {
     #[cfg(target_os = "macos")]
     {
+        // textutil reads any file as plain text: a docx or odt that is not a zip archive
+        // would come back as its raw bytes instead of an error.
+        if matches!(extension(name).as_str(), "docx" | "odt") && !bytes.starts_with(b"PK") {
+            return portable_document_text(name, bytes);
+        }
         textutil_text(name, bytes).or_else(|e| portable_document_text(name, bytes).map_err(|_| e))
     }
     #[cfg(not(target_os = "macos"))]
