@@ -64,14 +64,16 @@ lit, vous publiez.
 
 ```bash
 git clone https://github.com/NakileSolutions/Steno.git steno && cd steno
-make install     # compile le sidecar audio, l'interface et l'app, signature ad hoc,
+make install     # compile le sidecar audio, l'interface et l'app, signature locale,
                  # installe /Applications/Steno.app et la CLI ~/.local/bin/steno,
                  # télécharge les modèles audio
 open /Applications/Steno.app
 ```
 
-L'app est compilée sur votre Mac et signée **ad hoc** (pas de compte développeur Apple) :
-macOS ne la bloque pas puisqu'elle n'a pas été téléchargée. Pour l'installer ailleurs :
+L'app est compilée sur votre Mac, sans compte développeur Apple : macOS ne la bloque pas
+puisqu'elle n'a pas été téléchargée. Elle est signée avec un certificat local créé une fois
+dans votre trousseau (« Steno Local Signing »), pour que les autorisations macOS (micro, audio
+système…) soient conservées d'une mise à jour à l'autre. Pour l'installer ailleurs :
 `make install APP_DIR=~/Applications`.
 
 Au premier lancement, l'assistant vous guide : permissions macOS (micro, audio du système,

@@ -149,7 +149,13 @@ pub fn install_blocker(dir: Option<&Path>) -> Option<String> {
 
 impl Inner {
     pub fn update_status(&self) -> UpdateStatus {
-        self.update.lock().unwrap().clone()
+        self.localized_update(self.update.lock().unwrap().clone())
+    }
+
+    /// Message traduit dans la langue des réglages (l'état stocké reste en français).
+    fn localized_update(&self, mut st: UpdateStatus) -> UpdateStatus {
+        st.message = st.message.map(|m| crate::i18n_messages::localize(self.lang(), &m));
+        st
     }
 
     fn set_update(&self, f: impl FnOnce(&mut UpdateStatus)) {
@@ -158,7 +164,7 @@ impl Inner {
             f(&mut u);
             u.clone()
         };
-        self.emit(CoreEvent::Update(st));
+        self.emit(CoreEvent::Update(self.localized_update(st)));
     }
 }
 

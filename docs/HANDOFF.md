@@ -145,7 +145,7 @@ Sur Mac, pour les e2e : `cd app/ui && npx playwright install chromium` une fois.
 - Raccourcis globaux : ⌃⌥S, ⌃⌥Espace maintenu (aparté, avec événements appui et relâchement), ⌃⌥N.
 - Notifications macOS. Le clic sur une notification n'ouvre pas encore la réponse : `tauri-plugin-notification` ne gère pas l'action de clic sur desktop, et le champ `route` est prêt dans `CoreEvent::Notify`.
 - Dock : l'icône apparaît quand la fenêtre est ouverte et disparaît à la fermeture (`ActivationPolicy`).
-- Signature ad hoc : vérifier que les permissions TCC tiennent d'une compilation à l'autre (sinon, il faut les réaccorder après chaque `make install`).
+- Signature : `make install` signe avec l'identité locale « Steno Local Signing » (scripts/local-signing.sh) ; l'exigence de signature (identifiant + certificat) est stable, donc les permissions TCC tiennent d'une compilation à l'autre. Signée ad hoc, l'app les perdait à chaque compilation.
 - Retour sonore à la détection d'une commande (`afplay`) : ne doit jamais être injecté dans l'audio Teams.
 
 ### P2 — Fonctionnel à affiner

@@ -70,8 +70,14 @@ ifeq ($(UNAME),Darwin)
 	mkdir -p $(APP_DIR)
 	rm -rf "$(APP_DIR)/Steno.app"
 	cp -R target/release/bundle/macos/Steno.app "$(APP_DIR)/"
-	# Signature ad hoc (pas de compte développeur Apple) ; le sidecar est signé avec l'app.
-	codesign --force --deep --sign - "$(APP_DIR)/Steno.app"
+	# Signature avec l'identité locale « Steno Local Signing » (créée une fois dans le trousseau,
+	# voir scripts/local-signing.sh) : l'app garde la même identité d'une version à l'autre et
+	# macOS conserve ses autorisations. À défaut, signature ad hoc. Le sidecar est signé avec l'app.
+	@ID=$$(scripts/local-signing.sh 2>/dev/null) || ID=-; \
+	  codesign --force --deep --sign "$$ID" "$(APP_DIR)/Steno.app" 2>/dev/null \
+	    || { ID=-; codesign --force --deep --sign - "$(APP_DIR)/Steno.app"; }; \
+	  if [ "$$ID" = "-" ]; then echo "Signature ad hoc (macOS redemandera les autorisations après chaque mise à jour)."; \
+	  else echo "Signé avec « $$ID » : les autorisations sont conservées d'une version à l'autre."; fi
 endif
 	mkdir -p $(BIN_DIR)
 	cp target/release/steno $(BIN_DIR)/steno

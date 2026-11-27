@@ -4,14 +4,13 @@ members = ["crates/steno-core", "crates/steno-cli", "app/src-tauri"]
 default-members = ["crates/steno-core", "crates/steno-cli", "app/src-tauri"]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 license = "MIT"
 publish = false
 
 [workspace.dependencies]
 anyhow = "1"
-thiserror = "2"
 async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"

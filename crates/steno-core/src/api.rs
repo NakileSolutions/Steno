@@ -51,8 +51,12 @@ fn e(err: anyhow::Error) -> String {
     format!("{err:#}")
 }
 
-/// Exécute une commande. Erreur = message en français.
+/// Exécute une commande. Erreur = message dans la langue des réglages.
 pub async fn dispatch(core: &Core, cmd: &str, args: Value) -> Result<Value, String> {
+    run(core, cmd, args).await.map_err(|m| crate::i18n_messages::localize(core.settings().lang(), &m))
+}
+
+async fn run(core: &Core, cmd: &str, args: Value) -> Result<Value, String> {
     let a = Args(if args.is_null() { json!({}) } else { args });
     let db = core.db();
     match cmd {
@@ -230,10 +234,11 @@ mod tests {
                 continue;
             }
             if let Err(m) = dispatch(&core, c, json!({})).await {
-                assert!(!m.contains("commande inconnue"), "{c} : {m}");
+                assert!(!m.contains("commande inconnue") && !m.contains("unknown command"), "{c} : {m}");
             }
         }
-        assert!(dispatch(&core, "nope", json!({})).await.unwrap_err().contains("inconnue"));
+        let unknown = dispatch(&core, "nope", json!({})).await.unwrap_err();
+        assert!(unknown.contains("inconnue") || unknown.contains("unknown command"), "{unknown}");
         let s = dispatch(&core, "get_settings", Value::Null).await.unwrap();
         assert_eq!(s["voice"]["wake_word"], "Sténo");
         let d = dispatch(&core, "wake_detect", json!({"text": "Sténo, arrête l'écoute"})).await.unwrap();
