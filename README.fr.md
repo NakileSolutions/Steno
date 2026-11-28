@@ -220,7 +220,7 @@ Les contributions sont bienvenues : ouvrez une issue pour en discuter avant une 
 modification, et lancez `make test` avant de proposer une pull request. La branche `main`
 n'accepte que des pull requests dont la CI est verte et dont les commits sont **signés**
 (GPG ou SSH). Le code, les commits, les pull requests et la documentation technique sont en
-**anglais**. Règles du projet, y compris pour les agents de développement (Claude Code,
+**anglais**. Comment contribuer : [`CONTRIBUTING.md`](CONTRIBUTING.md) (en anglais). Règles du projet, y compris pour les agents de développement (Claude Code,
 Codex…) : [`AGENTS.md`](AGENTS.md). Publication d'une version : [`RELEASING.md`](RELEASING.md).
 
 ## Contributeurs

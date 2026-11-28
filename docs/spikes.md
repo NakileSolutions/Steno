@@ -5,11 +5,15 @@
 > down). Spikes S1 to S5 **still have to be run on a Mac**: they are blocking before any real
 > use. The detailed sidecar procedures are in `audio/StenoAudio/README.md`.
 
+> **Update (November 2026)**: the Swift sidecar now builds on a Mac and its unit tests pass
+> (`swift test`). The S1–S5 statuses below are from the original Linux-only environment;
+> the maintainer updates them as real-call checks are done.
+
 ## Summary
 
 | Spike | Status | What was done here | What remains to do on the Mac |
 |---|---|---|---|
-| S1 Capture | ⏳ to do | Swift sidecar written (process tap on the whole Teams tree, AVAudioEngine + voice processing, `--spike-record`); **not compiled** (no Swift toolchain here) | Compile, record `me.wav` + `them.wav` during a real call, **launched from Steno.app** |
+| S1 Capture | ⏳ to do | Swift sidecar written (process tap on the whole Teams tree, AVAudioEngine + voice processing, `--spike-record`); now builds on a Mac, `swift test` green | Compile, record `me.wav` + `them.wav` during a real call, **launched from Steno.app** |
 | S2 ASR | ⏳ to do | FluidAudio integration (Parakeet TDT v3, Silero VAD) behind a protocol; `--spike-transcribe` | Measure French quality and latency (< 1 s per sentence); compare WhisperKit if needed |
 | S3 Agents | 🟡 partly | `claude` 2.1.332 options checked (`--help`); read-only policy tested end to end with a fake `claude` that actually calls the hook | `steno doctor --live` with the real Claude Code then Codex: MCP visible in `-p`, writes denied |
 | S4 Workstation | ⏳ to do | `steno doctor` shows the permission state reported by the sidecar and the steps to follow | Grant microphone, system audio, accessibility on the work Mac; if MDM blocks it: **stop and report** |
