@@ -34,6 +34,9 @@ fn env() -> &'static PathBuf {
             std::env::set_var("FAKE_CLAUDE_PROMPTS", home.join("fake-claude-prompts.log"));
             std::env::set_var("FAKE_AGY_LOG", home.join("fake-agy.log"));
             std::env::set_var("FAKE_GROK_LOG", home.join("fake-grok.log"));
+            std::env::set_var("FAKE_CODEX_LOG", home.join("fake-codex.log"));
+            // Codex models come from `$CODEX_HOME/config.toml`, never from the real `~/.codex`.
+            std::env::set_var("CODEX_HOME", home.join("codex-home"));
             std::env::remove_var("ANTHROPIC_API_KEY");
         }
         home
@@ -501,6 +504,59 @@ async fn agent_modele_et_reflexion_par_usage() {
     let last: Vec<String> = serde_json::from_str(log.lines().last().unwrap()).unwrap();
     let joined = last.join(" ");
     assert!(joined.contains("--model gemini-4-neon-xhigh") && joined.contains("--effort max"), "{joined}");
+    assert!(c.db().actions(&m.id).unwrap().iter().any(|a| a.owner.as_deref() == Some("Marie")));
+    c.shutdown();
+}
+
+/// Last argument list logged by the fake `codex` that contains `needle`.
+fn last_codex_call(needle: &str) -> String {
+    let log = std::fs::read_to_string(env().join("fake-codex.log")).unwrap();
+    log.lines()
+        .rev()
+        .map(|l| serde_json::from_str::<Vec<String>>(l).unwrap().join(" "))
+        .find(|l| l.contains(needle))
+        .unwrap_or_else(|| panic!("no fake codex call with {needle:?} in:\n{log}"))
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn codex_agent_runs_read_only_with_its_model_and_effort() {
+    use steno_core::settings::TierChoice;
+    let home = env().join("codex-home");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(home.join("config.toml"), "model = \"gpt-x\"\n[profiles.fast]\nmodel = \"gpt-y\"\n").unwrap();
+    let c = core("codex", None);
+    let mut s = c.settings();
+    s.agent.tiers.search = TierChoice { agent: "codex".into(), model: "gpt-x".into(), effort: "high".into() };
+    s.agent.tiers.summary = TierChoice { agent: "codex".into(), model: "gpt-y".into(), effort: "low".into() };
+    c.save_settings(s).unwrap();
+
+    // Detection and models read from the fake CLI and its config.
+    let agents = c.detect_agents().await;
+    let codex = agents.iter().find(|a| a.id == "codex").unwrap();
+    assert!(codex.installed, "{codex:?}");
+    let models: Vec<String> = c.list_models("codex").await.unwrap().into_iter().map(|m| m.id).collect();
+    assert_eq!(models, ["gpt-x", "gpt-y"]);
+
+    // Search → Codex: read-only sandbox, MCP servers neutralised, model and effort passed.
+    let m = c.start_meeting(Some("Point tarifs".into())).await.unwrap();
+    let r = c.ask("où est géré le verrou de créneau ?", None, "text").unwrap();
+    let r = wait_request(&c, &r.id).await;
+    assert_eq!(r.status, "done", "{:?}", r.error);
+    assert!(r.answer_md.unwrap().contains("(codex)"));
+    let call = last_codex_call("-m gpt-x");
+    assert!(call.starts_with("exec "), "{call}");
+    assert!(call.contains("--sandbox read-only") && call.contains("mcp_servers={}"), "{call}");
+    assert!(call.contains("model_reasoning_effort=\"high\""), "{call}");
+
+    // Report → Codex, parsed from the last message file.
+    c.add_note(&m.id, "Marie corrige le APP-1234").unwrap();
+    c.stop_meeting().await.unwrap();
+    wait_until("compte rendu", 60, || c.db().get_meeting(&m.id).unwrap().unwrap().status == "done").await;
+    let rep = c.db().get_report(&m.id).unwrap().unwrap();
+    assert!(rep.markdown.contains("Compte rendu factice (codex)"), "{}", rep.markdown);
+    assert_eq!(rep.provider.as_deref(), Some("codex"));
+    let call = last_codex_call("-m gpt-y");
+    assert!(call.contains("model_reasoning_effort=\"low\""), "{call}");
     assert!(c.db().actions(&m.id).unwrap().iter().any(|a| a.owner.as_deref() == Some("Marie")));
     c.shutdown();
 }
