@@ -73,13 +73,27 @@ enum CalendarReader {
         }
     }
 
+    /// Events worth listing: not all-day, not cancelled by the organizer.
+    static func listed(allDay: Bool, status: EKEventStatus) -> Bool {
+        !allDay && status != .canceled
+    }
+
+    /// Event id, unique per occurrence. Every occurrence of a recurring event shares the same
+    /// EventKit identifiers, so the occurrence's original start (Unix seconds, unchanged when
+    /// that occurrence is moved) is appended, like the Linux sidecar does (`<uid>-<start>`).
+    /// One-off events keep their identifier as is.
+    static func eventId(external: String?, local: String?, recurring: Bool, occurrence: Date) -> String {
+        let base = external ?? local ?? UUID().uuidString
+        return recurring ? "\(base)-\(Int(occurrence.timeIntervalSince1970))" : base
+    }
+
     /// Événements entre `from` et `to` (hors journées entières), triés par début.
     static func events(from: Date, to: Date) -> [CalendarEvent] {
         guard status() == .granted else { return [] }
         store.refreshSourcesIfNecessary()
         let predicate = store.predicateForEvents(withStart: from, end: to, calendars: nil)
         return store.events(matching: predicate)
-            .filter { !$0.isAllDay }
+            .filter { listed(allDay: $0.isAllDay, status: $0.status) }
             .sorted { $0.startDate < $1.startDate }
             .prefix(200)
             .map { ev in
@@ -94,7 +108,9 @@ enum CalendarReader {
                     )
                 }
                 return CalendarEvent(
-                    id: ev.calendarItemExternalIdentifier ?? ev.eventIdentifier ?? UUID().uuidString,
+                    id: eventId(external: ev.calendarItemExternalIdentifier, local: ev.eventIdentifier,
+                                recurring: ev.hasRecurrenceRules || ev.isDetached,
+                                occurrence: ev.occurrenceDate ?? ev.startDate),
                     title: ev.title ?? "",
                     start: Timestamp.iso8601(ev.startDate),
                     end: Timestamp.iso8601(ev.endDate),
