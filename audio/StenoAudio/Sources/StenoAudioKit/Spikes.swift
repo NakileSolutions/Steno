@@ -245,7 +245,7 @@ enum Spikes {
         print("VAD : \(vadName)\(vadName == "silero" ? "" : " (Silero indisponible, repli)")")
         await models.unload()
         do {
-            _ = try await models.diarizer()
+            _ = try await models.diarizer(captureRunning: false)
             await models.releaseDiarizer()
             print("Diarisation : OK")
         } catch {
@@ -254,7 +254,7 @@ enum Spikes {
         }
         // Retranscription de fin de réunion : facultative, un échec ne bloque pas l'installation.
         do {
-            _ = try await models.finalRecognizer(language: "fr")
+            _ = try await models.finalRecognizer(language: "fr", captureRunning: false)
             print("Retranscription (Canary) : OK")
         } catch {
             print("Retranscription (Canary) : indisponible — \(error) (téléchargée à la première réunion)")

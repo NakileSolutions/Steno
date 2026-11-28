@@ -93,11 +93,8 @@ actor SpeechModels {
     /// Frees the ASR, VAD and diarization models (end of listening): memory goes back to its
     /// idle level. A diarization already running keeps its own reference until it ends.
     func unload() {
-        recognizerTask = nil
-        vadTask = nil
+        releaseLiveModels()
         diarizerInstance = nil
-        recognizerFailed = false
-        failureReported = false
     }
 
     /// Libère les modèles de diarisation (après usage).
@@ -138,15 +135,23 @@ actor SpeechModels {
         return EnergyVAD()
     }
 
-    /// Modèle de retranscription (chargé à la demande, jamais gardé : il pèse ~1 Go).
-    func finalRecognizer(language: String) async throws -> FinalRecognizer {
+    /// Retranscription model (loaded on demand, never kept: it weighs ~1 GB).
+    ///
+    /// `captureRunning: false` frees the live ASR and VAD models first. Right after `stop`, the
+    /// core starts the retranscription at once, while the deferred `unload()` of the end of
+    /// listening may not have run yet: both models would otherwise sit in memory together.
+    func finalRecognizer(language: String, captureRunning: Bool) async throws -> FinalRecognizer {
+        if !captureRunning { releaseLiveModels() }
         let started = Date()
         let r = try await backend.loadFinalRecognizer(language: language)
         Log.info("modèle de retranscription \(r.name) prêt en \(String(format: "%.1f", Date().timeIntervalSince(started))) s")
         return r
     }
 
-    func diarizer() async throws -> SpeakerDiarizer {
+    /// Diarization models, kept until `releaseDiarizer()` or `unload()`. `captureRunning: false`
+    /// frees the live ASR and VAD models first, as for `finalRecognizer`.
+    func diarizer(captureRunning: Bool) async throws -> SpeakerDiarizer {
+        if !captureRunning { releaseLiveModels() }
         if let diarizerInstance { return diarizerInstance }
         let d = try await backend.loadDiarizer()
         diarizerInstance = d
@@ -154,6 +159,15 @@ actor SpeechModels {
     }
 
     // MARK: Interne
+
+    /// Frees the live ASR and VAD models (not the diarizer). A capture that already holds
+    /// them keeps its own references; the next one loads them again.
+    private func releaseLiveModels() {
+        recognizerTask = nil
+        vadTask = nil
+        recognizerFailed = false
+        failureReported = false
+    }
 
     private func startRecognizerLoad() -> Task<SpeechRecognizer, Error> {
         if let recognizerTask { return recognizerTask }
