@@ -77,10 +77,13 @@ jobs:
             libpulse-dev clang libclang-dev
       - name: rustfmt
         run: cargo fmt --all --check
+      # clippy still runs when rustfmt fails, so one run reports both.
       - name: UI build (the Tauri app embeds app/ui/dist)
+        if: ${{ !cancelled() }}
         working-directory: app/ui
         run: npm ci && npm run build
       - name: clippy
+        if: ${{ !cancelled() }}
         run: make sidecar-placeholder && cargo clippy --workspace --all-targets -- -D warnings
 
   deb:
