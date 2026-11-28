@@ -186,6 +186,15 @@ pub fn slugify(s: &str) -> String {
     out.chars().take(40).collect::<String>().trim_matches('-').to_string()
 }
 
+/// Délai lisible : « 45 s », « 1 min », « 1 min 30 ».
+pub fn human_delay(secs: u32) -> String {
+    match (secs / 60, secs % 60) {
+        (0, s) => format!("{s} s"),
+        (m, 0) => format!("{m} min"),
+        (m, s) => format!("{m} min {s:02}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -227,14 +236,5 @@ mod tests {
     fn slug() {
         assert_eq!(slugify("Daily ORION"), "daily-orion");
         assert_eq!(slugify("Point RH : 1:1 / Équipe"), "point-rh-1-1-equipe");
-    }
-}
-
-/// Délai lisible : « 45 s », « 1 min », « 1 min 30 ».
-pub fn human_delay(secs: u32) -> String {
-    match (secs / 60, secs % 60) {
-        (0, s) => format!("{s} s"),
-        (m, 0) => format!("{m} min"),
-        (m, s) => format!("{m} min {s:02}"),
     }
 }

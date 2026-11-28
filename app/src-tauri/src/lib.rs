@@ -429,6 +429,17 @@ pub fn run() {
         });
 }
 
+/// Apparence de toutes les fenêtres : `light`, `dark`, ou `auto` (suit macOS). Le thème
+/// natif de la fenêtre pilote aussi `prefers-color-scheme` dans la vue web.
+pub fn apply_theme(app: &tauri::AppHandle, theme: &str) {
+    let t = match theme {
+        "light" => Some(tauri::Theme::Light),
+        "dark" => Some(tauri::Theme::Dark),
+        _ => None,
+    };
+    app.set_theme(t);
+}
+
 #[cfg(test)]
 mod tests {
     /// L'app expose exactement les commandes du contrat (même liste que `steno serve`).
@@ -455,15 +466,4 @@ mod tests {
         assert!(super::feedback_enabled("headset"));
         assert!(super::feedback_enabled("system"));
     }
-}
-
-/// Apparence de toutes les fenêtres : `light`, `dark`, ou `auto` (suit macOS). Le thème
-/// natif de la fenêtre pilote aussi `prefers-color-scheme` dans la vue web.
-pub fn apply_theme(app: &tauri::AppHandle, theme: &str) {
-    let t = match theme {
-        "light" => Some(tauri::Theme::Light),
-        "dark" => Some(tauri::Theme::Dark),
-        _ => None,
-    };
-    app.set_theme(t);
 }

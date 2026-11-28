@@ -652,8 +652,7 @@ async fn contexte_documents_et_format_du_compte_rendu() {
     let last: String = prompts
         .lines()
         .filter_map(|l| serde_json::from_str::<String>(l).ok())
-        .filter(|p| p.contains("Point Nova"))
-        .last()
+        .rfind(|p| p.contains("Point Nova"))
         .expect("demande de compte rendu");
     assert!(last.contains("Réunion Nova : surveiller la TVA."));
     assert!(last.contains("Document « regles-tva.md »") && last.contains("TVA à 19 %"));
@@ -752,8 +751,7 @@ async fn reunion_prevue_reprise_et_participants() {
     let last: String = prompts
         .lines()
         .filter_map(|l| serde_json::from_str::<String>(l).ok())
-        .filter(|p| p.contains("Compte rendu à rédiger") && p.contains("Revue Nova"))
-        .last()
+        .rfind(|p| p.contains("Compte rendu à rédiger") && p.contains("Revue Nova"))
         .expect("demande de compte rendu");
     assert!(last.contains("## Participants invités") && last.contains("- Inès Martin") && last.contains("- Paul Durand"));
     assert!(last.contains("Revue de la v2 de Nova."));
