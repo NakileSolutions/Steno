@@ -176,12 +176,14 @@ async fn wait_request(core: &Core, id: &str, timeout: u64) -> Result<steno_core:
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cli = Cli::parse();
-    if let Cmd::PolicyHook { policy } = &cli.cmd {
-        let mut input = String::new();
-        std::io::Read::read_to_string(&mut std::io::stdin(), &mut input)?;
-        std::process::exit(steno_core::policy::hook_main(policy, &input));
+    // Policy hook: handled before any argument parsing, and always fail-closed (code 2 on
+    // any error, never 1).
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    if args.get(1).map(|a| a == "policy-hook").unwrap_or(false) {
+        let policy = args.get(2).map(PathBuf::from).unwrap_or_default();
+        std::process::exit(steno_core::policy::hook_entry(&policy));
     }
+    let cli = Cli::parse();
     if let Cmd::Replay { file, speed, exit } = &cli.cmd {
         return replay::run(file, *speed, *exit);
     }
@@ -309,8 +311,12 @@ async fn main() -> Result<()> {
             }
         }
         Cmd::Mcp => {
-            steno_core::paths::ensure_dirs()?;
-            mcp::serve(Db::open_default()?)?;
+            // Read-only: no migration, no database creation, no write.
+            let path = steno_core::paths::db_path();
+            if !path.exists() {
+                bail!("base Sténo introuvable ({}) : lancez Sténo une première fois", path.display());
+            }
+            mcp::serve(Db::open_read_only(&path)?)?;
         }
         Cmd::Skill { action } => {
             let st = match action {

@@ -167,11 +167,13 @@ Agent → "Sténo in your agent"). The skill is copied to `~/.claude/skills` and
 - **Only text is sent, and only to the AI agent you chose**: when you ask, at the end of the
   meeting for the summary, and for correlation if you enable it. It is processed under that
   agent vendor's terms.
-- **Confidential meeting**: no AI call at all. Meetings whose title contains "1:1", "RH",
-  "entretien" or "perso" are never correlated (configurable).
-- **Asides** (held shortcut) are excluded from the summary and from search.
-- **The agent only reads** and does not receive the environment's API keys, unless explicitly
-  enabled.
+- **Confidential meeting**: no AI call at all, and it is left out of questions about past
+  meetings and of `steno mcp`. Meetings whose title contains "1:1", "RH", "entretien" or
+  "perso" are never correlated (configurable).
+- **Asides** (held shortcut) are excluded from the summary, the export, search, `steno mcp` and
+  notifications.
+- **The agent only reads** and does not receive the environment's API keys that would switch it
+  from your subscription to API billing, unless explicitly enabled.
 - **Tell participants** the meeting is being transcribed: Sténo offers a message ready to paste
   into the call chat (in the interface language until you edit it). Depending on your country and context, their consent may be required
   (GDPR in Europe).

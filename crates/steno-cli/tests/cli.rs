@@ -152,15 +152,40 @@ fn crochet_de_politique() {
     });
     let pf = dir.join("p.json");
     std::fs::write(&pf, pol.to_string()).unwrap();
-    let run = |call: serde_json::Value| -> (i32, String) {
-        let mut c = steno(h).args(["policy-hook", pf.to_str().unwrap()]).stdin(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
-        c.stdin.take().unwrap().write_all(call.to_string().as_bytes()).unwrap();
-        let mut err = String::new();
+    let run_raw = |policy: &Path, input: &str| -> (i32, String, String) {
+        let mut c = steno(h)
+            .args(["policy-hook", policy.to_str().unwrap()])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        c.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+        let (mut out, mut err) = (String::new(), String::new());
+        c.stdout.take().unwrap().read_to_string(&mut out).unwrap();
         c.stderr.take().unwrap().read_to_string(&mut err).unwrap();
-        (c.wait().unwrap().code().unwrap(), err)
+        (c.wait().unwrap().code().unwrap(), out, err)
+    };
+    let run = |call: serde_json::Value| -> (i32, String) {
+        let (code, _, err) = run_raw(&pf, &call.to_string());
+        (code, err)
     };
     let cwd = dir.display().to_string();
-    assert_eq!(run(serde_json::json!({"tool_name":"Bash","tool_input":{"command":"rg -n creneau"},"cwd":cwd})).0, 0);
+    let (code, out, _) = run_raw(&pf, &serde_json::json!({"tool_name":"Bash","tool_input":{"command":"rg -n creneau"},"cwd":cwd}).to_string());
+    assert_eq!((code, out.as_str()), (0, ""), "allowed: code 0, nothing on standard output");
+    for cmd in ["git log -p", "git diff", "grep -A2 -rn creneau .", "ls | grep x", "rg -o 'APP-[0-9]+'"] {
+        assert_eq!(run(serde_json::json!({"tool_name":"Bash","tool_input":{"command":cmd},"cwd":cwd})).0, 0, "{cmd}");
+    }
+    // Any error is a blocking denial (code 2), never a code the agent would ignore.
+    assert_eq!(run_raw(&dir.join("absente.json"), "{}").0, 2);
+    assert_eq!(run_raw(&pf, "not json").0, 2);
+    for cmd in ["git push", "rg --pre=sh x", "find . -delete", "rg x | sort -o y"] {
+        assert_eq!(run(serde_json::json!({"tool_name":"Bash","tool_input":{"command":cmd},"cwd":cwd})).0, 2, "{cmd}");
+    }
+    let mut c = steno(h).arg("policy-hook").stdin(Stdio::null()).status().unwrap();
+    assert_eq!(c.code(), Some(2), "no policy file");
+    c = steno(h).args(["policy-hook", pf.to_str().unwrap()]).stdin(Stdio::null()).status().unwrap();
+    assert_eq!(c.code(), Some(2), "empty input");
     assert_eq!(run(serde_json::json!({"tool_name":"mcp__atlassian__getJiraIssue","tool_input":{},"cwd":cwd})).0, 0);
     let (code, err) = run(serde_json::json!({"tool_name":"mcp__slack__slack_send_message","tool_input":{},"cwd":cwd}));
     assert_eq!(code, 2);
@@ -193,11 +218,16 @@ fn reglages_d_equipe_sans_donnees_perso() {
 
 /// Requête HTTP minimale (pas de dépendance) sur 127.0.0.1.
 fn http(port: u16, method: &str, path: &str, body: &str) -> (u16, String) {
+    http_with(port, method, path, "Host: localhost\r\nContent-Type: application/json\r\n", body)
+}
+
+/// HTTP request with chosen headers (each ending with `\r\n`).
+fn http_with(port: u16, method: &str, path: &str, headers: &str, body: &str) -> (u16, String) {
     let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
     s.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
     write!(
         s,
-        "{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "{method} {path} HTTP/1.1\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     )
     .unwrap();
@@ -252,6 +282,12 @@ fn serveur_http_de_l_api() {
             .unwrap(),
     );
     let port = served_port(child.0.stderr.take().unwrap());
+    // Fixed language: the messages checked below do not depend on the machine's language.
+    let (_, b) = http(port, "POST", "/api/invoke/get_settings", "");
+    let mut s: serde_json::Value = serde_json::from_str(&b).unwrap();
+    s["profile"]["language"] = "fr".into();
+    let (c, b) = http(port, "POST", "/api/invoke/save_settings", &serde_json::json!({ "settings": s }).to_string());
+    assert_eq!(c, 200, "{b}");
     let (c, b) = http(port, "POST", "/api/invoke/live_state", "");
     assert_eq!(c, 200, "{b}");
     assert!(b.contains("\"call\""));
@@ -339,4 +375,47 @@ fn replay_without_calendar_reports_no_calendar_source() {
     );
     assert_eq!(first_of(&lines, "permissions")["calendar"], "unknown");
     assert_eq!(first_of(&lines, "calendar")["events"], serde_json::json!([]));
+}
+
+#[test]
+fn http_server_refuses_foreign_requests() {
+    let h = home().join("serve-securite");
+    std::fs::create_dir_all(&h).unwrap();
+    struct Kill(std::process::Child);
+    impl Drop for Kill {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let mut child = Kill(
+        steno(&h)
+            .args(["serve", "--port", "0"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let port = served_port(child.0.stderr.take().unwrap());
+    let local = format!("Host: 127.0.0.1:{port}\r\n");
+    let json = "Content-Type: application/json\r\n";
+    // Legitimate request from the served page.
+    let (c, b) = http_with(port, "POST", "/api/invoke/live_state", &format!("{local}{json}Origin: http://127.0.0.1:{port}\r\nSec-Fetch-Site: same-origin\r\n"), "{}");
+    assert_eq!(c, 200, "{b}");
+    // DNS rebinding: foreign host name resolving to 127.0.0.1.
+    let (c, _) = http_with(port, "POST", "/api/invoke/live_state", &format!("Host: rebind.example:{port}\r\n{json}"), "{}");
+    assert_eq!(c, 403);
+    let (c, _) = http_with(port, "GET", "/api/events", &format!("Host: rebind.example:{port}\r\n"), "");
+    assert_eq!(c, 403, "event stream protected too");
+    // Non-JSON body (request sent without a CORS preflight).
+    let (c, _) = http_with(port, "POST", "/api/invoke/start_meeting", &format!("{local}Content-Type: text/plain\r\n"), r#"{"title":"x"}"#);
+    assert_eq!(c, 415);
+    // Page from another origin.
+    let (c, _) = http_with(port, "POST", "/api/invoke/delete_all_data", &format!("{local}{json}Origin: https://evil.example\r\n"), "{}");
+    assert_eq!(c, 403);
+    let (c, _) = http_with(port, "POST", "/api/invoke/delete_all_data", &format!("{local}{json}Sec-Fetch-Site: cross-site\r\n"), "{}");
+    assert_eq!(c, 403);
+    let (c, b) = http(port, "POST", "/api/invoke/live_state", "");
+    assert_eq!(c, 200, "no meeting was started by the refused requests: {b}");
+    assert!(b.contains("\"meeting\":null"), "{b}");
 }

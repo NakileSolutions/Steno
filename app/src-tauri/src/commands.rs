@@ -34,6 +34,17 @@ fn er(err: anyhow::Error) -> String {
     e(format!("{err:#}"))
 }
 
+/// Commands that change data, export, save or administer: reserved for the main window. The
+/// menu bar panel (`#/tray`) only reads the state and calls the listening commands, `ask` on
+/// the live meeting, `cancel_request`, `recent_requests` and `open_main`.
+fn main_window_only(window: &tauri::WebviewWindow) -> R<()> {
+    if window.label() == "main" {
+        Ok(())
+    } else {
+        Err(e("commande réservée à la fenêtre principale de Sténo"))
+    }
+}
+
 // ------------------------------------------------------------------ direct
 
 #[tauri::command]
@@ -62,12 +73,20 @@ pub fn set_live_confidential(st: State<'_, AppState>, on: bool) -> R<()> {
 }
 
 #[tauri::command]
-pub fn ask(st: State<'_, AppState>, query: String, meeting_id: Option<String>) -> R<Request> {
+pub fn ask(window: tauri::WebviewWindow, st: State<'_, AppState>, query: String, meeting_id: Option<String>) -> R<Request> {
+    // Menu bar panel: the live meeting only (« note que… » writes to it).
+    if window.label() != "main" && meeting_id.is_some() {
+        let live = st.core.db().live_meeting().map_err(er)?.map(|m| m.id);
+        if live != meeting_id {
+            return Err(e("commande réservée à la fenêtre principale de Sténo"));
+        }
+    }
     st.core.ask(&query, meeting_id.as_deref(), "text").map_err(er)
 }
 
 #[tauri::command]
-pub fn ask_history(st: State<'_, AppState>, query: String) -> R<Request> {
+pub fn ask_history(window: tauri::WebviewWindow, st: State<'_, AppState>, query: String) -> R<Request> {
+    main_window_only(&window)?;
     st.core.ask_history(&query, "text").map_err(er)
 }
 
@@ -94,7 +113,10 @@ pub fn get_meeting(st: State<'_, AppState>, id: String) -> R<MeetingDetail> {
 }
 
 #[tauri::command]
-pub fn get_transcript(st: State<'_, AppState>, id: String, include_private: bool) -> R<Vec<Segment>> {
+pub fn get_transcript(window: tauri::WebviewWindow, st: State<'_, AppState>, id: String, include_private: bool) -> R<Vec<Segment>> {
+    if include_private {
+        main_window_only(&window)?;
+    }
     st.core.db().segments(&id, include_private, true).map_err(er)
 }
 
@@ -104,42 +126,50 @@ pub fn get_report_version(st: State<'_, AppState>, id: String, version: i64) -> 
 }
 
 #[tauri::command]
-pub fn rename_meeting(st: State<'_, AppState>, id: String, title: String) -> R<()> {
+pub fn rename_meeting(window: tauri::WebviewWindow, st: State<'_, AppState>, id: String, title: String) -> R<()> {
+    main_window_only(&window)?;
     st.core.rename_meeting(&id, &title).map_err(er)
 }
 
 #[tauri::command]
-pub fn set_confidential(st: State<'_, AppState>, id: String, on: bool) -> R<()> {
+pub fn set_confidential(window: tauri::WebviewWindow, st: State<'_, AppState>, id: String, on: bool) -> R<()> {
+    main_window_only(&window)?;
     st.core.set_confidential(&id, on).map_err(er)
 }
 
 #[tauri::command]
-pub fn delete_meeting(st: State<'_, AppState>, id: String) -> R<()> {
+pub fn delete_meeting(window: tauri::WebviewWindow, st: State<'_, AppState>, id: String) -> R<()> {
+    main_window_only(&window)?;
     st.core.delete_meeting(&id).map_err(er)
 }
 
 #[tauri::command]
-pub fn rename_speaker(st: State<'_, AppState>, meeting_id: String, label: String, display_name: String) -> R<()> {
+pub fn rename_speaker(window: tauri::WebviewWindow, st: State<'_, AppState>, meeting_id: String, label: String, display_name: String) -> R<()> {
+    main_window_only(&window)?;
     st.core.db().rename_speaker(&meeting_id, &label, &display_name).map_err(er)
 }
 
 #[tauri::command]
-pub fn add_note(st: State<'_, AppState>, meeting_id: String, text: String) -> R<Note> {
+pub fn add_note(window: tauri::WebviewWindow, st: State<'_, AppState>, meeting_id: String, text: String) -> R<Note> {
+    main_window_only(&window)?;
     st.core.add_note(&meeting_id, &text).map_err(er)
 }
 
 #[tauri::command]
-pub fn update_note(st: State<'_, AppState>, id: i64, text: String) -> R<()> {
+pub fn update_note(window: tauri::WebviewWindow, st: State<'_, AppState>, id: i64, text: String) -> R<()> {
+    main_window_only(&window)?;
     st.core.db().update_note(id, &text).map_err(er)
 }
 
 #[tauri::command]
-pub fn delete_note(st: State<'_, AppState>, id: i64) -> R<()> {
+pub fn delete_note(window: tauri::WebviewWindow, st: State<'_, AppState>, id: i64) -> R<()> {
+    main_window_only(&window)?;
     st.core.db().delete_note(id).map_err(er)
 }
 
 #[tauri::command]
-pub fn regenerate_report(st: State<'_, AppState>, id: String) -> R<()> {
+pub fn regenerate_report(window: tauri::WebviewWindow, st: State<'_, AppState>, id: String) -> R<()> {
+    main_window_only(&window)?;
     st.core.regenerate_report(&id).map_err(er)
 }
 
@@ -150,22 +180,26 @@ pub fn get_meeting_context(st: State<'_, AppState>, id: String) -> R<steno_core:
 
 #[tauri::command]
 pub fn set_meeting_context(
+    window: tauri::WebviewWindow,
     st: State<'_, AppState>,
     id: String,
     text: String,
     template: Option<String>,
 ) -> R<steno_core::context::MeetingContext> {
+    main_window_only(&window)?;
     st.core.set_meeting_context(&id, &text, template.as_deref()).map_err(er)
 }
 
 /// Extraction du texte (PDF, classeurs) hors du fil principal.
 #[tauri::command]
 pub async fn add_context_file(
+    window: tauri::WebviewWindow,
     st: State<'_, AppState>,
     id: String,
     name: String,
     data: String,
 ) -> R<steno_core::context::ContextFile> {
+    main_window_only(&window)?;
     let core = st.core.clone();
     tauri::async_runtime::spawn_blocking(move || core.add_context_file(&id, &name, &data))
         .await
@@ -174,7 +208,8 @@ pub async fn add_context_file(
 }
 
 #[tauri::command]
-pub fn delete_context_file(st: State<'_, AppState>, file_id: i64) -> R<()> {
+pub fn delete_context_file(window: tauri::WebviewWindow, st: State<'_, AppState>, file_id: i64) -> R<()> {
+    main_window_only(&window)?;
     st.core.delete_context_file(file_id).map_err(er)
 }
 
@@ -184,12 +219,14 @@ pub async fn upcoming(st: State<'_, AppState>, days: Option<i64>) -> R<steno_cor
 }
 
 #[tauri::command]
-pub fn plan_meeting(st: State<'_, AppState>, title: String, scheduled_at: String, event_id: Option<String>) -> R<Meeting> {
+pub fn plan_meeting(window: tauri::WebviewWindow, st: State<'_, AppState>, title: String, scheduled_at: String, event_id: Option<String>) -> R<Meeting> {
+    main_window_only(&window)?;
     st.core.plan_meeting(&title, &scheduled_at, event_id.as_deref()).map_err(er)
 }
 
 #[tauri::command]
-pub async fn start_planned(st: State<'_, AppState>, id: String, in_person: Option<bool>) -> R<Meeting> {
+pub async fn start_planned(window: tauri::WebviewWindow, st: State<'_, AppState>, id: String, in_person: Option<bool>) -> R<Meeting> {
+    main_window_only(&window)?;
     st.core.start_planned(&id, in_person.unwrap_or(false)).await.map_err(er)
 }
 
@@ -200,24 +237,29 @@ pub fn get_participants(st: State<'_, AppState>, id: String) -> R<Vec<steno_core
 
 #[tauri::command]
 pub fn set_participants(
+    window: tauri::WebviewWindow,
     st: State<'_, AppState>,
     id: String,
     participants: Vec<steno_core::planning::Participant>,
 ) -> R<Vec<steno_core::planning::Participant>> {
+    main_window_only(&window)?;
     st.core.set_participants(&id, &participants).map_err(er)
 }
 
 #[tauri::command]
-pub async fn prepare_questions(st: State<'_, AppState>, id: String) -> R<Vec<String>> {
+pub async fn prepare_questions(window: tauri::WebviewWindow, st: State<'_, AppState>, id: String) -> R<Vec<String>> {
+    main_window_only(&window)?;
     st.core.prepare_questions(&id).await.map_err(er)
 }
 
 #[tauri::command]
 pub async fn prepare_apply(
+    window: tauri::WebviewWindow,
     st: State<'_, AppState>,
     id: String,
     answers: Vec<steno_core::planning::PrepAnswer>,
 ) -> R<steno_core::context::MeetingContext> {
+    main_window_only(&window)?;
     st.core.prepare_apply(&id, &answers).await.map_err(er)
 }
 
@@ -234,13 +276,15 @@ pub async fn check_update(st: State<'_, AppState>) -> R<steno_core::updates::Upd
 /// Asynchrone : l'installation est lancée sur le moteur de Tauri (une commande synchrone
 /// tourne sur le fil principal, sans moteur asynchrone).
 #[tauri::command]
-pub async fn install_update(st: State<'_, AppState>) -> R<()> {
+pub async fn install_update(window: tauri::WebviewWindow, st: State<'_, AppState>) -> R<()> {
+    main_window_only(&window)?;
     st.core.install_update().map_err(er)
 }
 
 /// Redémarre l'app (nouvelle version installée par `make install`).
 #[tauri::command]
-pub fn restart_app(app: AppHandle, st: State<'_, AppState>) -> R<()> {
+pub fn restart_app(window: tauri::WebviewWindow, app: AppHandle, st: State<'_, AppState>) -> R<()> {
+    main_window_only(&window)?;
     if st.core.db().live_meeting().map_err(er)?.is_some() {
         return Err(e("une réunion est en cours : redémarrez après la réunion"));
     }
@@ -249,7 +293,8 @@ pub fn restart_app(app: AppHandle, st: State<'_, AppState>) -> R<()> {
 }
 
 #[tauri::command]
-pub fn report_now(st: State<'_, AppState>, id: String) -> R<()> {
+pub fn report_now(window: tauri::WebviewWindow, st: State<'_, AppState>, id: String) -> R<()> {
+    main_window_only(&window)?;
     st.core.report_now(&id).map_err(er)
 }
 
@@ -264,17 +309,20 @@ pub async fn steno_skill_status(st: State<'_, AppState>) -> R<steno_core::agents
 }
 
 #[tauri::command]
-pub async fn install_steno_skill(st: State<'_, AppState>) -> R<steno_core::agents::skill::SkillStatus> {
+pub async fn install_steno_skill(window: tauri::WebviewWindow, st: State<'_, AppState>) -> R<steno_core::agents::skill::SkillStatus> {
+    main_window_only(&window)?;
     st.core.install_steno_skill().await.map_err(er)
 }
 
 #[tauri::command]
-pub async fn template_from_example(st: State<'_, AppState>, example: String) -> R<steno_core::report::TemplateDraft> {
+pub async fn template_from_example(window: tauri::WebviewWindow, st: State<'_, AppState>, example: String) -> R<steno_core::report::TemplateDraft> {
+    main_window_only(&window)?;
     st.core.template_from_example(&example).await.map_err(er)
 }
 
 #[tauri::command]
-pub fn correlate(st: State<'_, AppState>, id: String) -> R<()> {
+pub fn correlate(window: tauri::WebviewWindow, st: State<'_, AppState>, id: String) -> R<()> {
+    main_window_only(&window)?;
     st.core.correlate(&id).map_err(er)
 }
 
@@ -285,7 +333,8 @@ pub fn export_meeting(st: State<'_, AppState>, id: String, format: Option<String
 
 /// Fenêtre « Enregistrer sous… » puis écriture de l'export ; chemin choisi, ou null si annulé.
 #[tauri::command]
-pub async fn save_export(app: AppHandle, st: State<'_, AppState>, id: String, format: String) -> R<Option<String>> {
+pub async fn save_export(window: tauri::WebviewWindow, app: AppHandle, st: State<'_, AppState>, id: String, format: String) -> R<Option<String>> {
+    main_window_only(&window)?;
     use tauri_plugin_dialog::DialogExt;
     let name = st.core.export_file_name(&id, &format).map_err(er)?;
     let ext = steno_core::export::extension(&format).map_err(er)?;
@@ -331,7 +380,8 @@ pub fn list_actions(st: State<'_, AppState>, filter: Option<ActionFilter>) -> R<
 }
 
 #[tauri::command]
-pub fn set_action_status(st: State<'_, AppState>, id: i64, status: String) -> R<()> {
+pub fn set_action_status(window: tauri::WebviewWindow, st: State<'_, AppState>, id: i64, status: String) -> R<()> {
+    main_window_only(&window)?;
     if status != "open" && status != "done" {
         return Err(e("statut inconnu"));
     }
@@ -351,7 +401,8 @@ pub fn get_settings(st: State<'_, AppState>) -> Settings {
 }
 
 #[tauri::command]
-pub fn save_settings(app: AppHandle, st: State<'_, AppState>, settings: Settings) -> R<Settings> {
+pub fn save_settings(window: tauri::WebviewWindow, app: AppHandle, st: State<'_, AppState>, settings: Settings) -> R<Settings> {
+    main_window_only(&window)?;
     let s = st.core.save_settings(settings).map_err(er)?;
     crate::shortcuts::register(&app, &st.core);
     crate::apply_theme(&app, &s.profile.theme);
@@ -359,12 +410,14 @@ pub fn save_settings(app: AppHandle, st: State<'_, AppState>, settings: Settings
 }
 
 #[tauri::command]
-pub fn export_settings(st: State<'_, AppState>) -> R<String> {
+pub fn export_settings(window: tauri::WebviewWindow, st: State<'_, AppState>) -> R<String> {
+    main_window_only(&window)?;
     st.core.export_settings().map_err(er)
 }
 
 #[tauri::command]
-pub fn import_settings(app: AppHandle, st: State<'_, AppState>, toml: String) -> R<Settings> {
+pub fn import_settings(window: tauri::WebviewWindow, app: AppHandle, st: State<'_, AppState>, toml: String) -> R<Settings> {
+    main_window_only(&window)?;
     let s = st.core.import_settings(&toml).map_err(er)?;
     crate::shortcuts::register(&app, &st.core);
     crate::apply_theme(&app, &s.profile.theme);
@@ -395,11 +448,13 @@ pub async fn list_models(st: State<'_, AppState>, provider: String) -> R<Vec<ste
 
 #[tauri::command]
 pub async fn test_agent(
+    window: tauri::WebviewWindow,
     st: State<'_, AppState>,
     provider: String,
     model: Option<String>,
     effort: Option<String>,
 ) -> R<TestAgentResult> {
+    main_window_only(&window)?;
     let (ok, message, duration_ms) = st.core.test_agent_with(&provider, model, effort).await.map_err(er)?;
     Ok(TestAgentResult { ok, message, duration_ms })
 }
@@ -410,12 +465,14 @@ pub fn list_connectors(st: State<'_, AppState>) -> R<Vec<Connector>> {
 }
 
 #[tauri::command]
-pub async fn refresh_connectors(st: State<'_, AppState>) -> R<Vec<Connector>> {
+pub async fn refresh_connectors(window: tauri::WebviewWindow, st: State<'_, AppState>) -> R<Vec<Connector>> {
+    main_window_only(&window)?;
     st.core.refresh_connectors().await.map_err(er)
 }
 
 #[tauri::command]
-pub fn update_connector(st: State<'_, AppState>, id: i64, use_live: bool, use_correlation: bool) -> R<Connector> {
+pub fn update_connector(window: tauri::WebviewWindow, st: State<'_, AppState>, id: i64, use_live: bool, use_correlation: bool) -> R<Connector> {
+    main_window_only(&window)?;
     st.core.db().update_connector(id, use_live, use_correlation).map_err(er)
 }
 
@@ -425,7 +482,8 @@ pub fn list_repos(st: State<'_, AppState>) -> R<Vec<Repo>> {
 }
 
 #[tauri::command]
-pub fn add_repo(st: State<'_, AppState>, path: String, label: Option<String>) -> R<Repo> {
+pub fn add_repo(window: tauri::WebviewWindow, st: State<'_, AppState>, path: String, label: Option<String>) -> R<Repo> {
+    main_window_only(&window)?;
     let p = std::path::Path::new(&path);
     if !p.is_dir() {
         return Err(e(format!("dossier introuvable : {path}")));
@@ -439,17 +497,20 @@ pub fn add_repo(st: State<'_, AppState>, path: String, label: Option<String>) ->
 }
 
 #[tauri::command]
-pub fn update_repo(st: State<'_, AppState>, repo: Repo) -> R<Repo> {
+pub fn update_repo(window: tauri::WebviewWindow, st: State<'_, AppState>, repo: Repo) -> R<Repo> {
+    main_window_only(&window)?;
     st.core.db().update_repo(&repo).map_err(er)
 }
 
 #[tauri::command]
-pub fn remove_repo(st: State<'_, AppState>, id: i64) -> R<()> {
+pub fn remove_repo(window: tauri::WebviewWindow, st: State<'_, AppState>, id: i64) -> R<()> {
+    main_window_only(&window)?;
     st.core.db().remove_repo(id).map_err(er)
 }
 
 #[tauri::command]
-pub async fn pick_folder(app: AppHandle) -> R<Option<String>> {
+pub async fn pick_folder(window: tauri::WebviewWindow, app: AppHandle) -> R<Option<String>> {
+    main_window_only(&window)?;
     use tauri_plugin_dialog::DialogExt;
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog().file().set_title("Choisir un dépôt").pick_folder(move |f| {
@@ -497,7 +558,8 @@ pub struct WakeText {
 }
 
 #[tauri::command]
-pub async fn wake_test_record(st: State<'_, AppState>, seconds: u32) -> R<WakeText> {
+pub async fn wake_test_record(window: tauri::WebviewWindow, st: State<'_, AppState>, seconds: u32) -> R<WakeText> {
+    main_window_only(&window)?;
     let seconds = seconds.clamp(1, 60);
     let fut = st.core.wake_test_record(seconds);
     let text = tokio::time::timeout(std::time::Duration::from_secs(seconds as u64 + 30), fut)
@@ -515,7 +577,8 @@ pub async fn doctor(st: State<'_, AppState>) -> R<Vec<DoctorItem>> {
 }
 
 #[tauri::command]
-pub fn delete_all_data(st: State<'_, AppState>) -> R<()> {
+pub fn delete_all_data(window: tauri::WebviewWindow, st: State<'_, AppState>) -> R<()> {
+    main_window_only(&window)?;
     st.core.delete_all_data().map_err(er)
 }
 
@@ -527,12 +590,14 @@ pub fn get_permissions(st: State<'_, AppState>) -> R<steno_core::permissions::Pe
 }
 
 #[tauri::command]
-pub fn request_permission(st: State<'_, AppState>, kind: String) -> R<()> {
+pub fn request_permission(window: tauri::WebviewWindow, st: State<'_, AppState>, kind: String) -> R<()> {
+    main_window_only(&window)?;
     st.core.request_permission(&kind).map_err(er)
 }
 
 #[tauri::command]
-pub fn open_permission_settings(st: State<'_, AppState>, kind: String) -> R<()> {
+pub fn open_permission_settings(window: tauri::WebviewWindow, st: State<'_, AppState>, kind: String) -> R<()> {
+    main_window_only(&window)?;
     st.core.open_permission_settings(&kind).map_err(er)
 }
 
@@ -552,12 +617,14 @@ pub fn set_mic_muted(st: State<'_, AppState>, on: bool) {
 }
 
 #[tauri::command]
-pub fn delete_segment(st: State<'_, AppState>, id: i64) -> R<()> {
+pub fn delete_segment(window: tauri::WebviewWindow, st: State<'_, AppState>, id: i64) -> R<()> {
+    main_window_only(&window)?;
     st.core.delete_segment(id).map_err(er)
 }
 
 #[tauri::command]
-pub fn complete_onboarding(st: State<'_, AppState>) -> R<()> {
+pub fn complete_onboarding(window: tauri::WebviewWindow, st: State<'_, AppState>) -> R<()> {
+    main_window_only(&window)?;
     st.core.complete_onboarding().map_err(er)
 }
 

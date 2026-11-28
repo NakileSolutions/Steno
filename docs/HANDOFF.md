@@ -65,7 +65,7 @@ Key points:
 - **Agent security** (`crates/steno-core/src/policy.rs`, `agents/claude_code.rs`). With Claude Code:
   - `dontAsk` mode and a tool allowlist;
   - explicit denials of write tools;
-  - a `PreToolUse` hook → `<Sténo executable> policy-hook <policy.json>`, which denies write MCP tools (patterns and keywords), shell commands not on the list, reads outside the checked repositories, and enforces the call budget.
+  - a `PreToolUse` hook → `<Sténo executable> policy-hook <policy.json>`, which denies write MCP tools (patterns and keywords) and servers that are not checked (exact name), shell commands not on the list, shell expansions and redirections, options that run a program, write a file or follow symbolic links, reads outside the checked repositories (symbolic links resolved) and excluded repository files read directly, and enforces the call budget. Any hook error denies, and Claude Code is not started without the hook.
 
   Agents without an MCP deny list (Codex, Gemini, OpenCode, custom) have their connectors greyed out and disabled.
 - **The core is the only writer** to the database. The CLI writes only to `jobs`, then runs the job itself if the app is not running (heartbeat `runtime.app_heartbeat`).

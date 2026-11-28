@@ -6,7 +6,8 @@
 //! ce crochet est `<exécutable steno> policy-hook <fichier de politique>` (voir `hook_main`).
 
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::io::Write;
+use std::path::{Component, Path, PathBuf};
 
 const DEFAULT_POLICY: &str = include_str!("../../../agent/policy.toml");
 
@@ -59,6 +60,10 @@ pub struct ReadOnlyPolicy {
     /// ou d'un plugin (consignes et références, jamais d'écriture).
     #[serde(default)]
     pub allow_skills: bool,
+    /// Patterns excluded from the repositories (`Repo.exclude_globs`): a filter on direct file reads
+    /// (path read, file named in a command, file name pattern).
+    #[serde(default)]
+    pub exclude_globs: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -135,13 +140,10 @@ fn word_hits(word: &str, denied: &str) -> bool {
     false
 }
 
-/// Normalise un nom de serveur MCP (« claude.ai Atlassian » ≈ « claude_ai_Atlassian »).
-pub fn norm_server(s: &str) -> String {
-    s.chars()
-        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '_' })
-        .collect::<String>()
-        .trim_matches('_')
-        .to_string()
+/// MCP server name as it appears in tool names (`mcp__<name>__tool`):
+/// « claude.ai Atlassian » → `claude_ai_Atlassian`.
+pub fn mcp_server_id(name: &str) -> String {
+    name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).collect()
 }
 
 /// Le fichier est-il dans le dossier d'un skill (un parent contient `SKILL.md`) ou d'un
@@ -164,7 +166,209 @@ pub fn in_skill_dir(path: &Path) -> bool {
     false
 }
 
-const SHELL_META: &[&str] = &[";", "&", ">", "<", "`", "$(", "${", "\n", "\r"];
+/// Repository exclusion pattern (case-insensitive) applied to a path relative to the repository.
+/// Without `/`, the pattern matches a name at any depth (`.env*`, `*.pem`); with `/`, a path
+/// from the root (`secrets/**`). An excluded folder excludes its content.
+pub fn exclude_match(pattern: &str, rel: &str) -> bool {
+    let p = pattern.trim().trim_end_matches('/');
+    let rel = rel.trim_start_matches("./").trim_matches('/');
+    if p.is_empty() || p.starts_with('#') || rel.is_empty() {
+        return false;
+    }
+    if !p.contains('/') {
+        return rel.split('/').any(|c| glob_match(p, c));
+    }
+    let p = p.trim_start_matches('/');
+    let within = format!("{p}/*");
+    let rooted = format!("/{rel}");
+    [rel, rooted.as_str()].iter().any(|r| glob_match(p, r) || glob_match(&within, r))
+}
+
+/// Characters refused anywhere in a command, even inside quotes.
+const SHELL_META: &[&str] = &[";", "&", ">", "<", "`", "\n", "\r"];
+
+/// Options that run a program or write a file, refused for every command even when an older
+/// user `policy.toml` does not list them. Under Claude Code, `grep` and `find` are ugrep and bfs
+/// (`--filter`, `--pager`, `--view`, `--save-config`, `-rm`).
+const MANDATORY_DENIED_ARGUMENTS: &[&str] = &[
+    "-exec", "-execdir", "-ok", "-okdir", "-delete", "-rm", "-fls", "-fprint", "-fprint0", "-fprintf", "--output",
+    "--pre", "--pre-glob", "--hostname-bin", "--compress-program", "--filter", "--pager", "--view", "--save-config",
+    "--config", "--open-files-in-pager",
+];
+
+/// Rules specific to a command: short option letters searched across the whole group, and
+/// options refused on top of the common list.
+fn command_rules(name: &str, sub: &str) -> (&'static str, &'static [&'static str]) {
+    match (name, sub) {
+        // `sort -o` writes a file; `git grep -O` opens the files with a program (`-1Osh`).
+        ("sort", _) => ("o", &[]),
+        ("git", "grep") => ("O", &[]),
+        // Options that follow symbolic links during a walk (reads outside the repositories).
+        ("rg", _) => ("L", &["--follow"]),
+        ("grep", _) => ("RS", &["--dereference-recursive", "--dereference-files"]),
+        ("ls", _) => ("L", &["--dereference"]),
+        ("find", _) => ("", &["-L", "-follow"]),
+        _ => ("", &[]),
+    }
+}
+
+/// Options whose value is a file that is read (and sometimes printed, `git blame --ignore-revs-file`).
+const FILE_OPTIONS: &[&str] = &[
+    "--file", "--contents", "--ignore-file", "--ignore-revs-file", "--files-from", "--files0-from", "--exclude-from",
+    "--include-from", "--pathspec-from-file",
+];
+
+/// Short option letters followed by a file that is read: `-f` (`rg`, `grep`, `git grep`) and, for
+/// `git blame`, `-S` (revisions file, each line of which shows up in the errors). `find` only
+/// has single-dash options made of whole words.
+fn file_letters(name: &str, sub: &str) -> &'static str {
+    match (name, sub) {
+        ("find", _) => "",
+        ("git", "blame") => "fS",
+        _ => "f",
+    }
+}
+
+/// Value glued to an option that reads a file (`--contents=.env`, `-f.env`, `-nf/etc/x`,
+/// `-S.env`), to check like an operand.
+fn file_option_value<'a>(t: &'a str, letters: &str) -> Option<&'a str> {
+    if let Some(long) = t.strip_prefix("--") {
+        let (name, value) = long.split_once('=')?;
+        let file = !name.is_empty() && FILE_OPTIONS.iter().any(|o| o[2..].starts_with(name));
+        return Some(value).filter(|v| file && !v.is_empty());
+    }
+    let i = t[1..].find(|c| letters.contains(c))? + 2;
+    t.get(i..).filter(|v| !v.is_empty())
+}
+
+/// Splits a command into pipeline steps (`|` outside quotes), then into words as the program
+/// will receive them (quotes and backslashes removed). Refuses what the shell would expand or
+/// run: `$` outside single quotes, `(` `)` outside quotes, `~user`, braces, patterns that can
+/// match `..` (`.*`).
+fn shell_words(cmd: &str) -> Result<Vec<Vec<String>>, String> {
+    #[derive(PartialEq)]
+    enum Q {
+        No,
+        Single,
+        Double,
+    }
+    let mut parts: Vec<Vec<String>> = vec![vec![]];
+    let mut w = String::new();
+    let mut started = false;
+    let mut q = Q::No;
+    let mut chars = cmd.chars().peekable();
+    let dollar = || Err("variable ou expansion du shell interdite (« $ »)".to_string());
+    while let Some(c) = chars.next() {
+        match q {
+            Q::Single if c == '\'' => q = Q::No,
+            Q::Single => w.push(c),
+            Q::Double => match c {
+                '"' => q = Q::No,
+                '$' => return dollar(),
+                '\\' => match chars.next() {
+                    Some(n @ ('$' | '`' | '"' | '\\')) => w.push(n),
+                    Some(n) => {
+                        w.push('\\');
+                        w.push(n);
+                    }
+                    None => return Err("guillemet non fermé".into()),
+                },
+                _ => w.push(c),
+            },
+            Q::No => match c {
+                ' ' | '\t' | '|' => {
+                    if started {
+                        parts.last_mut().unwrap().push(std::mem::take(&mut w));
+                        started = false;
+                    }
+                    if c == '|' {
+                        parts.push(vec![]);
+                    }
+                }
+                '\'' => {
+                    q = Q::Single;
+                    started = true;
+                }
+                '"' => {
+                    q = Q::Double;
+                    started = true;
+                }
+                '\\' => {
+                    let Some(n) = chars.next() else { return Err("barre oblique inverse en fin de commande".into()) };
+                    w.push(n);
+                    started = true;
+                }
+                '$' => return dollar(),
+                '(' | ')' => return Err(format!("caractère « {c} » interdit hors guillemets")),
+                '{' if !w.ends_with('@') => return Err("accolades interdites hors guillemets".into()),
+                '~' if !started && !matches!(chars.peek(), None | Some('/' | ' ' | '\t' | '|')) => {
+                    return Err("« ~utilisateur » interdit".into());
+                }
+                '*' | '?' | '[' if w.rsplit('/').next().is_some_and(|comp| comp.starts_with('.')) => {
+                    return Err(format!("motif pouvant désigner un dossier parent : {w}{c}…"));
+                }
+                _ => {
+                    w.push(c);
+                    started = true;
+                }
+            },
+        }
+    }
+    if q != Q::No {
+        return Err("guillemet non fermé".into());
+    }
+    if started {
+        parts.last_mut().unwrap().push(w);
+    }
+    Ok(parts)
+}
+
+/// Does the word name a path to check even if it does not exist?
+fn looks_like_path(t: &str) -> bool {
+    t.starts_with('/') || t.starts_with('~') || has_parent_component(t)
+}
+
+fn has_parent_component(t: &str) -> bool {
+    t.split(['/', '\\']).any(|c| c == "..")
+}
+
+/// Fixed part of a file name pattern (`src/**/*.rs` → `src`).
+fn fixed_prefix(pattern: &str) -> String {
+    let fixed: Vec<&str> = pattern.split('/').take_while(|c| !c.contains(['*', '?', '[', '{'])).collect();
+    match fixed.join("/") {
+        f if f.is_empty() && pattern.starts_with('/') => "/".into(),
+        f if f.is_empty() => ".".into(),
+        f => f,
+    }
+}
+
+/// `git branch`: read-only use (no creation, deletion or renaming).
+fn check_git_branch(args: &[&str]) -> Result<(), String> {
+    const OPTIONS: &[&str] = &[
+        "--list", "-l", "-a", "--all", "-r", "--remotes", "-v", "-vv", "--verbose", "--show-current", "--contains",
+        "--no-contains", "--merged", "--no-merged", "--points-at", "--sort", "--format", "--color", "--no-color",
+        "--column", "--no-column", "--ignore-case", "-i",
+    ];
+    const WITH_ARG: &[&str] = &["--contains", "--no-contains", "--merged", "--no-merged", "--points-at", "--sort", "--format"];
+    let list = args.iter().any(|t| *t == "--list" || *t == "-l");
+    let mut expect_arg = false;
+    for t in args {
+        if std::mem::take(&mut expect_arg) {
+            continue;
+        }
+        if t.starts_with('-') {
+            let name = t.split('=').next().unwrap_or(t);
+            let short = t.strip_prefix('-').is_some_and(|g| !g.is_empty() && g.chars().all(|c| "alrvi".contains(c)));
+            if !OPTIONS.contains(&name) && !short {
+                return Err(format!("git branch : option non autorisée (consultation seulement) : {t}"));
+            }
+            expect_arg = WITH_ARG.contains(&name) && !t.contains('=');
+        } else if !list {
+            return Err(format!("git branch : création ou modification de branche interdite ({t})"));
+        }
+    }
+    Ok(())
+}
 
 impl ReadOnlyPolicy {
     /// Politique sans aucun outil.
@@ -177,6 +381,7 @@ impl ReadOnlyPolicy {
             max_tool_calls: 0,
             counter_file: None,
             allow_skills: false,
+            exclude_globs: vec![],
         }
     }
 
@@ -200,30 +405,55 @@ impl ReadOnlyPolicy {
     }
 
     fn roots(&self) -> Vec<PathBuf> {
-        self.readable_dirs
-            .iter()
-            .map(|d| d.canonicalize().unwrap_or_else(|_| d.clone()))
-            .collect()
+        self.readable_dirs.iter().map(|d| d.canonicalize().unwrap_or_else(|_| d.clone())).collect()
     }
 
-    /// Le chemin est-il dans un dossier lisible ?
+    /// Exclusion pattern that matches this path relative to the repository, if any.
+    fn excluded_rel(&self, rel: &str) -> Option<&str> {
+        self.exclude_globs.iter().map(String::as_str).find(|p| exclude_match(p, rel))
+    }
+
+    /// Exclusion pattern matched by a path or a file name pattern (`**/.env*`, `*.pem`,
+    /// `{.env,a}`) relative to `base`. No disk walk.
+    fn excluded_pattern(&self, pattern: &str, base: &Path) -> Option<&str> {
+        if self.exclude_globs.is_empty() {
+            return None;
+        }
+        let sample = pattern.replace("**", "x").replace(['*', '?'], "x");
+        let abs = resolve(&base.join(&sample));
+        let rel = self.roots().iter().find_map(|r| abs.strip_prefix(r).ok().map(|p| p.to_string_lossy().into_owned()));
+        self.excluded_rel(rel.as_deref().unwrap_or(&sample))
+            .or_else(|| sample.split(['{', '}', ',']).find_map(|alt| self.excluded_rel(alt)))
+    }
+
+    /// Once resolved (symbolic links included), is the path inside a readable folder and outside
+    /// the excluded files?
     pub fn check_path(&self, path: &str, cwd: &Path) -> Result<(), String> {
-        let expanded = if let Some(rest) = path.strip_prefix("~/") {
+        let expanded = if path == "~" {
+            dirs::home_dir().unwrap_or_default()
+        } else if let Some(rest) = path.strip_prefix("~/") {
             dirs::home_dir().unwrap_or_default().join(rest)
+        } else if path.starts_with('~') {
+            return Err(format!("chemin interdit : {path}"));
         } else {
             PathBuf::from(path)
         };
-        let abs = if expanded.is_absolute() { expanded } else { cwd.join(expanded) };
-        // Résoudre ce qui existe (liens symboliques, ..).
-        let resolved = abs.canonicalize().unwrap_or_else(|_| lexical_normalize(&abs));
-        if self.roots().iter().any(|r| resolved.starts_with(r)) || (self.allow_skills && in_skill_dir(&resolved)) {
-            Ok(())
-        } else {
-            Err(format!("lecture hors des dépôts autorisés : {}", resolved.display()))
+        let resolved = resolve(&cwd.join(expanded));
+        let roots = self.roots();
+        let Some(root) = roots.iter().find(|r| resolved.starts_with(r)) else {
+            if self.allow_skills && in_skill_dir(&resolved) {
+                return Ok(());
+            }
+            return Err(format!("lecture hors des dépôts autorisés : {}", resolved.display()));
+        };
+        let rel = resolved.strip_prefix(root).unwrap_or(&resolved).to_string_lossy();
+        match self.excluded_rel(&rel) {
+            Some(p) => Err(format!("fichier exclu par les réglages du dépôt (motif « {p} ») : {}", resolved.display())),
+            None => Ok(()),
         }
     }
 
-    /// Vérifie une commande shell.
+    /// Checks a shell command: syntax, allowed command, options, then paths.
     pub fn check_command(&self, cmd: &str, cwd: &Path) -> Result<(), String> {
         let cmd = cmd.trim();
         if cmd.is_empty() {
@@ -234,37 +464,87 @@ impl ReadOnlyPolicy {
                 return Err(format!("caractère interdit « {} » dans la commande", m.escape_debug()));
             }
         }
-        for (i, part) in cmd.split('|').enumerate() {
-            let part = part.trim();
-            let toks: Vec<&str> = part.split_whitespace().collect();
-            if toks.is_empty() {
-                return Err("tube vide".into());
-            }
-            if i == 0 {
-                let ok = self.base.allowed_commands.iter().any(|a| {
-                    let a: Vec<&str> = a.split_whitespace().collect();
-                    toks.len() >= a.len() && toks[..a.len()] == a[..]
-                });
-                if !ok {
-                    return Err(format!("commande non autorisée : {part}"));
-                }
-            } else if !self.base.pipe_commands.iter().any(|p| p == toks[0]) {
-                return Err(format!("commande non autorisée après un tube : {}", toks[0]));
-            }
-            for t in &toks[1..] {
-                let t = t.trim_matches(|c| c == '"' || c == '\'');
-                for d in &self.base.denied_arguments {
-                    if t == d || (d.starts_with("--") && t.starts_with(&format!("{d}="))) {
-                        return Err(format!("option interdite : {t}"));
-                    }
-                }
-                let looks_like_path = t.starts_with('/') || t.starts_with("~/") || t.contains("..");
-                if looks_like_path && !t.starts_with('-') {
-                    self.check_path(t, cwd)?;
-                }
-            }
+        self.check_path(".", cwd).map_err(|e| format!("dossier courant refusé ({e})"))?;
+        for (i, words) in shell_words(cmd)?.iter().enumerate() {
+            let toks: Vec<&str> = words.iter().map(String::as_str).collect();
+            self.check_step(i, &toks, cwd)?;
         }
         Ok(())
+    }
+
+    fn check_step(&self, i: usize, toks: &[&str], cwd: &Path) -> Result<(), String> {
+        let Some(&name) = toks.first() else { return Err("tube vide".into()) };
+        let prefix_len = |a: &str| {
+            let a: Vec<&str> = a.split_whitespace().collect();
+            (toks.len() >= a.len() && toks[..a.len()] == a[..]).then_some(a.len())
+        };
+        let skip = if i == 0 {
+            let n = self.base.allowed_commands.iter().filter_map(|a| prefix_len(a)).max();
+            n.ok_or_else(|| format!("commande non autorisée : {}", toks.join(" ")))?
+        } else if self.base.pipe_commands.iter().any(|p| p == name) {
+            1
+        } else {
+            return Err(format!("commande non autorisée après un tube : {name}"));
+        };
+        let sub = if name == "git" { toks.get(1).copied().unwrap_or("") } else { "" };
+        let (letters, extra) = command_rules(name, sub);
+        let args = &toks[skip..];
+        let mut operands = 0;
+        let mut only_operands = false;
+        for &t in args {
+            if t == "--" && !only_operands {
+                only_operands = true;
+                continue;
+            }
+            let option = t.starts_with('-') && t != "-";
+            // Refused even after `--`: for `find`, `--` only ends the leading options and the
+            // expression that follows still runs (`find -- . -delete`).
+            if option && self.denied_option(t, letters, extra) {
+                return Err(format!("option interdite : {t}"));
+            }
+            if option && !only_operands {
+                if let Some(v) = file_option_value(t, file_letters(name, sub)) {
+                    self.check_operand(v, false, cwd)?;
+                }
+            } else {
+                operands += 1;
+                self.check_operand(t, name == "git", cwd)?;
+            }
+        }
+        match (name, sub) {
+            ("git", "branch") => check_git_branch(args),
+            ("uniq", _) if operands > 1 => Err("uniq : un seul fichier en argument (le second serait écrit)".into()),
+            _ => Ok(()),
+        }
+    }
+
+    /// Refused option: exact form, `--opt=…`, abbreviation (`--out`) or letter in a group.
+    fn denied_option(&self, t: &str, letters: &str, extra: &[&str]) -> bool {
+        let mut denied = MANDATORY_DENIED_ARGUMENTS
+            .iter()
+            .chain(extra)
+            .copied()
+            .chain(self.base.denied_arguments.iter().map(String::as_str));
+        if let Some(long) = t.strip_prefix("--") {
+            let name = long.split('=').next().unwrap_or(long);
+            name.starts_with('-') || (!name.is_empty() && denied.any(|d| d.strip_prefix("--").is_some_and(|d| d.starts_with(name))))
+        } else {
+            denied.any(|d| d == t) || t[1..].chars().any(|c| letters.contains(c))
+        }
+    }
+
+    /// Operand: path checked if it looks like one or exists (symbolic links resolved), and named
+    /// file or pattern (`.env`, `*.pem`, `HEAD:.env` for git) outside the exclusions.
+    fn check_operand(&self, t: &str, git: bool, cwd: &Path) -> Result<(), String> {
+        if looks_like_path(t) || cwd.join(t).symlink_metadata().is_ok() {
+            self.check_path(t, cwd)?;
+        }
+        let rev_path = if git { t.split_once(':').map(|(_, p)| p) } else { None };
+        let excluded = self.excluded_pattern(t, cwd).or_else(|| rev_path.and_then(|p| self.excluded_rel(p)));
+        match excluded {
+            Some(p) => Err(format!("fichier exclu par les réglages du dépôt (motif « {p} ») : {t}")),
+            None => Ok(()),
+        }
     }
 
     /// Décision pour un appel d'outil (`tool_name` au format de l'agent, `input` JSON).
@@ -274,12 +554,7 @@ impl ReadOnlyPolicy {
         }
         if let Some(rest) = tool_name.strip_prefix("mcp__") {
             let (server, tool) = rest.split_once("__").unwrap_or((rest, ""));
-            let ns = norm_server(server);
-            let allowed = self.allowed_mcp_servers.iter().any(|s| {
-                let a = norm_server(s);
-                a == ns || ns.ends_with(&format!("_{a}")) || a.ends_with(&format!("_{ns}"))
-            });
-            if !allowed {
+            if server.is_empty() || !self.allowed_mcp_servers.iter().any(|s| mcp_server_id(s) == server) {
                 return Decision::Deny(format!("connecteur « {server} » non activé dans Sténo"));
             }
             if let Some(r) = self.mcp_tool_denied(tool) {
@@ -287,25 +562,16 @@ impl ReadOnlyPolicy {
             }
             return Decision::Allow;
         }
-        let str_field = |k: &str| input.get(k).and_then(|v| v.as_str());
+        let verdict = |r: Result<(), String>| match r {
+            Ok(()) => Decision::Allow,
+            Err(e) => Decision::Deny(e),
+        };
         match tool_name {
-            "Bash" => match str_field("command") {
-                Some(c) => match self.check_command(c, cwd) {
-                    Ok(()) => Decision::Allow,
-                    Err(e) => Decision::Deny(e),
-                },
+            "Bash" => match input.get("command").and_then(|v| v.as_str()) {
+                Some(c) => verdict(self.check_command(c, cwd)),
                 None => Decision::Deny("commande absente".into()),
             },
-            t if self.base.builtin_read_tools.iter().any(|b| b == t) => {
-                for k in ["file_path", "path", "notebook_path"] {
-                    if let Some(p) = str_field(k) {
-                        if let Err(e) = self.check_path(p, cwd) {
-                            return Decision::Deny(e);
-                        }
-                    }
-                }
-                Decision::Allow
-            }
+            t if self.base.builtin_read_tools.iter().any(|b| b == t) => verdict(self.check_read_tool(t, input, cwd)),
             // Charger un skill ne fait que lire ses consignes ; ce qu'il fait ensuite passe
             // par les mêmes contrôles que le reste.
             "Skill" if self.allow_skills => Decision::Allow,
@@ -313,26 +579,63 @@ impl ReadOnlyPolicy {
         }
     }
 
-    /// Incrémente le compteur et refuse au-delà du budget.
+    /// Built-in tools (`Read`, `Grep`, `Glob`, `LS`): explicit path, otherwise the working folder,
+    /// and file name pattern (`pattern` of Glob, `glob` of Grep). `..` is refused: Claude Code
+    /// normalizes these paths without resolving symbolic links.
+    fn check_read_tool(&self, tool: &str, input: &serde_json::Value, cwd: &Path) -> Result<(), String> {
+        let field = |k: &str| input.get(k).and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+        let pattern = match tool {
+            "Glob" => field("pattern"),
+            "Grep" => field("glob"),
+            _ => None,
+        };
+        for v in ["file_path", "path", "notebook_path"].into_iter().filter_map(field).chain(pattern) {
+            if has_parent_component(v) {
+                return Err(format!("« .. » interdit dans les chemins des outils intégrés : {v}"));
+            }
+        }
+        let mut base = cwd.to_path_buf();
+        let mut explicit = false;
+        for k in ["file_path", "path", "notebook_path"] {
+            if let Some(p) = field(k) {
+                self.check_path(p, cwd)?;
+                explicit = true;
+                if k == "path" {
+                    base = cwd.join(p);
+                }
+            }
+        }
+        if !explicit {
+            self.check_path(".", cwd).map_err(|e| format!("dossier courant refusé ({e})"))?;
+        }
+        if let Some(p) = pattern {
+            self.check_path(&fixed_prefix(p), &base)?;
+            if let Some(e) = self.excluded_pattern(p, &base) {
+                return Err(format!("motif visant des fichiers exclus (« {e} ») : {p}"));
+            }
+        }
+        Ok(())
+    }
+
+    /// Increments the counter under an exclusive lock (parallel tool calls) and refuses beyond
+    /// the budget.
     fn count_call(&self) -> Decision {
         if self.max_tool_calls == 0 {
             return Decision::Allow;
         }
         let Some(f) = &self.counter_file else { return Decision::Allow };
-        let n: u32 = std::fs::read_to_string(f).ok().and_then(|s| s.trim().parse().ok()).unwrap_or(0) + 1;
-        let _ = std::fs::write(f, n.to_string());
-        if n > self.max_tool_calls {
-            Decision::Deny(format!(
+        match bump_counter(f) {
+            Err(e) => Decision::Deny(format!("compteur d'appels d'outils illisible ({e})")),
+            Ok(n) if n > self.max_tool_calls => Decision::Deny(format!(
                 "budget de {} appels d'outils atteint : réponds avec ce que tu as et propose « approfondir après la réunion »",
                 self.max_tool_calls
-            ))
-        } else {
-            Decision::Allow
+            )),
+            Ok(_) => Decision::Allow,
         }
     }
 
     pub fn write_to(&self, path: &Path) -> std::io::Result<()> {
-        std::fs::write(path, serde_json::to_vec_pretty(self).unwrap_or_default())
+        crate::paths::write_private(path, &serde_json::to_vec_pretty(self).unwrap_or_default())
     }
 
     pub fn read_from(path: &Path) -> anyhow::Result<ReadOnlyPolicy> {
@@ -340,59 +643,129 @@ impl ReadOnlyPolicy {
     }
 }
 
+/// Absolute path resolved as the system would: the longest existing part through
+/// `canonicalize` (symbolic links, `..`), the rest appended as is.
+fn resolve(abs: &Path) -> PathBuf {
+    let mut base = abs;
+    let mut rest = PathBuf::new();
+    loop {
+        if let Ok(p) = base.canonicalize() {
+            return lexical_normalize(&p.join(&rest));
+        }
+        match (base.parent(), base.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest = Path::new(name).join(&rest);
+                base = parent;
+            }
+            _ => return lexical_normalize(abs),
+        }
+    }
+}
+
 fn lexical_normalize(p: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for c in p.components() {
         match c {
-            std::path::Component::ParentDir => {
+            Component::ParentDir => {
                 out.pop();
             }
-            std::path::Component::CurDir => {}
+            Component::CurDir => {}
             other => out.push(other.as_os_str()),
         }
     }
     out
 }
 
-/// Point d'entrée du crochet « avant outil » : lit l'appel en JSON sur stdin
-/// (`tool_name`, `tool_input`, `cwd`), renvoie le code de sortie (0 = autorisé,
-/// 2 = refusé, raison sur stderr). En cas de doute, on refuse.
-pub fn hook_main(policy_path: &Path, stdin: &str) -> i32 {
-    let policy = match ReadOnlyPolicy::read_from(policy_path) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("Sténo : politique illisible ({e}), outil refusé");
-            return 2;
+fn bump_counter(path: &Path) -> std::io::Result<u32> {
+    use std::io::{Read, Seek};
+    let mut opts = std::fs::OpenOptions::new();
+    opts.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts.open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX) } != 0 {
+            return Err(std::io::Error::last_os_error());
         }
-    };
-    let v: serde_json::Value = match serde_json::from_str(stdin) {
-        Ok(v) => v,
+    }
+    let mut s = String::new();
+    f.read_to_string(&mut s)?;
+    let n = s.trim().parse::<u32>().unwrap_or(0).saturating_add(1);
+    f.seek(std::io::SeekFrom::Start(0))?;
+    f.set_len(0)?;
+    f.write_all(n.to_string().as_bytes())?;
+    Ok(n)
+}
+
+/// Runs the hook and guarantees a denial (code 2) on error or panic: never any other code,
+/// which the agent would treat as non-blocking.
+fn fail_closed(f: impl FnOnce() -> i32) -> i32 {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(0) => 0,
+        Ok(_) => 2,
         Err(_) => {
-            eprintln!("Sténo : appel d'outil illisible, refusé");
-            return 2;
-        }
-    };
-    let tool = v.get("tool_name").and_then(|t| t.as_str()).unwrap_or("");
-    let input = v.get("tool_input").cloned().unwrap_or(serde_json::Value::Null);
-    let cwd = v
-        .get("cwd")
-        .and_then(|c| c.as_str())
-        .map(PathBuf::from)
-        .or_else(|| policy.readable_dirs.first().cloned())
-        .unwrap_or_else(|| PathBuf::from("/"));
-    let decision = match policy.decide(tool, &input, &cwd) {
-        // Charger un skill ne compte pas dans le budget d'appels.
-        Decision::Allow if tool == "Skill" => Decision::Allow,
-        Decision::Allow => policy.count_call(),
-        d => d,
-    };
-    match decision {
-        Decision::Allow => 0,
-        Decision::Deny(reason) => {
-            eprintln!("Refusé par Sténo (lecture seule) : {reason}");
+            let _ = writeln!(std::io::stderr(), "Refusé par Sténo (lecture seule) : erreur interne du crochet");
             2
         }
     }
+}
+
+/// Entry point of `<executable> policy-hook <file>`: reads the call on standard input
+/// (4 MB at most), then decides (see `hook_main`).
+pub fn hook_entry(policy_path: &Path) -> i32 {
+    fail_closed(|| {
+        use std::io::Read;
+        let mut buf = Vec::new();
+        if std::io::stdin().take(4 * 1024 * 1024 + 1).read_to_end(&mut buf).is_err() || buf.len() > 4 * 1024 * 1024 {
+            let _ = writeln!(std::io::stderr(), "Sténo : appel d'outil illisible, refusé");
+            return 2;
+        }
+        hook_main(policy_path, &String::from_utf8_lossy(&buf))
+    })
+}
+
+/// "Before tool" hook: reads the call as JSON (`tool_name`, `tool_input`, `cwd`), returns the
+/// exit code (0 = allowed, 2 = denied, reason on stderr). When in doubt, deny.
+pub fn hook_main(policy_path: &Path, stdin: &str) -> i32 {
+    fail_closed(|| {
+        let policy = match ReadOnlyPolicy::read_from(policy_path) {
+            Ok(p) => p,
+            Err(e) => {
+                let _ = writeln!(std::io::stderr(), "Sténo : politique illisible ({e}), outil refusé");
+                return 2;
+            }
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(stdin) else {
+            let _ = writeln!(std::io::stderr(), "Sténo : appel d'outil illisible, refusé");
+            return 2;
+        };
+        let tool = v.get("tool_name").and_then(|t| t.as_str()).unwrap_or("");
+        let input = v.get("tool_input").cloned().unwrap_or(serde_json::Value::Null);
+        let cwd = v
+            .get("cwd")
+            .and_then(|c| c.as_str())
+            .map(PathBuf::from)
+            .or_else(|| policy.readable_dirs.first().cloned())
+            .unwrap_or_else(|| PathBuf::from("/"));
+        let decision = match policy.decide(tool, &input, &cwd) {
+            // Charger un skill ne compte pas dans le budget d'appels.
+            Decision::Allow if tool == "Skill" => Decision::Allow,
+            Decision::Allow => policy.count_call(),
+            d => d,
+        };
+        match decision {
+            Decision::Allow => 0,
+            Decision::Deny(reason) => {
+                let _ = writeln!(std::io::stderr(), "Refusé par Sténo (lecture seule) : {reason}");
+                2
+            }
+        }
+    })
 }
 
 #[cfg(test)]
@@ -409,6 +782,19 @@ mod tests {
             max_tool_calls: 0,
             counter_file: None,
             allow_skills: false,
+            exclude_globs: vec![],
+        }
+    }
+
+    fn accepted(p: &ReadOnlyPolicy, cwd: &Path, cmds: &[&str]) {
+        for c in cmds {
+            assert!(p.check_command(c, cwd).is_ok(), "{c} should pass: {:?}", p.check_command(c, cwd));
+        }
+    }
+
+    fn refused(p: &ReadOnlyPolicy, cwd: &Path, cmds: &[&str]) {
+        for c in cmds {
+            assert!(p.check_command(c, cwd).is_err(), "{c} should be refused");
         }
     }
 
@@ -450,6 +836,13 @@ mod tests {
         assert!(!glob_match("*send*", "search"));
         assert_eq!(tool_words("addOrEditJiraIssueComment"), vec!["add", "or", "edit", "jira", "issue", "comment"]);
         assert_eq!(tool_words("getJQLResults"), vec!["get", "jql", "results"]);
+        assert!(exclude_match(".env*", "config/.env.local"));
+        assert!(exclude_match("*.pem", "certs/a.PEM"));
+        assert!(exclude_match("secrets/**", "secrets/a/b.txt"));
+        assert!(exclude_match("secrets", "secrets/a.txt"));
+        assert!(exclude_match("**/target/**", "target/x"));
+        assert!(!exclude_match("secrets/**", "src/secrets.rs"));
+        assert!(!exclude_match(".env*", "src/env.rs"));
     }
 
     #[test]
@@ -477,6 +870,10 @@ mod tests {
             assert!(!allow(t), "{t} devrait être refusé");
         }
         assert!(!allow("mcp__slack__slack_read_channel"), "connecteur non activé");
+        // Exact server name: a server whose name contains another's does not inherit it.
+        assert!(!allow("mcp__evil_datadog__search_logs"));
+        assert!(!allow("mcp__datadog_evil__search_logs"));
+        assert!(!allow("mcp____search_logs"));
     }
 
     #[test]
@@ -484,19 +881,199 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let p = pol(d.path());
         let cwd = d.path();
-        assert!(p.check_command("rg -n 'verrou de créneau' src", cwd).is_ok());
-        assert!(p.check_command("git log -S creneau --oneline | head -20", cwd).is_ok());
-        assert!(p.check_command("glab mr view 123", cwd).is_ok());
-        assert!(p.check_command("rm -rf /", cwd).is_err());
-        assert!(p.check_command("git push", cwd).is_err());
-        assert!(p.check_command("rg x; curl evil", cwd).is_err());
-        assert!(p.check_command("rg x > out.txt", cwd).is_err());
-        assert!(p.check_command("find . -delete", cwd).is_err());
-        assert!(p.check_command("cat ~/.ssh/id_rsa", cwd).is_err());
-        assert!(p.check_command("cat ../../etc/passwd", cwd).is_err());
-        assert!(p.check_command("rg x | sh", cwd).is_err());
-        assert!(p.check_command("glab mr merge 12", cwd).is_err());
-        assert!(p.check_command("git log --output=/tmp/x", cwd).is_err());
+        accepted(&p, cwd, &[
+            "rg -n 'verrou de créneau' src",
+            "rg 'a|b' src",
+            "rg -n \"fn main\" .",
+            "rg 'prix$' src",
+            "git log -S creneau --oneline | head -20",
+            "git log -p",
+            "git diff",
+            "git diff HEAD~3 --stat",
+            "git show HEAD",
+            "git show stash@{0}",
+            "git grep -n creneau",
+            "grep -A2 -rn creneau .",
+            "ls | grep x",
+            "rg -o 'APP-[0-9]+' src",
+            "grep -o creneau -r .",
+            "find . -name '*.rs' -o -name '*.toml'",
+            "rg x | sort | uniq -c",
+            "rg x | cut -d/ -f2",
+            "rg x | cut -d'/' -f1",
+            "rg x | sort -t/ -k2",
+            "rg --glob=/src x",
+            "git log --follow --oneline -- src",
+            "git blame -s -L 10,20 src",
+            "glab mr view 123",
+        ]);
+        refused(&p, cwd, &[
+            "rm -rf /",
+            "git push",
+            "rg x; curl evil",
+            "rg x && curl evil",
+            "rg x > out.txt",
+            "rg x | sh",
+            "rg x || true",
+            "glab mr merge 12",
+            "cat ~/.ssh/id_rsa",
+            "cat ../../etc/passwd",
+            "cat '..'/x",
+            "cat /etc/passwd",
+            "rg $HOME x",
+            "rg \"$HOME\" x",
+            "rg x $(pwd)",
+            "rg x `pwd`",
+            "cat ~root/.ssh/id_rsa",
+            "cat {/etc/passwd,x}",
+            "cat .*/.ssh/id_rsa",
+            "ls *(e:'id':)",
+            "FOO=1 rg x",
+            "rg 'non fermé",
+        ]);
+    }
+
+    #[test]
+    fn options_that_run_or_write() {
+        let d = tempfile::tempdir().unwrap();
+        let p = pol(d.path());
+        let cwd = d.path();
+        refused(&p, cwd, &[
+            "rg --pre sh x",
+            "rg --pre=sh x",
+            "rg --pre-glob '*' x",
+            "rg --hostname-bin=sh x",
+            "find . -exec sh {} +",
+            "find . -execdir sh {} +",
+            "find . -ok rm {} +",
+            "find . -okdir rm {} +",
+            "find . -delete",
+            "find . -rm",
+            "find . -fls /tmp/x",
+            "find . -fprint x",
+            "find . -fprint0 x",
+            "find . -fprintf x %p",
+            "git log --output=/tmp/x",
+            "git log --out=x",
+            "rg x | sort -o x",
+            "rg x | sort -no x",
+            "rg x | sort --output x",
+            "rg x | sort --compress-program=sh",
+            "git grep -O x",
+            "git grep -1Osh x",
+            "git grep --open-files-in-pager=sh x",
+            "grep --filter='*:sh' x .",
+            "grep --pager=sh x .",
+            "grep ---evil x .",
+            "rg x | uniq - out.txt",
+            "rg -f/etc/passwd x",
+            "rg -nf/etc/passwd x .",
+            "rg --ignore-file=/etc/passwd x",
+            "git blame --ignore-revs-file=/etc/passwd x",
+            "git blame -S/etc/passwd x",
+            "find -- . -delete",
+            "find -- . -fprint out",
+            "rg -L x",
+            "rg --follow x",
+            "grep -R x .",
+            "grep -rS x .",
+            "grep --dereference-recursive x .",
+            "find -L .",
+            "find . -follow",
+            "ls -LR",
+        ]);
+        let mut old = p.clone();
+        old.base.denied_arguments = vec!["-exec".into()];
+        refused(&old, cwd, &["rg --pre=sh x", "find . -delete"]);
+    }
+
+    #[test]
+    fn git_branch_read_only() {
+        let d = tempfile::tempdir().unwrap();
+        let p = pol(d.path());
+        let cwd = d.path();
+        accepted(&p, cwd, &[
+            "git branch",
+            "git branch --list 'feat/*'",
+            "git branch -a",
+            "git branch -r",
+            "git branch -vv",
+            "git branch --show-current",
+            "git branch --contains abc123",
+            "git branch --merged main",
+            "git branch --sort=-committerdate",
+        ]);
+        refused(&p, cwd, &[
+            "git branch nouvelle",
+            "git branch -d feat",
+            "git branch -D feat",
+            "git branch -m a b",
+            "git branch -f main HEAD~1",
+            "git branch --set-upstream-to=origin/x",
+            "git branch --contains abc nouvelle",
+        ]);
+    }
+
+    #[test]
+    fn repository_exclusions() {
+        let d = tempfile::tempdir().unwrap();
+        let repo = d.path();
+        std::fs::create_dir_all(repo.join("src")).unwrap();
+        std::fs::create_dir_all(repo.join("secrets")).unwrap();
+        std::fs::write(repo.join(".env"), "CLE=1").unwrap();
+        std::fs::write(repo.join("src").join("main.rs"), "x").unwrap();
+        std::fs::write(repo.join("secrets").join("a.txt"), "x").unwrap();
+        let mut p = pol(repo);
+        p.exclude_globs = vec![".env*".into(), "*.pem".into(), "secrets/**".into()];
+        let tool = |t: &str, input: serde_json::Value| p.decide(t, &input, repo);
+        assert!(matches!(tool("Read", json!({"file_path": repo.join(".env")})), Decision::Deny(_)));
+        assert!(matches!(tool("Read", json!({"file_path": repo.join("secrets").join("a.txt")})), Decision::Deny(_)));
+        assert!(matches!(tool("Glob", json!({"pattern": "**/.env*"})), Decision::Deny(_)));
+        assert!(matches!(tool("Glob", json!({"pattern": "**/{.env,x}"})), Decision::Deny(_)));
+        assert!(matches!(tool("Glob", json!({"pattern": "secrets/*"})), Decision::Deny(_)));
+        assert!(matches!(tool("Grep", json!({"pattern": "CLE", "glob": ".env*"})), Decision::Deny(_)));
+        assert_eq!(tool("Read", json!({"file_path": repo.join("src").join("main.rs")})), Decision::Allow);
+        assert_eq!(tool("Glob", json!({"pattern": "**/*.rs"})), Decision::Allow);
+        assert_eq!(tool("Grep", json!({"pattern": "CLE"})), Decision::Allow);
+        refused(&p, repo, &[
+            "cat .env",
+            "rg CLE .env",
+            "git show HEAD:.env",
+            "cat *.pem",
+            "cat secrets/a.txt",
+            "git log -p -- .env",
+            "git blame --contents=.env -- src/main.rs",
+            "git blame --ignore-revs-file=.env src/main.rs",
+            "git blame -S.env src/main.rs",
+            "rg -f.env x",
+        ]);
+        accepted(&p, repo, &["rg CLE", "git log -p", "git diff", "git show HEAD", "grep -A2 -rn CLE src", "ls | grep env", "cat src/main.rs"]);
+    }
+
+    #[test]
+    fn symlinks_and_working_folder() {
+        let d = tempfile::tempdir().unwrap();
+        let repo = d.path().join("repo");
+        let dehors = d.path().join("dehors");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::create_dir_all(&dehors).unwrap();
+        std::fs::write(dehors.join("secret.txt"), "x").unwrap();
+        std::os::unix::fs::symlink(&dehors, repo.join("lien")).unwrap();
+        let p = pol(&repo);
+        refused(&p, &repo, &[
+            "cat lien/secret.txt",
+            "rg x lien",
+            "git blame --contents=lien/secret.txt -- src",
+            "git blame --ignore-revs-file=lien/secret.txt -- src",
+            "git blame -Slien/secret.txt -- src",
+        ]);
+        assert!(matches!(p.decide("Read", &json!({"file_path": repo.join("lien").join("secret.txt")}), &repo), Decision::Deny(_)));
+        assert!(matches!(p.decide("Read", &json!({"file_path": repo.join("lien").join("..").join("x")}), &repo), Decision::Deny(_)));
+        assert!(matches!(p.decide("Glob", &json!({"pattern": "/etc/*"}), &repo), Decision::Deny(_)));
+        assert!(matches!(p.decide("Glob", &json!({"pattern": "../*"}), &repo), Decision::Deny(_)));
+        // Working folder outside the repositories: neither commands nor searches without a path.
+        refused(&p, &dehors, &["rg x"]);
+        assert!(matches!(p.decide("Grep", &json!({"pattern": "x"}), &dehors), Decision::Deny(_)));
     }
 
     #[test]
@@ -510,6 +1087,7 @@ mod tests {
         assert!(matches!(p.decide("Write", &json!({"file_path": f}), d.path()), Decision::Deny(_)));
         assert!(matches!(p.decide("WebFetch", &json!({"url": "https://x"}), d.path()), Decision::Deny(_)));
         assert_eq!(p.decide("Grep", &json!({"pattern": "creneau"}), d.path()), Decision::Allow);
+        assert_eq!(p.decide("Grep", &json!({"pattern": "a..b"}), d.path()), Decision::Allow, "regex, not a path");
         let mut none = p.clone();
         none.tools_enabled = false;
         assert!(matches!(none.decide("Read", &json!({"file_path": f}), d.path()), Decision::Deny(_)));
@@ -530,5 +1108,21 @@ mod tests {
         let post = json!({"tool_name":"mcp__slack__slack_send_message","tool_input":{}}).to_string();
         assert_eq!(hook_main(&pf, &post), 2);
         assert_eq!(hook_main(&pf, "pas du json"), 2);
+        assert_eq!(hook_main(&d.path().join("absente.json"), &call), 2);
+        assert_eq!(fail_closed(|| panic!("boum")), 2, "panic: denied");
+        assert_eq!(fail_closed(|| 1), 2, "never a non-blocking code");
+    }
+
+    #[test]
+    fn budget_held_under_parallel_calls() {
+        let d = tempfile::tempdir().unwrap();
+        let mut p = pol(d.path());
+        p.max_tool_calls = 10;
+        p.counter_file = Some(d.path().join("count"));
+        let allowed: usize = std::thread::scope(|s| {
+            let hs: Vec<_> = (0..40).map(|_| s.spawn(|| p.count_call() == Decision::Allow)).collect();
+            hs.into_iter().map(|h| usize::from(h.join().unwrap())).sum()
+        });
+        assert_eq!(allowed, 10);
     }
 }

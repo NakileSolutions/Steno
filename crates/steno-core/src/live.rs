@@ -235,7 +235,7 @@ impl Session {
         let mut vocab = vec![s.voice.wake_word.clone()];
         vocab.extend(s.audio.vocabulary.iter().cloned());
         let dir = crate::paths::cache_dir().join(&m.id);
-        let _ = std::fs::create_dir_all(&dir);
+        let _ = crate::paths::create_private_dir(&dir);
         // Son capté : celui de l'app de l'appel ; sans appel connu, toutes les apps surveillées ;
         // en présentiel, aucune app (micro seul).
         let room = m.in_person();

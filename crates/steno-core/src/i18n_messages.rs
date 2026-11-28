@@ -57,6 +57,7 @@ static TABLE: &[(&str, &str)] = &[
     ("une corrélation est déjà en cours", "a correlation is already in progress"),
     ("écriture de {}", "writing {}"),
     ("aucune réunion en cours pour cette note", "no meeting in progress for this note"),
+    ("identifiant de réunion invalide", "invalid meeting identifier"),
     // ------------------------------------------------------------ export.rs
     ("format d'export inconnu : {}", "unknown export format: {}"),
     // ------------------------------------------------------------ updates.rs
@@ -99,6 +100,36 @@ static TABLE: &[(&str, &str)] = &[
     ),
     ("make introuvable (paquet build-essential installé ?)", "make not found (is the build-essential package installed?)"),
     ("`make install` a échoué (voir {})", "`make install` failed (see {})"),
+    ("numéro de version invalide : {}", "invalid version number: {}"),
+    (
+        "les sources ne suivent pas le dépôt officiel ({}) : mettez à jour à la main",
+        "the sources do not track the official repository ({}): update manually",
+    ),
+    (
+        "les sources n'ont pas de dépôt distant « origin » : mettez à jour à la main",
+        "the sources have no “origin” remote: update manually",
+    ),
+    ("le tag {} n'est pas signé", "tag {} is not signed"),
+    ("le tag {} ne porte pas ce nom dans son en-tête (tag renommé)", "tag {} does not carry this name in its header (renamed tag)"),
+    ("aucune clé de publication connue", "no known release key"),
+    ("le code du tag v{} n'est pas à la version {}", "the code of tag v{} is not at version {}"),
+    (
+        "les sources contiennent déjà la version {} : lancez `make install` à la main si besoin",
+        "the sources already contain version {}: run `make install` manually if needed",
+    ),
+    (
+        "les sources ne correspondent pas exactement au tag {} : installation annulée",
+        "the sources do not exactly match tag {}: installation cancelled",
+    ),
+    (
+        "le tag {} n'est pas signé par une clé de publication de Sténo",
+        "tag {} is not signed by a Sténo release key",
+    ),
+    ("signature du tag {} invalide ou inconnue : {}", "invalid or unknown signature on tag {}: {}"),
+    (
+        "le tag {} n'est pas sur la branche main du dépôt officiel",
+        "tag {} is not on the main branch of the official repository",
+    ),
     // ------------------------------------------------------------ sidecar.rs
     ("impossible de lancer le sidecar audio « {} »", "cannot start the audio sidecar “{}”"),
     ("stdout du sidecar", "sidecar stdout"),
@@ -122,9 +153,14 @@ static TABLE: &[(&str, &str)] = &[
     ("impossible de lancer l'agent", "cannot start the agent"),
     ("{} : délai dépassé", "{}: timed out"),
     ("{} a échoué (code {}) : {}", "{} failed (code {}): {}"),
+    (
+        "crochet de politique indisponible : exécution de Claude Code refusée",
+        "policy hook unavailable: Claude Code run refused",
+    ),
     // ------------------------------------------------------------ db/
     ("impossible de créer {}", "cannot create {}"),
     ("impossible d'ouvrir la base {}", "cannot open database {}"),
+    ("impossible d'ouvrir la base {} en lecture", "cannot open database {} for reading"),
     ("sauvegarde avant migration", "backup before migration"),
     ("migration de la base", "database migration"),
     // ------------------------------------------------------------ permissions.rs
@@ -159,6 +195,7 @@ static TABLE: &[(&str, &str)] = &[
     ("motif des clés Jira invalide", "invalid Jira key pattern"),
     ("TOML invalide", "invalid TOML"),
     ("réglages importés invalides", "invalid imported settings"),
+    ("niveau de réflexion invalide : {}", "invalid reasoning level: {}"),
     // ------------------------------------------------------------ jobs.rs
     ("type de tâche inconnu : {}", "unknown job type: {}"),
     ("request_id manquant", "missing request_id"),
@@ -183,6 +220,15 @@ static TABLE: &[(&str, &str)] = &[
     ("« {} » dépasse {} Mo", "“{}” exceeds {} MB"),
     ("PDF illisible : {}", "unreadable PDF: {}"),
     ("aucun texte trouvé dans « {} » (document scanné ?)", "no text found in “{}” (scanned document?)"),
+    ("conversion de « {} » trop longue (plus de {} s)", "converting “{}” took too long (over {} s)"),
+    ("document illisible", "unreadable document"),
+    ("document illisible (conversion par {} impossible)", "unreadable document ({} conversion failed)"),
+    ("document trop complexe ({} fichiers internes)", "document too complex ({} internal files)"),
+    (
+        "document trop volumineux une fois décompressé (plus de {} Mo)",
+        "document too large once decompressed (over {} MB)",
+    ),
+    ("PDF illisible : fichier malformé", "unreadable PDF: malformed file"),
     // ------------------------------------------------------------ api.rs, commands.rs
     ("argument « {} » invalide : {}", "invalid argument “{}”: {}"),
     ("version introuvable", "version not found"),
@@ -191,6 +237,7 @@ static TABLE: &[(&str, &str)] = &[
     ("le micro n'a rien renvoyé à temps", "the microphone returned nothing in time"),
     ("commande inconnue : {}", "unknown command: {}"),
     ("une réunion est en cours : redémarrez après la réunion", "a meeting is in progress: restart after the meeting"),
+    ("commande réservée à la fenêtre principale de Sténo", "command reserved for Sténo's main window"),
     // ------------------------------------------------------------ doctor.rs : noms
     ("Apps de visio", "Video call apps"),
     ("Système", "System"),

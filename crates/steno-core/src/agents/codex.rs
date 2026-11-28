@@ -42,9 +42,14 @@ pub(crate) fn build_args(req: &RunRequest, last_message: &Path) -> Vec<String> {
         a.push("-m".into());
         a.push(m.clone());
     }
-    if let Some(e) = &req.effort {
-        a.push("-c".into());
-        a.push(format!("model_reasoning_effort=\"{e}\""));
+    // The value is inserted into TOML (`-c key=value`): strict allowlist.
+    match &req.effort {
+        Some(e) if crate::settings::valid_effort(e) => {
+            a.push("-c".into());
+            a.push(format!("model_reasoning_effort=\"{e}\""));
+        }
+        Some(e) => tracing::warn!("reasoning level ignored (characters not allowed): {e:?}"),
+        None => {}
     }
     // L'invite est lue sur l'entrée standard.
     a.push("-".into());
@@ -287,6 +292,7 @@ mod tests {
             effort: Some("high".into()),
             session: SessionMode::Resume("th-1".into()),
             repos: vec![],
+            exclude_globs: vec![],
             tools: ToolAccess::None,
             max_tool_calls: 0,
             timeout: Duration::from_secs(5),
@@ -300,5 +306,12 @@ mod tests {
         assert!(a.contains(&"read-only".to_string()));
         assert!(a.contains(&"model_reasoning_effort=\"high\"".to_string()));
         assert_eq!(a.last().unwrap(), "-");
+        let mut r = r;
+        for e in ["high\"\nmcp_servers.x.command=\"sh", "high\" sandbox_mode=\"danger-full-access", "x".repeat(21).as_str(), "HIGH"] {
+            r.effort = Some(e.to_string());
+            let a = build_args(&r, Path::new("/tmp/l"));
+            assert!(!a.iter().any(|x| x.starts_with("model_reasoning_effort")), "{e:?} must be ignored");
+            assert!(a.contains(&"mcp_servers={}".to_string()));
+        }
     }
 }

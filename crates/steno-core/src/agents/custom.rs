@@ -34,6 +34,14 @@ pub(crate) fn render_full(template: &str, prompt_file: &Path, run_dir: &Path, mo
         .replace("{model}", &sh_quote(model.unwrap_or("")))
 }
 
+/// `sh -c <line>` command started in the run folder, with the whole environment: the user
+/// wrote the command, which may call a tool that reads its own API key.
+fn command(line: &str, req: &RunRequest) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new("sh");
+    cmd.arg("-c").arg(line).current_dir(&req.run_dir);
+    cmd
+}
+
 #[async_trait]
 impl AgentAdapter for Custom {
     fn id(&self) -> &'static str {
@@ -80,11 +88,10 @@ impl AgentAdapter for Custom {
         let instructions = std::fs::read_to_string(req.run_dir.join("INSTRUCTIONS.md")).unwrap_or_default();
         let full = format!("{instructions}\n\n---\n\n{}", req.prompt);
         let pf = req.run_dir.join(".steno").join(format!("prompt-{}.md", req.run_id));
-        std::fs::write(&pf, &full)?;
+        crate::paths::write_private(&pf, full.as_bytes())?;
         let line = render_full(&self.template, &pf, &req.run_dir, req.model.as_deref(), req.effort.as_deref());
         let stdin = (!self.template.contains("{prompt_file}")).then(|| full.clone());
-        let mut cmd = tokio::process::Command::new("sh");
-        cmd.arg("-c").arg(line).current_dir(&req.run_dir);
+        let cmd = command(&line, &req);
         let out = run_streaming(cmd, stdin, req.timeout, cancel, |_| {}).await;
         let _ = std::fs::remove_file(&pf);
         let out = out?;
@@ -124,6 +131,7 @@ mod tests {
                     effort: None,
                     session: SessionMode::None,
                     repos: vec![],
+                    exclude_globs: vec![],
                     tools: ToolAccess::None,
                     max_tool_calls: 0,
                     timeout: Duration::from_secs(5),
@@ -138,5 +146,28 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(r.answer, "bonjour");
+    }
+
+    #[test]
+    fn full_environment() {
+        let req = RunRequest {
+            run_dir: PathBuf::from("/tmp"),
+            prompt: String::new(),
+            tier: Tier::Quick,
+            model: None,
+            effort: None,
+            session: SessionMode::None,
+            repos: vec![],
+            exclude_globs: vec![],
+            tools: ToolAccess::None,
+            max_tool_calls: 0,
+            timeout: Duration::from_secs(5),
+            allow_api_key: false,
+            run_id: "t".into(),
+            hook_exe: None,
+            skills: false,
+        };
+        let c = command("mon-ia", &req);
+        assert_eq!(c.as_std().get_envs().filter(|(_, v)| v.is_none()).count(), 0, "no variable removed");
     }
 }

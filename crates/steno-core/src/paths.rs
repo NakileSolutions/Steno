@@ -34,6 +34,22 @@ pub fn runs_dir() -> PathBuf {
     home().join("runs")
 }
 
+/// Meeting id usable as a folder name: 1 to 128 characters among `A-Z a-z 0-9 _ -`
+/// (never `.`, `..` or `/`).
+pub fn valid_meeting_id(id: &str) -> bool {
+    (1..=128).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// Folder of a meeting, direct child of `base` (`runs`, `cache`); `None` if the id cannot
+/// name such a folder.
+pub fn meeting_subdir(base: &std::path::Path, id: &str) -> Option<PathBuf> {
+    if !valid_meeting_id(id) {
+        return None;
+    }
+    let dir = base.join(id);
+    (dir.parent() == Some(base) && dir.file_name().map(|n| n == id).unwrap_or(false)).then_some(dir)
+}
+
 pub fn backups_dir() -> PathBuf {
     home().join("backups")
 }
@@ -97,9 +113,48 @@ pub fn ensure_dirs() -> std::io::Result<()> {
         eprintln!("reprise des données de l'ancien nom impossible : {e}");
     }
     for d in [home(), cache_dir(), runs_dir(), backups_dir(), logs_dir()] {
-        std::fs::create_dir_all(&d)?;
+        create_private_dir(&d)?;
     }
     Ok(())
+}
+
+/// Creates a folder (and its parents) readable by the user only (0700 on Unix); an existing
+/// folder is brought back to 0700 when possible. Transcripts, prompts and logs are stored
+/// there.
+pub fn create_private_dir(dir: &std::path::Path) -> std::io::Result<()> {
+    if dir.as_os_str().is_empty() {
+        return Ok(());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::create_dir_all(dir)
+    }
+}
+
+/// Writes a file readable by the user only (0600 on Unix), even if it already existed.
+pub fn write_private(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        opts.mode(0o600);
+        let mut f = opts.open(path)?;
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        f.write_all(data)
+    }
+    #[cfg(not(unix))]
+    {
+        opts.open(path)?.write_all(data)
+    }
 }
 
 #[cfg(test)]
@@ -127,5 +182,35 @@ mod tests {
         std::fs::write(d.path().join("scribe.db"), b"ancienne").unwrap();
         migrate_db_file(d.path()).unwrap();
         assert_eq!(std::fs::read(d.path().join("steno.db")).unwrap(), b"db");
+    }
+
+    #[test]
+    fn meeting_ids_without_traversal() {
+        let base = std::path::Path::new("/donnees/runs");
+        for id in ["2026-11-27-1030-daily-orion", "_global", "_test", "m1", "a_b-C9"] {
+            assert_eq!(meeting_subdir(base, id), Some(base.join(id)), "{id}");
+        }
+        for id in ["", ".", "..", "../..", "../steno.db", "a/b", "/etc", "a\\b", "réunion", "a b", "x\0y", "x".repeat(129).as_str()] {
+            assert!(meeting_subdir(base, id).is_none(), "{id:?}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_folders_and_files() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().join("runs/reunion");
+        create_private_dir(&dir).unwrap();
+        assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        create_private_dir(&dir).unwrap();
+        assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700, "existing folder tightened");
+        let f = dir.join("prompt.md");
+        std::fs::write(&f, "ancien").unwrap();
+        std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_private(&f, b"transcription").unwrap();
+        assert_eq!(std::fs::metadata(&f).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(std::fs::read(&f).unwrap(), b"transcription");
     }
 }

@@ -142,6 +142,21 @@ impl Inner {
         })
     }
 
+    /// Excluded patterns (`Repo.exclude_globs`, one per line or comma-separated) of a run's
+    /// readable repositories.
+    fn exclude_globs_for(&self, repos: &[PathBuf]) -> Vec<String> {
+        let Ok(all) = self.db.list_repos() else { return vec![] };
+        let mut out: Vec<String> = vec![];
+        for r in all.iter().filter(|r| repos.iter().any(|p| p == std::path::Path::new(&r.path))) {
+            for g in r.exclude_globs.split(['\n', ',']).map(str::trim).filter(|g| !g.is_empty()) {
+                if !out.iter().any(|x| x == g) {
+                    out.push(g.to_string());
+                }
+            }
+        }
+        out
+    }
+
     fn meeting_lock(&self, key: &str) -> Arc<tokio::sync::Mutex<()>> {
         self.meeting_locks
             .lock()
@@ -193,7 +208,7 @@ impl Inner {
             }
         }
         let key = meeting.map(|m| m.id.clone()).unwrap_or_else(|| "_global".into());
-        let run_dir = crate::paths::runs_dir().join(&key);
+        let run_dir = crate::paths::meeting_subdir(&crate::paths::runs_dir(), &key).context("identifiant de réunion invalide")?;
         let instructions = crate::instructions::build(&s);
         let prompt = crate::instructions::expand(&prompt, &s);
         let mut base_policy = ReadOnlyPolicy::no_tools();
@@ -220,6 +235,7 @@ impl Inner {
             session
         };
         let repos = repos.unwrap_or_default();
+        let exclude_globs = self.exclude_globs_for(&repos);
         let timeout = s.agent.timeout_for(tier);
         let req = RunRequest {
             run_dir,
@@ -229,6 +245,7 @@ impl Inner {
             effort: s.agent.effort_for(tier),
             session: session.clone(),
             repos,
+            exclude_globs,
             tools,
             max_tool_calls: budget,
             timeout,
@@ -237,6 +254,22 @@ impl Inner {
             hook_exe: self.hook_exe.clone(),
             skills: s.agent.use_skills,
         };
+        // Token registered before reading confidentiality again: a concurrent switch to
+        // confidential either cancels it or is seen by the second read.
+        let cancel = cancel.child_token();
+        let cancel_key = meeting.map(|m| format!("meeting:{}:{}", m.id, uuid::Uuid::new_v4().simple()));
+        if let Some(k) = &cancel_key {
+            self.cancels.lock().unwrap().insert(k.clone(), cancel.clone());
+        }
+        // Meeting switched to confidential in the meantime: nothing is sent.
+        if let Some(m) = meeting {
+            if self.db.get_meeting(&m.id)?.map(|f| f.confidential).unwrap_or(false) {
+                if let Some(k) = &cancel_key {
+                    self.cancels.lock().unwrap().remove(k);
+                }
+                bail!("réunion confidentielle : aucun appel IA");
+            }
+        }
         let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
         tokio::spawn(async move {
             while let Some(ev) = rx.recv().await {
@@ -246,6 +279,9 @@ impl Inner {
             }
         });
         let mut res = adapter.run(req, tx, cancel).await;
+        if let Some(k) = &cancel_key {
+            self.cancels.lock().unwrap().remove(k);
+        }
         // Session perdue (purgée par le CLI) : on recommence une fois avec une nouvelle session.
         if let (Err(e), SessionMode::Resume(_), Some(m)) = (&res, &session, meeting) {
             let msg = e.to_string().to_lowercase();
@@ -685,6 +721,26 @@ impl Core {
                     let _ = cancel_request(&self.inner, &r.id);
                 }
             }
+            // Summary, correlation, export: jobs cancelled, agent runs stopped.
+            self.inner.db.cancel_meeting_jobs(id, &["report", "correlate", "export", "request"])?;
+            let prefix = format!("meeting:{id}:");
+            for (k, tok) in self.inner.cancels.lock().unwrap().iter() {
+                if k.starts_with(&prefix) {
+                    tok.cancel();
+                }
+            }
+            // Summary being prepared is dropped: the meeting does not stay "in progress".
+            if self.inner.db.get_meeting(id)?.is_some_and(|m| m.status == "processing") {
+                self.inner.db.set_meeting_status(id, "done")?;
+            }
+        } else if self.inner.db.has_job("report", id, &["cancelled"])?
+            && self.inner.db.get_report(id)?.is_none()
+            && !self.inner.db.has_job("report", id, &["pending", "running"])?
+        {
+            // Going back (misclick): the summary cancelled by the switch to confidential is
+            // restarted.
+            self.inner.db.enqueue_job("report", Some(id), &serde_json::json!({}))?;
+            self.inner.jobs_notify.notify_one();
         }
         self.inner.emit(CoreEvent::MeetingsChanged);
         let mut st = self.inner.live_state.lock().unwrap().clone();
@@ -718,9 +774,15 @@ impl Core {
     }
 
     pub fn delete_meeting(&self, id: &str) -> Result<()> {
+        // Id checked before any deletion: never a folder outside `runs`/`cache`.
+        let (Some(run), Some(cache)) =
+            (crate::paths::meeting_subdir(&crate::paths::runs_dir(), id), crate::paths::meeting_subdir(&crate::paths::cache_dir(), id))
+        else {
+            bail!("identifiant de réunion invalide");
+        };
         self.inner.db.delete_meeting(id)?;
-        let _ = std::fs::remove_dir_all(crate::paths::runs_dir().join(id));
-        let _ = std::fs::remove_dir_all(crate::paths::cache_dir().join(id));
+        let _ = std::fs::remove_dir_all(run);
+        let _ = std::fs::remove_dir_all(cache);
         self.inner.emit(CoreEvent::MeetingsChanged);
         Ok(())
     }
@@ -773,6 +835,10 @@ impl Core {
             .filter(|n| !n.is_empty())
             .context("nom de fichier manquant")?
             .to_string();
+        // Size checked before decoding: oversized content is never decoded in memory.
+        if data_base64.trim().len() > crate::context::MAX_FILE_BYTES / 3 * 4 + 64 {
+            bail!("« {name} » dépasse {} Mo", crate::context::MAX_FILE_BYTES / 1024 / 1024);
+        }
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(data_base64.trim())
             .context("contenu du fichier illisible (base64 attendu)")?;
@@ -891,9 +957,10 @@ impl Core {
                     prompt: crate::prompts::agent_test(),
                     tier: Tier::Quick,
                     model: model.filter(|m| !m.trim().is_empty()),
-                    effort: effort.filter(|e| !e.trim().is_empty()),
+                    effort: effort.map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()),
                     session: SessionMode::None,
                     repos: vec![],
+                    exclude_globs: vec![],
                     tools: ToolAccess::None,
                     max_tool_calls: 0,
                     timeout: std::time::Duration::from_secs(120),
@@ -1034,12 +1101,20 @@ pub(crate) fn create_request(
             if let Some(first) = text.chars().next() {
                 text = first.to_uppercase().collect::<String>() + &text[first.len_utf8()..];
             }
-            inner.db.add_note(&m.id, &text, if origin == "voice" || origin == "hotkey" { "voice" } else { "user" })?;
-            if is_action {
-                inner.db.add_action(&m.id, None, &text, None)?;
+            if origin == "hotkey" {
+                // Aside: the note stays in this private request, never in the meeting's notes or
+                // actions (summary, export, MCP).
+                let short = crate::text::truncate(&text, 120);
+                let summary = if inner.lang() == "en" { format!("🔒 Noted privately: {short}") } else { format!("🔒 Noté en aparté : {short}") };
+                finish(&mut r, "done", summary, text.clone());
+            } else {
+                inner.db.add_note(&m.id, &text, if origin == "voice" { "voice" } else { "user" })?;
+                if is_action {
+                    inner.db.add_action(&m.id, None, &text, None)?;
+                }
+                let label = if is_action { "✅ Action notée" } else { "📝 Noté" };
+                finish(&mut r, "done", format!("{label} : {}", crate::text::truncate(&text, 120)), text.clone());
             }
-            let label = if is_action { "✅ Action notée" } else { "📝 Noté" };
-            finish(&mut r, "done", format!("{label} : {}", crate::text::truncate(&text, 120)), text.clone());
         }
         _ => {
             if meeting.as_ref().map(|m| m.confidential).unwrap_or(false) {
@@ -1070,6 +1145,8 @@ pub(crate) fn create_request(
         }
     }
     inner.emit(CoreEvent::Request(r.clone()));
+    // Notifications of an aside: no private text in the banner (shared screen).
+    let aside = origin == "hotkey";
     if r.status == "queued" && matches!(intent, Intent::Cancel | Intent::Stop) {
         // Not an AI job: never waits behind `agent.max_parallel` (the search it cancels).
         inner.db.enqueue_job("control", r.meeting_id.as_deref(), &serde_json::json!({ "request_id": r.id }))?;
@@ -1078,11 +1155,12 @@ pub(crate) fn create_request(
         inner.jobs_notify.notify_one();
         inner.emit(CoreEvent::Notify {
             title: inner.tr("🔎 Je cherche…", "🔎 Searching…"),
-            body: crate::text::truncate(query, 120),
+            body: if aside { inner.tr("Recherche en aparté.", "Private search.") } else { crate::text::truncate(query, 120) },
             route: None,
         });
     } else if let Some(sum) = &r.summary {
-        inner.emit(CoreEvent::Notify { title: "Sténo".into(), body: sum.clone(), route: None });
+        let body = if aside { inner.tr("Aparté traité dans Sténo.", "Private request handled in Sténo.") } else { sum.clone() };
+        inner.emit(CoreEvent::Notify { title: "Sténo".into(), body, route: None });
     }
     Ok(r)
 }
@@ -1094,7 +1172,12 @@ pub(crate) fn run_control(inner: &Inner, intent: Intent, meeting_id: Option<&str
         Intent::Cancel => match inner.db.last_active_request(meeting_id)? {
             Some(last) => {
                 cancel_request(inner, &last.id)?;
-                (format!("Demande annulée : {}", crate::text::truncate(&last.query, 80)), "Demande annulée.".into())
+                // Aside or confidential meeting: the request's text does not come out.
+                let private = last.origin == "hotkey"
+                    || last.meeting_id.as_deref().and_then(|id| inner.db.get_meeting(id).ok().flatten()).is_some_and(|m| m.confidential);
+                let summary =
+                    if private { "Demande annulée.".to_string() } else { format!("Demande annulée : {}", crate::text::truncate(&last.query, 80)) };
+                (summary, "Demande annulée.".into())
             }
             None => ("Aucune demande en cours.".into(), "Aucune demande en cours.".into()),
         },

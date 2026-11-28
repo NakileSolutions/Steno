@@ -1,5 +1,6 @@
 //! `steno mcp` : serveur MCP local, stdio, **lecture seule** (PLAN §9).
-//! JSON-RPC 2.0, un message par ligne. Les apartés ne sont jamais renvoyés.
+//! JSON-RPC 2.0, one message per line. Asides (private transcript and requests made in an
+//! aside) and confidential meetings are never returned.
 
 use anyhow::Result;
 use steno_core::model::{ActionFilter, MeetingFilter};
@@ -36,28 +37,42 @@ fn arg<'a>(a: &'a Value, k: &str) -> Option<&'a str> {
     a.get(k).and_then(|v| v.as_str()).filter(|s| !s.is_empty())
 }
 
+/// Meeting that can be looked up: existing and not confidential. Same answer for both refusal
+/// cases, so the existence of a confidential meeting is never revealed.
+fn public_meeting(db: &Db, a: &Value) -> Result<String> {
+    let id = arg(a, "id").ok_or_else(|| anyhow::anyhow!("id manquant"))?;
+    match db.get_meeting(id)? {
+        Some(m) if !m.confidential => Ok(id.to_string()),
+        _ => anyhow::bail!("réunion introuvable"),
+    }
+}
+
 pub fn call_tool(db: &Db, name: &str, a: &Value) -> Result<Value> {
     Ok(match name {
         "search_meetings" => {
             let q = arg(a, "query").unwrap_or("");
+            // Confidential meetings are removed before the 20-result limit: they never hide
+            // older public meetings.
             let meetings = db.list_meetings(&MeetingFilter {
                 query: Some(q.to_string()),
                 from: arg(a, "from").map(String::from),
                 to: arg(a, "to").map(String::from),
-                limit: Some(20),
+                limit: Some(500),
                 ..Default::default()
             })?;
-            let hits = db.search(q, 30)?;
+            let hits = db.search_public(q, 30)?;
             json!({
-                "meetings": meetings.iter().map(|m| json!({
+                "meetings": meetings.iter().filter(|m| !m.meeting.confidential).take(20).map(|m| json!({
                     "id": m.meeting.id, "title": m.meeting.title, "started_at": m.meeting.started_at, "snippet": m.snippet
                 })).collect::<Vec<_>>(),
                 "hits": hits
             })
         }
         "get_meeting" => {
-            let id = arg(a, "id").ok_or_else(|| anyhow::anyhow!("id manquant"))?;
-            let mut d = serde_json::to_value(db.meeting_detail(id)?.ok_or_else(|| anyhow::anyhow!("réunion introuvable"))?)?;
+            let id = public_meeting(db, a)?;
+            let mut detail = db.meeting_detail(&id)?.ok_or_else(|| anyhow::anyhow!("réunion introuvable"))?;
+            detail.requests.retain(|r| r.origin != "hotkey");
+            let mut d = serde_json::to_value(detail)?;
             if let Some(m) = d.get_mut("meeting").and_then(|m| m.as_object_mut()) {
                 m.remove("agent_session_id");
             }
@@ -67,11 +82,11 @@ pub fn call_tool(db: &Db, name: &str, a: &Value) -> Result<Value> {
             d
         }
         "get_transcript" => {
-            let id = arg(a, "id").ok_or_else(|| anyhow::anyhow!("id manquant"))?;
+            let id = public_meeting(db, a)?;
             let from = arg(a, "from_ts").and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok());
             let to = arg(a, "to_ts").and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok());
             let segs: Vec<Value> = db
-                .segments(id, false, false)?
+                .segments(&id, false, false)?
                 .into_iter()
                 .filter(|s| {
                     let t = chrono::DateTime::parse_from_rfc3339(&s.ts).ok();
@@ -85,18 +100,28 @@ pub fn call_tool(db: &Db, name: &str, a: &Value) -> Result<Value> {
             json!({"id": id, "segments": segs})
         }
         "get_report" => {
-            let id = arg(a, "id").ok_or_else(|| anyhow::anyhow!("id manquant"))?;
-            match db.get_report(id)? {
+            let id = public_meeting(db, a)?;
+            match db.get_report(&id)? {
                 Some(r) => json!({"id": id, "version": r.version, "correlated": r.correlated, "markdown": r.markdown}),
                 None => json!({"id": id, "markdown": null, "message": "pas encore de compte rendu"}),
             }
         }
-        "list_decisions" => serde_json::to_value(db.list_decisions(arg(a, "since"))?)?,
-        "list_actions" => serde_json::to_value(db.list_actions(&ActionFilter {
-            status: arg(a, "status").map(String::from),
-            owner: arg(a, "owner").map(String::from),
-            ..Default::default()
-        })?)?,
+        "list_decisions" => {
+            let hidden = db.confidential_meeting_ids()?;
+            let mut v = db.list_decisions(arg(a, "since"))?;
+            v.retain(|d| !hidden.contains(&d.meeting_id));
+            serde_json::to_value(v)?
+        }
+        "list_actions" => {
+            let hidden = db.confidential_meeting_ids()?;
+            let mut v = db.list_actions(&ActionFilter {
+                status: arg(a, "status").map(String::from),
+                owner: arg(a, "owner").map(String::from),
+                ..Default::default()
+            })?;
+            v.retain(|x| !hidden.contains(&x.meeting_id));
+            serde_json::to_value(v)?
+        }
         "list_report_templates" => {
             let s = steno_core::settings::Settings::load(db)?;
             json!({"default": s.report.default_template, "templates": steno_core::report::templates(&s)})
@@ -185,8 +210,103 @@ mod tests {
         let r = handle(&db, &json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_actions","arguments":{}}})).unwrap();
         assert_eq!(r["result"]["isError"], false);
         let r = handle(&db, &json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_report","arguments":{"id":"x"}}})).unwrap();
-        assert_eq!(r["result"]["isError"], false);
+        assert_eq!(r["result"]["isError"], true, "unknown meeting");
+        assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("réunion introuvable"));
         let r = handle(&db, &json!({"jsonrpc":"2.0","id":5,"method":"nope"})).unwrap();
         assert_eq!(r["error"]["code"], -32601);
+    }
+
+    fn meeting(id: &str, title: &str) -> steno_core::model::Meeting {
+        steno_core::model::Meeting {
+            id: id.into(),
+            title: Some(title.into()),
+            title_source: None,
+            started_at: "2026-11-26T10:30:00+01:00".into(),
+            ended_at: None,
+            status: "done".into(),
+            confidential: false,
+            agent_provider: None,
+            agent_session_id: None,
+            correlation: None,
+            call_app: None,
+        }
+    }
+
+    #[test]
+    fn search_not_hidden_by_confidential_meetings() {
+        let db = Db::open_in_memory().unwrap();
+        let mut old = meeting("ancienne", "Revue Brindille");
+        old.started_at = "2026-01-05T10:00:00+01:00".into();
+        db.insert_meeting(&old).unwrap();
+        for i in 0..25 {
+            let mut m = meeting(&format!("conf-{i}"), &format!("Brindille confidentielle {i}"));
+            m.started_at = format!("2026-11-{:02}T10:00:00+01:00", i + 1);
+            db.insert_meeting(&m).unwrap();
+            db.set_confidential(&m.id, true).unwrap();
+        }
+        let found = call_tool(&db, "search_meetings", &json!({"query": "Brindille"})).unwrap();
+        let ids: Vec<&str> = found["meetings"].as_array().unwrap().iter().map(|m| m["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["ancienne"], "25 recent confidential meetings do not hide the public meeting");
+    }
+
+    #[test]
+    fn confidential_meetings_and_asides_left_out() {
+        let db = Db::open_in_memory().unwrap();
+        for (id, title) in [("pub", "Daily ORION"), ("conf", "Point RH")] {
+            db.insert_meeting(&meeting(id, title)).unwrap();
+            db.insert_segment(&steno_core::db::NewSegment {
+                meeting_id: id.into(),
+                ts: steno_core::now_iso(),
+                t0: Some(1.0),
+                t1: Some(2.0),
+                channel: "them".into(),
+                speaker: "Eux".into(),
+                text: format!("Brindille dans {title}"),
+                private: false,
+                is_echo: false,
+            })
+            .unwrap();
+            db.save_report(id, &format!("# {title}\n\nBrindille"), None, None, false).unwrap();
+            db.replace_decisions_actions(id, &[format!("décision {title}")], &[(Some("Marie".into()), format!("action {title}"), None)]).unwrap();
+        }
+        db.set_confidential("conf", true).unwrap();
+        let call = |name: &str, args: Value| call_tool(&db, name, &args);
+        let found = call("search_meetings", json!({"query": "Brindille"})).unwrap().to_string();
+        assert!(found.contains("Daily ORION") && !found.contains("Point RH"), "{found}");
+        for tool in ["get_meeting", "get_transcript", "get_report"] {
+            let conf = call(tool, json!({"id": "conf"})).unwrap_err().to_string();
+            let absent = call(tool, json!({"id": "n-existe-pas"})).unwrap_err().to_string();
+            assert_eq!(conf, absent, "{tool}: no difference between confidential and missing");
+            assert_eq!(conf, "réunion introuvable");
+            assert!(call(tool, json!({"id": "pub"})).is_ok(), "{tool}");
+        }
+        let d = call("list_decisions", json!({})).unwrap().to_string();
+        assert!(d.contains("Daily ORION") || d.contains("décision Daily"), "{d}");
+        assert!(!d.contains("Point RH"), "{d}");
+        let a = call("list_actions", json!({})).unwrap().to_string();
+        assert!(a.contains("action Daily ORION") && !a.contains("action Point RH"), "{a}");
+
+        let q = |origin: &str, query: &str| steno_core::model::Request {
+            id: format!("r-{origin}"),
+            meeting_id: Some("pub".into()),
+            created_at: steno_core::now_iso(),
+            origin: origin.into(),
+            intent: "search".into(),
+            query: query.into(),
+            context_seconds: None,
+            tier: "search".into(),
+            status: "done".into(),
+            started_at: None,
+            finished_at: None,
+            error: None,
+            summary: None,
+            answer_md: None,
+            tools_used: vec![],
+        };
+        db.insert_request(&q("voice", "où est le verrou de créneau")).unwrap();
+        db.insert_request(&q("hotkey", "question en aparté sur l'entretien annuel")).unwrap();
+        let m = call("get_meeting", json!({"id": "pub"})).unwrap().to_string();
+        assert!(m.contains("verrou de créneau"), "{m}");
+        assert!(!m.contains("entretien annuel"), "requests made in an aside never come out: {m}");
     }
 }

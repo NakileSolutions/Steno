@@ -257,6 +257,7 @@ pub struct RunRequest {
     pub model: Option<String>,       // résolu depuis les réglages (vide = défaut du CLI)
     pub session: SessionMode,        // None | New(String) | Resume(String)
     pub repos: Vec<PathBuf>,         // dépôts lisibles pour cette exécution
+    pub exclude_globs: Vec<String>,  // patterns excluded from the repositories (Repo.exclude_globs): direct reads refused
     pub tools: ToolAccess,           // None | ReadOnly { connectors: Vec<String> }
     pub max_tool_calls: u32,
     pub timeout: Duration,
@@ -372,6 +373,13 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
 - `correlation.mode` : `off | on_demand | auto`.
 - Import/export TOML : mêmes sections, **sans** `profile.name`, `privacy.auto_export_dir`,
   ni dépôts (aucun chemin, aucune donnée personnelle).
+  Team import (`import_settings`) also keeps the user's own security choices:
+  `agent.custom_command`, `agent.allow_api_key`, `updates.auto_install`, `agent.provider` and
+  `agent.tiers.*.agent` (plus that usage's `model` and `effort` when the team uses another
+  agent), and `privacy.consent_reminder`. `privacy.excluded_titles` and
+  `correlation.exclude_words` are merged (nothing is removed), `correlation.mode` never becomes
+  `auto`, retention can only get shorter, and an app with `browser: true` is never enabled by
+  an import. `agent.tiers.*.effort` must match `[a-z0-9_-]{1,20}`.
 
 ---
 
@@ -379,6 +387,14 @@ leurs valeurs par défaut. Structure (valeurs par défaut) :
 
 Le front appelle `invoke(nom, args)` ; les noms d'arguments sont en `camelCase` côté JS
 (conversion automatique de Tauri). Erreur : chaîne en français.
+
+In the app, commands that edit settings, meetings (title, notes, speakers, segments, context,
+participants, confidentiality, report), actions, repositories or connectors, delete data,
+install an update, write a file or request a permission only answer the main window
+(`main_window_only` in `app/src-tauri/src/commands.rs`). Besides read-only commands, the menu
+bar panel calls `live_state`, `get_settings`, `start_meeting`, `stop_meeting`,
+`pause_meeting`, `resume_meeting`, `set_mic_muted`, `set_live_confidential`, `ask` (live
+meeting only), `cancel_request`, `recent_requests` and `open_main`.
 
 ### Types (TypeScript)
 
@@ -566,6 +582,11 @@ l'interface sur la même origine. Ouvrir `http://127.0.0.1:4180/?backend=http`.
 - `POST /api/invoke/<commande>` : corps = arguments JSON en camelCase (vide = aucun) ;
   200 → JSON du résultat (`null` si rien) ; 400 → `{"error": "…"}` ; 404 si commande inconnue.
 - `GET /api/events` : flux SSE ; `event:` = nom de l'événement du §5, `data:` = charge JSON.
+- Every `/api/*` route refuses (403) a `Host` header other than `127.0.0.1`, `localhost` or
+  `[::1]` (with or without the server's port), an `Origin` header other than
+  `http://127.0.0.1:<port>` or `http://localhost:<port>`, and a `Sec-Fetch-Site` other than
+  `same-origin` or `none`: a third-party web page can neither call the API nor read the stream.
+  Command calls also require `Content-Type: application/json` (415 otherwise).
 - Variables : `STENO_HOME`, `STENO_SIDECAR` (ex. `steno replay fichier.jsonl --speed 20`).
 - `pick_folder` renvoie `null` (pas de sélecteur natif).
 

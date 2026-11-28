@@ -199,6 +199,8 @@ const en: Record<string, string> = {
   'Libellé du dépôt': 'Repository label',
   'Retirer {label}': 'Remove {label}',
   'Exclusions (un motif glob par ligne)': 'Exclusions (one glob pattern per line)',
+  'Fichiers que l’agent ne lit pas directement (Claude Code uniquement). Une recherche dans tout le dépôt ou l’historique Git peut encore les montrer.':
+    'Files the agent does not read directly (Claude Code only). A search across the whole repository or the Git history can still show them.',
   'Aucun dépôt lisible.': 'No readable repositories.',
   'Ajouter un dossier…': 'Add a folder…',
   'non installé': 'not installed',

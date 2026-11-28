@@ -1,0 +1,4 @@
+# SSH keys allowed to sign Sténo version tags (allowed_signers format of ssh-keygen).
+# Read by the app (crates/steno-core/src/updates.rs) and by the release workflow (from main).
+# Fingerprint: SHA256:cVy45Aj++geRYY+SECDc0QWkd3WQQ6H+nBMPjKV9+PY
+dev@nakile.fr namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMAIevH2R7H67cal0qhf8Mq2mCukK9br0G6TkfNgHbws

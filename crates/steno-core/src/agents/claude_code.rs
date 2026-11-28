@@ -4,7 +4,8 @@
 //! Lecture seule : mode de permission `dontAsk` (tout ce qui n'est pas explicitement
 //! autorisé est refusé), liste d'outils autorisés minimale, refus explicites des outils
 //! d'écriture, et crochet `PreToolUse` qui applique `ReadOnlyPolicy` (motifs MCP interdits,
-//! commandes shell, chemins, budget d'appels).
+//! shell commands, paths, call budget). Without a hook executable, Claude Code is not
+//! started.
 
 use super::*;
 use crate::agents::process::run_streaming;
@@ -21,29 +22,26 @@ fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
-/// Nom d'un serveur MCP tel qu'il apparaît dans les noms d'outils (`mcp__<nom>__outil`).
-fn tool_server_name(name: &str) -> String {
-    name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).collect()
-}
-
-/// Paramètres `--settings` d'une exécution : refus explicites + crochet de politique.
-pub(crate) fn run_settings(req: &RunRequest) -> Value {
-    let mut settings = json!({
+/// `--settings` of a run: explicit denials + policy hook. Without a hook executable, the run
+/// is refused: the policy (commands, paths, budget, MCP tools) would not be
+/// enforced.
+pub(crate) fn run_settings(req: &RunRequest) -> Result<Value> {
+    let Some(exe) = &req.hook_exe else {
+        anyhow::bail!("crochet de politique indisponible : exécution de Claude Code refusée");
+    };
+    let cmd = format!(
+        "{} policy-hook {}",
+        shell_quote(&exe.display().to_string()),
+        shell_quote(&policy_file(&req.run_dir, &req.run_id).display().to_string())
+    );
+    Ok(json!({
         "permissions": {
             "deny": ["Write", "Edit", "MultiEdit", "NotebookEdit", "WebFetch", "WebSearch", "Task"],
         },
-    });
-    if let Some(exe) = &req.hook_exe {
-        let cmd = format!(
-            "{} policy-hook {}",
-            shell_quote(&exe.display().to_string()),
-            shell_quote(&policy_file(&req.run_dir, &req.run_id).display().to_string())
-        );
-        settings["hooks"] = json!({
+        "hooks": {
             "PreToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": cmd, "timeout": 30 }] }]
-        });
-    }
-    settings
+        },
+    }))
 }
 
 /// Arguments de la ligne de commande pour une exécution.
@@ -100,7 +98,7 @@ pub(crate) fn build_args(req: &RunRequest, settings_path: &Path, policy: &ReadOn
                 allowed.push(format!("Bash({c}:*)"));
             }
             for c in connectors {
-                allowed.push(format!("mcp__{}", tool_server_name(c)));
+                allowed.push(format!("mcp__{}", crate::policy::mcp_server_id(c)));
             }
             if policy.allow_skills {
                 allowed.push("Skill".into());
@@ -276,9 +274,10 @@ impl AgentAdapter for ClaudeCode {
     }
     async fn run(&self, req: RunRequest, events: mpsc::Sender<AgentEvent>, cancel: CancellationToken) -> Result<RunResult> {
         let bin = which::which(BIN).map_err(|_| anyhow::anyhow!("Claude Code (« claude ») introuvable"))?;
+        let settings = run_settings(&req)?;
         let policy = write_run_policy(&req)?;
         let settings_path = req.run_dir.join(".steno").join(format!("settings-{}.json", req.run_id));
-        std::fs::write(&settings_path, serde_json::to_vec_pretty(&run_settings(&req))?)?;
+        crate::paths::write_private(&settings_path, &serde_json::to_vec_pretty(&settings)?)?;
         let args = build_args(&req, &settings_path, &policy);
         let mut cmd = tokio::process::Command::new(bin);
         cmd.args(&args).current_dir(&req.run_dir);
@@ -324,6 +323,7 @@ mod tests {
             effort: Some("high".into()),
             session: SessionMode::Resume("abc".into()),
             repos: vec![PathBuf::from("/src/app")],
+            exclude_globs: vec![],
             tools,
             max_tool_calls: 15,
             timeout: Duration::from_secs(10),
@@ -356,8 +356,15 @@ mod tests {
         let a = build_args(&req(ToolAccess::None), Path::new("/tmp/s.json"), &p);
         assert!(a.windows(2).any(|w| w[0] == "--tools" && w[1].is_empty()));
         assert!(a.contains(&"--strict-mcp-config".to_string()));
-        let st = run_settings(&r);
+        let st = run_settings(&r).unwrap();
         assert!(st["hooks"]["PreToolUse"][0]["hooks"][0]["command"].as_str().unwrap().contains("policy-hook"));
+    }
+
+    #[test]
+    fn no_run_without_hook() {
+        let mut r = req(ToolAccess::ReadOnly { connectors: vec![] });
+        r.hook_exe = None;
+        assert!(run_settings(&r).is_err(), "the policy would not be enforced");
     }
 
     #[test]

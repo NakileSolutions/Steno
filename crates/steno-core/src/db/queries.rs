@@ -911,10 +911,14 @@ impl Db {
         })
     }
 
+    /// Latest requests shown in the menu bar: neither asides nor requests from a confidential
+    /// meeting.
     pub fn recent_requests(&self, limit: i64) -> Result<Vec<Request>> {
         self.with(|c| {
             let mut st = c.prepare(&format!(
-                "SELECT {REQUEST_COLS} FROM requests ORDER BY created_at DESC, rowid DESC LIMIT ?1"
+                "SELECT {REQUEST_COLS} FROM requests WHERE origin <> 'hotkey' \
+                 AND (meeting_id IS NULL OR meeting_id NOT IN (SELECT id FROM meetings WHERE confidential = 1)) \
+                 ORDER BY created_at DESC, rowid DESC LIMIT ?1"
             ))?;
             let rows = st.query_map([limit], request_row)?;
             rows.collect()
@@ -1550,28 +1554,59 @@ impl Db {
 
     // ---------------------------------------------------------------- recherche
 
-    /// Recherche plein texte dans les transcriptions (hors apartés) et les comptes rendus.
+    /// Full-text search in transcripts (asides excluded) and summaries, for the user
+    /// themselves (confidential meetings included).
     pub fn search(&self, query: &str, limit: i64) -> Result<Vec<SearchHit>> {
         let Some(q) = fts_query(query) else { return Ok(vec![]) };
-        self.search_fts(&q, limit)
+        self.search_fts(&q, limit, true)
     }
 
-    /// Recherche « au moins un mot » pour les questions en langage naturel.
+    /// Full-text search without confidential meetings (MCP server, third-party tools).
+    pub fn search_public(&self, query: &str, limit: i64) -> Result<Vec<SearchHit>> {
+        let Some(q) = fts_query(query) else { return Ok(vec![]) };
+        self.search_fts(&q, limit, false)
+    }
+
+    /// "At least one word" search for natural-language questions. The excerpts go to the AI
+    /// agent: never a confidential meeting.
     pub fn search_relevant(&self, question: &str, limit: i64) -> Result<Vec<SearchHit>> {
         let Some(q) = fts_query_any(question) else { return Ok(vec![]) };
-        self.search_fts(&q, limit)
+        self.search_fts(&q, limit, false)
     }
 
-    fn search_fts(&self, q: &str, limit: i64) -> Result<Vec<SearchHit>> {
+    /// Cancels the pending or running jobs of a meeting (given types).
+    pub fn cancel_meeting_jobs(&self, meeting_id: &str, kinds: &[&str]) -> Result<usize> {
+        let mut n = 0;
+        for k in kinds {
+            n += self.with(|c| {
+                c.execute(
+                    "UPDATE jobs SET status='cancelled' WHERE meeting_id=?1 AND type=?2 AND status IN ('pending','running')",
+                    params![meeting_id, k],
+                )
+            })?;
+        }
+        Ok(n)
+    }
+
+    /// Ids of the confidential meetings.
+    pub fn confidential_meeting_ids(&self) -> Result<std::collections::HashSet<String>> {
+        self.with(|c| {
+            let mut st = c.prepare("SELECT id FROM meetings WHERE confidential = 1")?;
+            let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+            rows.collect()
+        })
+    }
+
+    fn search_fts(&self, q: &str, limit: i64, include_confidential: bool) -> Result<Vec<SearchHit>> {
         self.with(|c| {
             let mut out = vec![];
             let mut st = c.prepare(
                 "SELECT s.meeting_id, m.title, m.started_at, snippet(segments_fts, 0, '', '', '…', 16), s.ts \
                  FROM segments_fts JOIN segments s ON s.id = segments_fts.rowid JOIN meetings m ON m.id = s.meeting_id \
-                 WHERE segments_fts MATCH ?1 AND s.private = 0 AND s.is_echo = 0 \
+                 WHERE segments_fts MATCH ?1 AND s.private = 0 AND s.is_echo = 0 AND (?3 OR m.confidential = 0) \
                  ORDER BY bm25(segments_fts) LIMIT ?2",
             )?;
-            let rows = st.query_map(params![q, limit], |r| {
+            let rows = st.query_map(params![q, limit, include_confidential], |r| {
                 Ok(SearchHit {
                     meeting_id: r.get(0)?,
                     title: r.get(1)?,
@@ -1587,9 +1622,9 @@ impl Db {
             let mut st = c.prepare(
                 "SELECT r.meeting_id, m.title, m.started_at, snippet(reports_fts, 0, '', '', '…', 16) \
                  FROM reports_fts JOIN reports r ON r.rowid = reports_fts.rowid JOIN meetings m ON m.id = r.meeting_id \
-                 WHERE reports_fts MATCH ?1 ORDER BY bm25(reports_fts) LIMIT ?2",
+                 WHERE reports_fts MATCH ?1 AND (?3 OR m.confidential = 0) ORDER BY bm25(reports_fts) LIMIT ?2",
             )?;
-            let rows = st.query_map(params![q, limit], |r| {
+            let rows = st.query_map(params![q, limit, include_confidential], |r| {
                 Ok(SearchHit {
                     meeting_id: r.get(0)?,
                     title: r.get(1)?,
@@ -1707,6 +1742,24 @@ mod tests {
         assert_eq!(db.template_for_title("DAILY Équipe 19/11 | Microsoft Teams", "m3").unwrap().as_deref(), Some("daily"));
         assert_eq!(db.template_for_title("Point client", "m3").unwrap(), None);
         assert_eq!(db.template_for_title("27/11", "m3").unwrap(), None);
+    }
+
+    #[test]
+    fn confidential_meetings_never_sent_to_the_ai() {
+        let db = Db::open_in_memory().unwrap();
+        db.insert_meeting(&meeting("pub", "Daily ORION")).unwrap();
+        db.insert_meeting(&meeting("conf", "Point RH")).unwrap();
+        db.insert_segment(&seg("pub", "them", "Le verrou de créneau est prêt", false)).unwrap();
+        db.insert_segment(&seg("conf", "them", "Le verrou de créneau et le salaire de Marie", false)).unwrap();
+        db.save_report("conf", "# Point RH\n\nverrou de créneau, augmentation de Marie", None, None, false).unwrap();
+        db.set_confidential("conf", true).unwrap();
+        let ids = |hits: Vec<SearchHit>| hits.into_iter().map(|h| h.meeting_id).collect::<Vec<_>>();
+        assert!(ids(db.search("verrou creneau", 10).unwrap()).contains(&"conf".to_string()), "the user finds their own meetings");
+        let ai = ids(db.search_relevant("qu'a-t-on dit du verrou de créneau ?", 20).unwrap());
+        assert!(ai.contains(&"pub".to_string()));
+        assert!(!ai.contains(&"conf".to_string()), "no confidential excerpt for the agent: {ai:?}");
+        assert!(!ids(db.search_public("augmentation", 10).unwrap()).contains(&"conf".to_string()));
+        assert_eq!(db.confidential_meeting_ids().unwrap().into_iter().collect::<Vec<_>>(), ["conf"]);
     }
 
     #[test]

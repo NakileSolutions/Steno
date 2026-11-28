@@ -15,6 +15,20 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tag is annotated, on main, carries this name and is signed by a release key
+        run: |
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME" "+refs/heads/main:refs/remotes/origin/main"
+          test "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = tag || { echo "::error::tag is not annotated"; exit 1; }
+          git cat-file tag "refs/tags/$GITHUB_REF_NAME" | sed '/^$/q' | grep -qFx "tag $GITHUB_REF_NAME" || { echo "::error::tag header carries another name"; exit 1; }
+          git merge-base --is-ancestor "refs/tags/$GITHUB_REF_NAME^{commit}" origin/main || { echo "::error::tagged commit is not on main"; exit 1; }
+          # Keys from main, never from the tagged commit: a side commit could add its own key.
+          git show origin/main:crates/steno-core/release-signers > "$RUNNER_TEMP/release-signers"
+          git -c gpg.format=ssh -c gpg.ssh.program=ssh-keygen \
+              -c gpg.ssh.allowedSignersFile="$RUNNER_TEMP/release-signers" \
+              -c gpg.program=/usr/bin/false -c gpg.x509.program=/usr/bin/false \
+              verify-tag "refs/tags/$GITHUB_REF_NAME"
       - name: Tag version matches the code
         run: |
           TAG="${GITHUB_REF_NAME#v}"
@@ -23,4 +37,8 @@ jobs:
       - name: Create the release (notes generated from pull requests)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "Sténo ${GITHUB_REF_NAME#v}"
+        run: |
+          # A tag with a suffix (v0.3.0-rc1) is a pre-release: never offered to installed apps.
+          PRE=""
+          case "$GITHUB_REF_NAME" in *-*) PRE="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes $PRE --title "Sténo ${GITHUB_REF_NAME#v}"

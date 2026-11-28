@@ -48,7 +48,7 @@ impl Db {
     /// Ouvre (ou crée) la base au chemin donné et applique les migrations.
     pub fn open(path: &Path) -> Result<Db> {
         if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)
+            crate::paths::create_private_dir(dir)
                 .with_context(|| format!("impossible de créer {}", dir.display()))?;
         }
         let existed = path.exists();
@@ -70,12 +70,25 @@ impl Db {
                     current,
                     chrono::Local::now().format("%Y%m%d-%H%M%S")
                 ));
-                let _ = std::fs::create_dir_all(crate::paths::backups_dir());
+                let _ = crate::paths::create_private_dir(&crate::paths::backups_dir());
                 conn.execute("VACUUM INTO ?1", [backup.to_string_lossy().to_string()])
                     .context("sauvegarde avant migration")?;
             }
         }
         migs.to_latest(&mut conn).context("migration de la base")?;
+        Ok(Db {
+            conn: Arc::new(Mutex::new(conn)),
+            path: Some(path.to_path_buf()),
+        })
+    }
+
+    /// Opens an existing database read-only, with no migration and no write (MCP server).
+    pub fn open_read_only(path: &Path) -> Result<Db> {
+        use rusqlite::OpenFlags;
+        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
+            .with_context(|| format!("impossible d'ouvrir la base {} en lecture", path.display()))?;
+        conn.pragma_update(None, "busy_timeout", 5000)?;
+        conn.pragma_update(None, "query_only", "ON")?;
         Ok(Db {
             conn: Arc::new(Mutex::new(conn)),
             path: Some(path.to_path_buf()),
@@ -159,5 +172,18 @@ mod tests {
             let mode = std::fs::metadata(&p).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o600);
         }
+    }
+
+    #[test]
+    fn read_only_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("steno.db");
+        Db::open(&p).unwrap().with(|c| c.execute("INSERT INTO settings(key, value) VALUES ('a', '1')", [])).unwrap();
+        let ro = Db::open_read_only(&p).unwrap();
+        let v: String = ro.with(|c| c.query_row("SELECT value FROM settings WHERE key='a'", [], |r| r.get(0))).unwrap();
+        assert_eq!(v, "1");
+        assert!(ro.with(|c| c.execute("INSERT INTO settings(key, value) VALUES ('b', '2')", [])).is_err());
+        assert!(Db::open_read_only(&dir.path().join("absente.db")).is_err(), "no database created");
+        assert!(!dir.path().join("absente.db").exists());
     }
 }

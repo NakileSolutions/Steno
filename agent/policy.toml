@@ -14,8 +14,15 @@ allowed_commands = [
 ]
 pipe_commands = ["head", "tail", "wc", "sort", "uniq", "grep", "rg", "cut"]
 
-# Options interdites même pour une commande autorisée.
-denied_arguments = ["-exec", "-execdir", "-delete", "-fprint", "-fprintf", "-ok", "--output", "-o"]
+# Options refused for every allowed command: those that run a program or write a file
+# (`--opt=…` forms and `--out` abbreviations included). Under Claude Code, `grep` is ugrep and
+# `find` is bfs. Sténo always adds this list and per-command rules: `sort -o`, `git grep -O`
+# (letter searched across the whole option group) and options that follow symbolic links.
+denied_arguments = [
+  "-exec", "-execdir", "-ok", "-okdir", "-delete", "-rm", "-fls", "-fprint", "-fprint0", "-fprintf",
+  "--output", "--pre", "--pre-glob", "--hostname-bin", "--compress-program",
+  "--filter", "--pager", "--view", "--save-config", "--config", "--open-files-in-pager",
+]
 
 # Outils intégrés autorisés (lecture).
 builtin_read_tools = ["Read", "Grep", "Glob", "LS"]
@@ -35,6 +42,7 @@ denied_tool_words = [
   "put", "set", "upsert", "modify", "submit", "trigger", "cancel", "revoke", "grant", "commit",
   "react", "complete", "mark", "unlabel", "untrash", "respond", "copy", "restore", "enable", "disable",
   "execute", "run", "start", "stop", "kill", "restart", "deploy", "rollback", "acknowledge", "ack",
+  "save", "exec", "upload", "import", "merge", "reopen",
 ]
 
 # Exceptions précises aux mots interdits (globs sur le nom complet). Les globs de

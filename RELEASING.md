@@ -23,6 +23,13 @@ moves the user's clone to that tag and then runs `make install`.
 
 Rules:
 - `main` only accepts pull requests, with green CI and signed commits.
+- Tags are signed with the SSH release key. The real checks are the **Release** workflow (keys
+  read from `main`, tagged commit on `main`) and the app (keys compiled in, tag on `main`):
+  `git verify-tag` against `crates/steno-core/release-signers`. The tag ruleset's
+  `required_signatures` rule does not protect much: administrators bypass the ruleset and are
+  the only ones allowed to create tags. To change keys: first release, signed with the old key,
+  a version that adds the new key to that file on `main`, then sign the following versions
+  with the new one.
 - A published tag is never moved or deleted: if something is wrong, release the next version.
-- `X.Y.Z` versions only; a pre-release (`v0.3.0-rc1`, marked "pre-release") is not offered to
-  users.
+- `X.Y.Z` versions only; a pre-release (`v0.3.0-rc1`) is published automatically as a
+  "pre-release" by the workflow and is never offered to users.
