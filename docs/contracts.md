@@ -109,7 +109,7 @@ inconnus (compatibilité ascendante).
 
 ```json
 {"type":"ready","version":"0.1.0","asr":"parakeet-tdt-v3"}
-{"type":"permissions","microphone":"granted","system_audio":"unknown","accessibility":"denied"}
+{"type":"permissions","microphone":"granted","system_audio":"unknown","accessibility":"denied","calendar":"unknown"}
 {"type":"call","active":true,"app":"slack","title":"Huddle dans #equipe-flotte"}
 {"type":"teams_call","active":true,"title":"Daily ORION"}
 {"type":"segment","ts":"2026-11-26T10:41:12+01:00","t0":668.2,"t1":672.9,"channel":"me","text":"Sténo, cherche…","private":false}
@@ -126,6 +126,7 @@ inconnus (compatibilité ascendante).
 - `state` : `listening | paused | stopped`.
 - `permissions` : chaque valeur vaut `granted | denied | unknown` ; émis après `ready`
   et en réponse à `{"cmd":"permissions"}`.
+  `calendar` is the optional calendar access (EventKit on macOS) used by `calendar_events`.
 - `t0` / `t1` : secondes depuis le `start` (horloge de la session de capture).
 - `segment.private` : `true` pendant un aparté (seulement pour `channel = "me"`).
 - `segment.speaker` (facultatif, `channel = "them"`, non émis aujourd'hui : les intervenants sont identifiés en fin de réunion seulement) : intervenant reconnu (« S1 »…) ; le cœur l'enregistrerait comme « Eux-1 »…
@@ -165,7 +166,7 @@ inconnus (compatibilité ascendante).
  "items":[{"id":42,"file":"them.wav","t0":12.0,"t1":18.5}]}
 {"cmd":"calendar_events","from":"2026-11-27T08:00:00+01:00","to":"2026-12-04T08:00:00+01:00"}   // permission « calendar » (facultative)
 {"cmd":"permissions"}
-{"cmd":"request_permission","kind":"microphone"}   // ou "system_audio", "accessibility"
+{"cmd":"request_permission","kind":"microphone"}   // ou "system_audio", "accessibility", "calendar"
 {"cmd":"shutdown"}
 ```
 
@@ -245,11 +246,14 @@ CLI, de modèles ou d'options.
 ```rust
 #[async_trait]
 pub trait AgentAdapter: Send + Sync {
-    fn id(&self) -> &'static str;            // "claude-code" | "codex" | "gemini" | "opencode" | "custom"
+    fn id(&self) -> &'static str;            // "claude-code" | "codex" | "antigravity" | "grok" | "gemini" | "opencode" | "custom"
     fn display_name(&self) -> &'static str;
     fn support(&self) -> Support;            // Supported | Experimental | Generic
     async fn detect(&self) -> Detection;     // { installed, version, path, error }
     fn capabilities(&self) -> Capabilities;
+    fn efforts(&self) -> Vec<&'static str> { vec![] }   // reasoning levels the CLI accepts (empty = not adjustable)
+    fn lists_models(&self) -> bool { false }            // true: list_models asks the CLI; false: static suggestions
+    async fn list_models(&self) -> Result<Vec<ModelInfo>> { Ok(vec![]) }   // suggested models; free input stays allowed
     async fn list_mcp(&self) -> Result<Vec<McpServer>>;
     async fn sync_instructions(&self, run_dir: &Path, instructions: &Instructions) -> Result<()>;
     async fn apply_policy(&self, policy: &ReadOnlyPolicy, run_dir: &Path) -> Result<()>;
@@ -270,12 +274,19 @@ pub struct RunRequest {
     pub prompt: String,
     pub tier: Tier,                  // Quick | Search | Summary
     pub model: Option<String>,       // résolu depuis les réglages (vide = défaut du CLI)
+    pub effort: Option<String>,      // reasoning level ("low", "high"…), None = CLI default
     pub session: SessionMode,        // None | New(String) | Resume(String)
     pub repos: Vec<PathBuf>,         // dépôts lisibles pour cette exécution
     pub tools: ToolAccess,           // None | ReadOnly { connectors: Vec<String> }
     pub max_tool_calls: u32,
     pub timeout: Duration,
+    pub allow_api_key: bool,         // allow API keys found in the environment (off by default)
+    pub run_id: String,              // unique run id (temporary files)
+    pub hook_exe: Option<PathBuf>,   // executable that answers `policy-hook <file>`
+    pub skills: bool,                // let the agent use the user's skills (searches only)
 }
+
+pub struct ModelInfo { pub id: String, pub name: String, pub note: Option<String> }
 
 pub enum AgentEvent { Started { session_id: Option<String> }, ToolCall { name: String },
                       Text(String), Stderr(String) }
@@ -401,7 +412,7 @@ Le front appelle `invoke(nom, args)` ; les noms d'arguments sont en `camelCase` 
 type Channel = "me" | "them";
 type Meeting = { id: string; title: string | null; title_source: string | null;
   started_at: string; ended_at: string | null;
-  status: "live" | "ended" | "processing" | "done" | "error";
+  status: "planned" | "live" | "ended" | "processing" | "done" | "error"; /* planned: scheduled, started_at = scheduled time */
   confidential: boolean; agent_provider: string | null; correlation: "off" | "on_demand" | "auto";
   call_app: string | null /* identifiant de l'app de l'appel (teams, slack…), null si démarrage sans appel */ };
 type MeetingSummary = Meeting & { correlated: boolean; open_actions: number;
@@ -432,6 +443,7 @@ type SearchHit = { meeting_id: string; title: string | null; started_at: string;
   kind: "segment" | "report"; snippet: string; ts: string | null };
 type LiveState = { state: "idle" | "listening" | "paused" | "processing";
   meeting: Meeting | null; levels: { me: number; them: number }; aside: boolean;
+  mic_muted: boolean;       /* mic muted in Sténo (`set_mic_muted`): nothing you say is transcribed */
   sidecar: "running" | "starting" | "stopped" | "missing" | "error"; last_error: string | null;
   pending_requests: number;
   call: { active: boolean; app: string | null; app_name: string | null; title: string | null } };
@@ -535,7 +547,7 @@ type Settings = /* section 4 */;
 | `delete_all_data` | — | `null` |
 | `log_ui_error` | `message` | `null` (consigné dans logs/steno.log) |
 | `get_permissions` | — | `{ microphone, system_audio, accessibility, calendar: "granted" \| "denied" \| "unknown", available: boolean, platform, sound_server, session, global_shortcuts, app_command }` (redemande l'état au sidecar ; `available` = sidecar lancé ; champs système, facultatifs : `platform` `macos \| linux`, `sound_server` (« pipewire … », « pulseaudio 16.1 »…), `session` `x11 \| wayland`, `global_shortcuts` (raccourcis globaux enregistrés), `app_command` (commande de l'app pour les raccourcis du bureau, clé runtime `app_shortcuts`)) |
-| `request_permission` | `kind: "microphone" \| "system_audio" \| "accessibility"` | `null` (invite macOS affichée par le sidecar ; sans effet si déjà répondu) |
+| `request_permission` | `kind: "microphone" \| "system_audio" \| "accessibility" \| "calendar"` | `null` (invite macOS affichée par le sidecar ; sans effet si déjà répondu) |
 | `open_permission_settings` | `kind` | `null` (ouvre la page des Réglages Système du droit ; adresses fixes. Linux : réglages du son — `gnome-control-center sound`, sinon `pavucontrol` — pour `microphone` et `system_audio`, erreur pour les autres) |
 | `complete_onboarding` | — | `null` (assistant terminé ou passé : il ne se rouvre plus) |
 | `pause_meeting` | — | `null` (écoute en pause : la réunion continue, rien n'est transcrit ; `LiveState.state = "paused"`) |
