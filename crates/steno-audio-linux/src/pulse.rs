@@ -11,6 +11,7 @@
 //!   moniteur d'**un seul flux d'application** (`pa_stream_set_monitor_stream`, l'équivalent du
 //!   process tap de macOS) ou moniteur d'une sortie entière (plan B « global ») ;
 //! - la lecture d'un court signal sur une sortie donnée.
+//!
 //! Si le serveur disparaît (redémarrage de PipeWire), le thread se reconnecte toutes les 2 s.
 
 use std::cell::RefCell;
@@ -561,7 +562,7 @@ fn open_record(ctx: &Rc<RefCell<Context>>, id: u64, source: &RecordSource, mut d
             loop {
                 match s.peek() {
                     Ok(PeekResult::Data(bytes)) => {
-                        let samples: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+                        let samples: Vec<f32> = bytes.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect();
                         data(samples);
                         let _ = s.discard();
                     }

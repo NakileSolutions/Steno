@@ -123,9 +123,8 @@ impl Controller {
         // Attend la connexion au serveur son (au plus 3 s) pour annoncer un état juste.
         let deadline = Instant::now() + Duration::from_secs(3);
         while !self.connected && Instant::now() < deadline {
-            match self.pulse_events.recv_timeout(Duration::from_millis(100)) {
-                Ok(PulseEvent::Connected) => self.connected = true,
-                Ok(_) | Err(_) => {}
+            if let Ok(PulseEvent::Connected) = self.pulse_events.recv_timeout(Duration::from_millis(100)) {
+                self.connected = true;
             }
         }
         log::send(&Outgoing::Ready { version: protocol::VERSION.into(), asr: models::ASR_NAME.into() });
@@ -543,6 +542,6 @@ fn retranscribe(pending: Option<Arc<StopSignal>>, meeting_id: String, dir: PathB
     };
     log::info(&format!("modèle de retranscription {} prêt en {:.1} s", recognizer.name, started.elapsed().as_secs_f64()));
     let corrector = crate::filters::VocabularyCorrector::new(&vocabulary);
-    let out = crate::post::run(&items, &dir, |s| recognizer.transcribe(s), |t| corrector.correct(t), |p| crate::wav::load_mono_16k(p));
+    let out = crate::post::run(&items, &dir, |s| recognizer.transcribe(s), |t| corrector.correct(t), crate::wav::load_mono_16k);
     log::send(&Outgoing::Retranscription { meeting_id, items: out });
 }

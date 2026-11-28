@@ -134,7 +134,9 @@ pub fn load_mono_16k(path: &Path) -> Result<Vec<f32>> {
     if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
         bail!("{} n'est pas un fichier WAV", path.display());
     }
-    let (mut fmt, mut data): (Option<(u16, u16, u32, u16)>, Option<&[u8]>) = (None, None);
+    // `fmt ` chunk: (format, channels, sample rate, bits per sample).
+    type Fmt = (u16, u16, u32, u16);
+    let (mut fmt, mut data): (Option<Fmt>, Option<&[u8]>) = (None, None);
     let mut pos = 12;
     while pos + 8 <= bytes.len() {
         let id = &bytes[pos..pos + 4];

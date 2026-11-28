@@ -7,6 +7,7 @@
 //! - une app est « en appel » si l'un de ses processus enregistre un vrai micro (pas un moniteur),
 //!   avec anti-rebond à la fin (`CallActivity`) ;
 //! - le titre de l'appel est lu sur les fenêtres X11 de l'app (`titles.rs`).
+//!
 //! État séparé par app : un événement `call` à chaque changement. Fournit aussi les flux de
 //! lecture à capter (`CallSnapshot`), l'équivalent des processus du tap Core Audio.
 
