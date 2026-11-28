@@ -307,6 +307,9 @@ const en: Record<string, string> = {
   'aucun déclenchement': 'no trigger',
   'n’est attendu.': 'is expected.',
   'Environ 20 secondes.': 'About 20 seconds.',
+  'cherche quelque chose': 'search for something',
+  'Le sténographe a noté le scénario du créneau de jeudi. Stéphane a prêté son stylo au ténor de la chorale. Il faudra rester sur le même tempo et étendre le délai. Tout est noté sur le tableau.':
+    'The stenographer kept the scenario notes for Thursday. Stephen said the tenor of the review was positive. We should stay on track and keep a steady tempo. Nobody wants a step back now.',
   'Écoute… lisez le texte': 'Listening… read the text',
   'Commencer la lecture': 'Start reading',
   'commandes détectées': 'commands detected',

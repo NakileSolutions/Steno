@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { detectWake, fold } from '../wake';
+import { afterEach, describe, expect, it } from 'vitest';
+import { detectWake, fold, WAKE_TEST_TRAP, wakeTestPhrase } from '../wake';
+import { setLang, t } from '../i18n.svelte';
 import { defaultSettings } from '../mock-data';
 import type { Settings } from '../types';
 
@@ -49,5 +50,39 @@ describe('detectWake', () => {
   it('sans verbe connu : recherche avec toute la phrase', () => {
     expect(detectWake('Sténo, le runbook de ms-pricing', voice())).toEqual({ detected: true, intent: 'search', query: 'le runbook de ms-pricing' });
     expect(detectWake('Sténo.', voice())).toEqual({ detected: true, intent: 'search', query: null });
+  });
+});
+
+describe('wake word test', () => {
+  afterEach(() => setLang('fr'));
+
+  // Same search verbs as the core defaults (`settings.rs`): French and English are both recognized.
+  const bilingual = () => voice({ verbs: { ...voice().verbs, search: ['cherche', 'recherche', 'regarde', 'trouve', 'search', 'find', 'look up', 'look for'] } });
+
+  it('asks for a search command in the interface language', () => {
+    setLang('fr');
+    expect(wakeTestPhrase(voice())).toBe('Sténo, cherche quelque chose');
+    expect(detectWake(wakeTestPhrase(bilingual()), bilingual())).toEqual({ detected: true, intent: 'search', query: 'quelque chose' });
+    setLang('en');
+    expect(wakeTestPhrase(voice())).toBe('Sténo, search for something');
+    expect(detectWake(wakeTestPhrase(bilingual()), bilingual())).toEqual({ detected: true, intent: 'search', query: 'for something' });
+  });
+
+  it('starts with the first prefix in strict mode', () => {
+    setLang('en');
+    const v = voice({ strict: true, prefixes: ['hey', 'ok'] });
+    expect(wakeTestPhrase(v)).toBe('hey Sténo, search for something');
+    expect(detectWake(wakeTestPhrase(v), v).detected).toBe(true);
+  });
+
+  it('shows a trap text in each language that never triggers', () => {
+    for (const lang of ['fr', 'en'] as const) {
+      setLang(lang);
+      const text = t(WAKE_TEST_TRAP);
+      if (lang === 'en') expect(text).not.toBe(WAKE_TEST_TRAP);
+      for (const sentence of text.split(/(?<=[.!?])\s+/)) {
+        expect(detectWake(sentence, bilingual()).detected, `${lang}: ${sentence}`).toBe(false);
+      }
+    }
   });
 });
