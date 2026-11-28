@@ -13,33 +13,23 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 const AI_KINDS: &[&str] = &["request", "report", "correlate"];
-const OTHER_KINDS: &[&str] = &["control", "diarize", "export"];
+/// A `diarize` job retranscribes the meeting with the final model, then diarizes it: both
+/// load large models in the audio sidecar and read the whole recording. Two meetings
+/// ending close together must not stack them in memory, so these jobs run one at a time.
+const DIARIZE_KINDS: &[&str] = &["diarize"];
+const MAX_PARALLEL_DIARIZE: usize = 1;
+const OTHER_KINDS: &[&str] = &["control", "export"];
 
 /// Lance la boucle de traitement en tâche de fond.
 pub fn spawn_runner(inner: Arc<Inner>) {
     tokio::spawn(async move {
         let running_ai = Arc::new(AtomicUsize::new(0));
+        let running_diarize = Arc::new(AtomicUsize::new(0));
         loop {
             let max = inner.settings().agent.max_parallel.max(1) as usize;
             // Tâches IA dans la limite de parallélisme.
-            while running_ai.load(Ordering::SeqCst) < max {
-                match inner.db.claim_job(AI_KINDS) {
-                    Ok(Some(job)) => {
-                        running_ai.fetch_add(1, Ordering::SeqCst);
-                        let (i, r) = (inner.clone(), running_ai.clone());
-                        tokio::spawn(async move {
-                            execute(&i, job).await;
-                            r.fetch_sub(1, Ordering::SeqCst);
-                            i.jobs_notify.notify_one();
-                        });
-                    }
-                    Ok(None) => break,
-                    Err(e) => {
-                        tracing::error!("file de tâches : {e:#}");
-                        break;
-                    }
-                }
-            }
+            spawn_bounded(&inner, AI_KINDS, &running_ai, max);
+            spawn_bounded(&inner, DIARIZE_KINDS, &running_diarize, MAX_PARALLEL_DIARIZE);
             while let Ok(Some(job)) = inner.db.claim_job(OTHER_KINDS) {
                 let i = inner.clone();
                 tokio::spawn(async move {
@@ -56,11 +46,35 @@ pub fn spawn_runner(inner: Arc<Inner>) {
     });
 }
 
+/// Claims pending jobs of `kinds` while fewer than `max` of them are running, and runs each
+/// one in its own task; `running` counts them until they finish.
+fn spawn_bounded(inner: &Arc<Inner>, kinds: &[&str], running: &Arc<AtomicUsize>, max: usize) {
+    while running.load(Ordering::SeqCst) < max {
+        match inner.db.claim_job(kinds) {
+            Ok(Some(job)) => {
+                running.fetch_add(1, Ordering::SeqCst);
+                let (i, r) = (inner.clone(), running.clone());
+                tokio::spawn(async move {
+                    execute(&i, job).await;
+                    r.fetch_sub(1, Ordering::SeqCst);
+                    i.jobs_notify.notify_one();
+                });
+            }
+            Ok(None) => break,
+            Err(e) => {
+                tracing::error!("file de tâches : {e:#}");
+                break;
+            }
+        }
+    }
+}
+
 /// Exécute toutes les tâches en attente puis rend la main (CLI sans app).
 pub async fn drain(inner: Arc<Inner>) -> Result<usize> {
     let mut n = 0;
     loop {
         let mut kinds = AI_KINDS.to_vec();
+        kinds.extend_from_slice(DIARIZE_KINDS);
         kinds.extend_from_slice(OTHER_KINDS);
         let Some(job) = inner.db.claim_job(&kinds)? else { break };
         execute(&inner, job).await;
@@ -355,4 +369,35 @@ fn run_export(inner: &Inner, job: &Job) -> Result<()> {
     };
     crate::export::export_to_dir(&inner.db, &mid, std::path::Path::new(&dir))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::Core;
+    use crate::db::Db;
+
+    fn status(core: &Core, id: i64) -> String {
+        core.db().get_job(id).unwrap().unwrap().status
+    }
+
+    /// Two meetings ending close together: the runner starts one diarization and leaves the
+    /// other pending until it finishes, so the sidecar never holds both sets of models.
+    #[tokio::test]
+    async fn diarizations_run_one_at_a_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Core::new(Db::open(&dir.path().join("steno.db")).unwrap(), Default::default()).unwrap();
+        let first = core.db().enqueue_job("diarize", Some("m1"), &serde_json::json!({})).unwrap();
+        let second = core.db().enqueue_job("diarize", Some("m2"), &serde_json::json!({})).unwrap();
+        // Nothing awaits below, so the spawned job is claimed but never polled.
+        let running = Arc::new(AtomicUsize::new(0));
+        spawn_bounded(&core.inner, DIARIZE_KINDS, &running, MAX_PARALLEL_DIARIZE);
+        assert_eq!(running.load(Ordering::SeqCst), 1);
+        assert_eq!((status(&core, first).as_str(), status(&core, second).as_str()), ("running", "pending"));
+        // Next pass of the runner while the first one still runs: the second keeps waiting.
+        spawn_bounded(&core.inner, DIARIZE_KINDS, &running, MAX_PARALLEL_DIARIZE);
+        assert_eq!(status(&core, second), "pending");
+        // Control and export jobs never wait behind a diarization.
+        assert!(!OTHER_KINDS.contains(&"diarize"));
+    }
 }
