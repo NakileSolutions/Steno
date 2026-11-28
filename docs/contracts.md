@@ -546,7 +546,7 @@ type Settings = /* section 4 */;
 - `fixtures/daily-45min.jsonl` : réunion synthétique au format du protocole du sidecar
   (§2, messages sidecar → cœur), 45 min, en français. Contient : des tickets `APP-…`, le
   service `ms-booking`, une décision, deux actions, une commande vocale (« Sténo, cherche… »),
-  un aparté (`private: true`), des mots pièges (« script », « description », « inscrit »),
+  un aparté (`private: true`), des mots pièges proches de « Sténo » (« scénario », « stylo », « sténographie »),
   un écho (même phrase sur `them` puis `me` à moins de 2 s).
 - `fixtures/expected.json` : ce que les tests attendent de ce fichier (nombre de commandes,
   intentions, phrase privée…).

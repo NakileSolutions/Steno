@@ -50,8 +50,8 @@
 {"type": "segment", "ts": "2026-11-26T10:34:41+01:00", "t0": 276.5, "t1": 281.0, "channel": "them", "text": "Le monitor de latence sur ms-booking a sonné deux fois cette semaine.", "private": false}
 {"type": "segment", "ts": "2026-11-26T10:34:46+01:00", "t0": 283.1, "t1": 286.9, "channel": "them", "text": "J'ai mis à jour la documentation de l'API des stations.", "private": false}
 {"type": "segment", "ts": "2026-11-26T10:34:51+01:00", "t0": 289.3, "t1": 291.9, "channel": "me", "text": "On en reparle en fin de semaine.", "private": false}
-{"type": "segment", "ts": "2026-11-26T10:35:06+01:00", "t0": 300.9, "t1": 306.6, "channel": "me", "text": "Le script de migration de la table des créneaux est passé en recette hier soir.", "private": false}
-{"type": "segment", "ts": "2026-11-26T10:35:11+01:00", "t0": 307.3, "t1": 311.4, "channel": "them", "text": "Dans la description du ticket on parle aussi des abonnements famille.", "private": false}
+{"type": "segment", "ts": "2026-11-26T10:35:06+01:00", "t0": 300.9, "t1": 306.6, "channel": "me", "text": "Le scénario de migration de la table des créneaux est passé en recette hier soir.", "private": false}
+{"type": "segment", "ts": "2026-11-26T10:35:11+01:00", "t0": 307.3, "t1": 311.4, "channel": "them", "text": "Sur le tableau, au stylo, on a listé les abonnements famille.", "private": false}
 {"type": "segment", "ts": "2026-11-26T10:35:14+01:00", "t0": 312.9, "t1": 314.4, "channel": "me", "text": "Ça me paraît bien.", "private": false}
 {"type": "segment", "ts": "2026-11-26T10:35:18+01:00", "t0": 315.6, "t1": 318.6, "channel": "them", "text": "Le déploiement en préproduction est prévu cet après-midi.", "private": false}
 {"type": "segment", "ts": "2026-11-26T10:35:25+01:00", "t0": 321.0, "t1": 325.2, "channel": "them", "text": "Pour le sprint prochain on a encore trois stories à estimer.", "private": false}
@@ -305,7 +305,7 @@
 {"type": "segment", "ts": "2026-11-26T10:58:03+01:00", "t0": 1677.7, "t1": 1683.0, "channel": "them", "text": "On a un souci de quota sur l'environnement de recette, je regarde avec l'infra.", "private": false}
 {"type": "segment", "ts": "2026-11-26T10:58:08+01:00", "t0": 1684.3, "t1": 1688.9, "channel": "them", "text": "J'ai ajouté des logs autour de la saga de création de compte.", "private": false}
 {"type": "segment", "ts": "2026-11-26T10:58:25+01:00", "t0": 1700.7, "t1": 1705.6, "channel": "them", "text": "Au fait, l'outil Sténo dont tu parlais, tu l'utilises pour quoi exactement ?", "private": false}
-{"type": "segment", "ts": "2026-11-26T10:58:31+01:00", "t0": 1706.8, "t1": 1711.7, "channel": "me", "text": "Pour prendre des notes, et il s'est inscrit tout seul dans mes habitudes.", "private": false}
+{"type": "segment", "ts": "2026-11-26T10:58:31+01:00", "t0": 1706.8, "t1": 1711.7, "channel": "me", "text": "Pour prendre des notes, comme une sténographie, c'est devenu une de mes habitudes.", "private": false}
 {"type": "segment", "ts": "2026-11-26T10:58:36+01:00", "t0": 1712.9, "t1": 1716.7, "channel": "me", "text": "On a vu le steno hier, cherche pas plus loin.", "private": false}
 {"type": "segment", "ts": "2026-11-26T10:58:42+01:00", "t0": 1718.3, "t1": 1722.8, "channel": "them", "text": "Le batch de nuit a mis quarante minutes de plus que d'habitude.", "private": false}
 {"type": "segment", "ts": "2026-11-26T10:58:45+01:00", "t0": 1723.9, "t1": 1725.4, "channel": "me", "text": "Ça me paraît bien.", "private": false}
