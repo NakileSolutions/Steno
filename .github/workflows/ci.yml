@@ -47,12 +47,41 @@ jobs:
         run: cargo test -p steno-core --release --test perf -- --ignored
       - name: e2e tests (mock + real via steno serve)
         working-directory: app/ui
-        run: npx playwright install --with-deps chromium && npm run test:e2e
+        # The UI (npm run build) and target/debug/steno (cargo test) are already built above:
+        # call Playwright directly instead of `npm run test:e2e`, which would build both again.
+        run: npx playwright install --with-deps chromium && npx playwright test --project=maquette --project=reel
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: rapport-playwright
           path: app/ui/playwright-report
+
+  lint:
+    name: Format and lints (rustfmt, clippy)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: System dependencies (Tauri app, Linux audio sidecar)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev \
+            libpulse-dev clang libclang-dev
+      - name: rustfmt
+        run: cargo fmt --all --check
+      - name: UI build (the Tauri app embeds app/ui/dist)
+        working-directory: app/ui
+        run: npm ci && npm run build
+      - name: clippy
+        run: make sidecar-placeholder && cargo clippy --workspace --all-targets -- -D warnings
 
   deb:
     name: Audio sidecar and Debian / Ubuntu package
@@ -79,9 +108,35 @@ jobs:
           name: steno-deb
           path: target/release/bundle/deb/*.deb
 
+  # macOS runs only when it matters: on demand, or when a pull request or a push to main
+  # touches macOS code (Swift sidecar, Tauri app, or the core and CLI that it bundles).
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-24.04
+    outputs:
+      macos: ${{ steps.diff.outputs.macos }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            echo "macos=${{ inputs.macos }}" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git diff --name-only "$BASE" HEAD 2>/dev/null \
+            | grep -qE '^(audio/StenoAudio/|app/src-tauri/|crates/steno-core/|Makefile$)'; then
+            echo "macos=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "macos=false" >> "$GITHUB_OUTPUT"
+          fi
+
   macos:
     name: Swift sidecar and app (macOS)
-    if: github.event_name == 'workflow_dispatch' && inputs.macos
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
