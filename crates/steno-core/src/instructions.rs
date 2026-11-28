@@ -38,8 +38,15 @@ fn profile_text(s: &Settings) -> String {
     }
 }
 
+/// Answer language named in the instructions, which are written in French.
+fn answer_language_name(s: &Settings) -> &'static str {
+    if s.lang() == "en" { "anglais" } else { "français" }
+}
+
 fn fill(md: String, s: &Settings) -> String {
-    md.replace("{{PROFIL}}", &profile_text(s)).replace("{{JIRA}}", &s.profile.jira_key_pattern)
+    md.replace("{{PROFIL}}", &profile_text(s))
+        .replace("{{JIRA}}", &s.profile.jira_key_pattern)
+        .replace("{{LANGUE}}", answer_language_name(s))
 }
 
 /// Consignes communes à toutes les demandes (fichier de consignes du CLI). Les procédures
@@ -80,6 +87,21 @@ mod tests {
         assert!(!i.markdown.contains("{{"));
         // Les procédures ne sont plus dans les consignes communes.
         assert!(!i.markdown.contains("Procédure : recherche croisée"));
+    }
+
+    #[test]
+    fn language_rule_follows_the_profile_language() {
+        let mut s = crate::settings::Settings::default();
+        s.profile.language = "fr".into();
+        let fr = super::build(&s).markdown;
+        assert!(fr.contains("Tu réponds toujours en français."));
+        assert!(!fr.contains("en anglais"));
+
+        s.profile.language = "en".into();
+        let en = super::build(&s).markdown;
+        assert!(en.contains("Tu réponds toujours en anglais."));
+        assert!(!en.contains("toujours en français"));
+        assert!(!en.contains("{{"));
     }
 
     #[test]
