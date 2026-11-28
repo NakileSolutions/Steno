@@ -45,7 +45,7 @@ pub(crate) fn parse_output(stdout: &str) -> (String, Option<String>, Option<Stri
         let obj = v.get("result").filter(|r| r.is_object()).unwrap_or(&v);
         let s = |k: &str| obj.get(k).and_then(|x| x.as_str()).map(String::from);
         let status = s("status").unwrap_or_default();
-        let err = s("error").or_else(|| (status != "" && status != "SUCCESS").then(|| format!("statut {status}")));
+        let err = s("error").or_else(|| (!status.is_empty() && status != "SUCCESS").then(|| format!("statut {status}")));
         return (s("response").unwrap_or_default(), s("conversation_id"), err);
     }
     (stdout.trim().to_string(), None, None)

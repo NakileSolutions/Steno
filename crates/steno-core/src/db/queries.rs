@@ -1267,10 +1267,10 @@ impl Db {
     /// Change l'heure de départ des tâches en attente de ce type pour la réunion.
     pub fn set_job_start(&self, kind: &str, meeting_id: &str, not_before: Option<&str>) -> Result<usize> {
         self.with(|c| {
-            Ok(c.execute(
+            c.execute(
                 "UPDATE jobs SET not_before=?3 WHERE type=?1 AND meeting_id=?2 AND status='pending'",
                 params![kind, meeting_id, not_before],
-            )?)
+            )
         })
     }
 

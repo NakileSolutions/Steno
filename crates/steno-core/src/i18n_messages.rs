@@ -421,7 +421,7 @@ fn entries() -> &'static [Entry] {
                 (fixed, Entry { re: Regex::new(&pattern_regex(fr)).expect("motif de traduction invalide"), en })
             })
             .collect();
-        v.sort_by(|a, b| b.0.cmp(&a.0));
+        v.sort_by_key(|a| std::cmp::Reverse(a.0));
         v.into_iter().map(|(_, e)| e).collect()
     })
 }

@@ -431,6 +431,10 @@ pub fn hide_main(app: &AppHandle) {
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 }
 
+fn core_lang(app: &AppHandle) -> &'static str {
+    app.try_state::<crate::AppState>().map(|s| s.core.settings().lang()).unwrap_or("fr")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,8 +485,4 @@ mod tests {
         // Secondary monitor on the right (origin x = 2880), shifted upwards.
         assert_eq!(panel_position(2880.0, -200.0, 1920.0, 360.0, 1.0), (4428.0, -170.0));
     }
-}
-
-fn core_lang(app: &AppHandle) -> &'static str {
-    app.try_state::<crate::AppState>().map(|s| s.core.settings().lang()).unwrap_or("fr")
 }

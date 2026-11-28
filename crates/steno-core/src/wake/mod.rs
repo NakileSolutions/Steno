@@ -333,9 +333,7 @@ impl Detector {
 /// dont les collages « OKScribe » et « Describe » produits par la transcription).
 #[cfg(test)]
 pub(crate) fn test_voice() -> VoiceSettings {
-    let mut v = VoiceSettings::default();
-    v.wake_word = "Scribe".into();
-    v
+    VoiceSettings { wake_word: "Scribe".into(), ..Default::default() }
 }
 
 #[cfg(test)]
