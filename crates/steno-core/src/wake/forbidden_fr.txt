@@ -1,4 +1,8 @@
-# Mots interdits comme variantes du mot d'appel (proches de « Sténo » et fréquents en réunion de dev).
+# Words frequent in French dev meetings that a wake word variant must not match (exact or one
+# letter away). Never list the default wake word « Sténo » itself: it would be refused.
+# Neighbours of « Sténo »:
+sténographie sténographe sténotypie créneau créneaux scénario scénarios ténor ténors stylo stylos stéréo
+# Neighbours of « Scribe » (the former default, still a possible wake word):
 script scripts scripte scripter scripting description descriptions descriptif inscrit inscrite inscrits inscrire inscription
 prescrire prescrit prescription souscrire souscrit souscription transcrire transcrit transcription retranscrire
 decrire decrit ecrire ecrit ecrits crible cribler scrabble scrum sprite spring strike

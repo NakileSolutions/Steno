@@ -80,6 +80,15 @@ mod tests {
     }
 
     #[test]
+    fn default_wake_word_is_accepted() {
+        let c = check_wake_word("Sténo", false, None).unwrap();
+        assert!(c.errors.is_empty(), "{c:?}");
+        assert!(c.warnings.is_empty(), "{c:?}");
+        let c = check_wake_word("Créneau", false, None).unwrap();
+        assert!(!c.errors.is_empty(), "créneau is too frequent in meetings: {c:?}");
+    }
+
+    #[test]
     fn historique_et_prenoms() {
         let db = Db::open_in_memory().unwrap();
         db.insert_meeting(&Meeting {
