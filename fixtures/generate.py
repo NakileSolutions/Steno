@@ -3,8 +3,8 @@
 sidecar protocol format (docs/contracts.md §2). Deterministic (fixed seed).
 
 Required content (PLAN §11): APP-… tickets, ms-booking service, one decision, two actions,
-a voice command, a private sentence, trap words ("script", "description", "inscrit"),
-an echo, and a command spoken by another participant (them channel).
+a voice command, a private sentence, trap words close to « Sténo » ("scénario", "stylo",
+"sténographie"), an echo, and a command spoken by another participant (them channel).
 """
 import json
 import random
@@ -35,8 +35,8 @@ SCRIPTED = {
     30: [("them", "Bonjour à tous, on commence la daily ?"), ("me", "Bonjour, oui allons-y.")],
     120: [("them", "Hier j'ai avancé sur le APP-1234, le verrou de créneau côté ms-booking."),
           ("them", "Le problème c'est que le verrou n'est pas relâché quand la saga échoue.")],
-    300: [("me", "Le script de migration de la table des créneaux est passé en recette hier soir."),
-          ("them", "Dans la description du ticket on parle aussi des abonnements famille.")],
+    300: [("me", "Le scénario de migration de la table des créneaux est passé en recette hier soir."),
+          ("them", "Sur le tableau, au stylo, on a listé les abonnements famille.")],
     480: [("them", "On regarde le ticket APP-1234 ensemble ?"),
           ("me@echo", "On regarde le ticket APP-1234 ensemble ?")],
     640: [("me", "Sténo, cherche les erreurs Datadog sur ms-booking depuis hier."),
@@ -52,7 +52,7 @@ SCRIPTED = {
     1500: [("me", "Marie, tu peux corriger le APP-1234 d'ici vendredi ?"),
            ("them", "Oui, je m'en occupe, je corrige le APP-1234 pour vendredi.")],
     1700: [("them", "Au fait, l'outil Sténo dont tu parlais, tu l'utilises pour quoi exactement ?"),
-           ("me", "Pour prendre des notes, et il s'est inscrit tout seul dans mes habitudes."),
+           ("me", "Pour prendre des notes, comme une sténographie, c'est devenu une de mes habitudes."),
            ("me", "On a vu le steno hier, cherche pas plus loin.")],
     2000: [("me", "Sténo, note que Marie relance le support Brindille."),
            ("them", "Je relancerai le support Brindille cet après-midi.")],
