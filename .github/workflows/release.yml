@@ -68,9 +68,12 @@ jobs:
           mkdir -p dist/pkg
           cp -R target/release/bundle/macos/Steno.app dist/pkg/
           cp target/release/steno dist/pkg/
+          # The installer signs with the same script as `make install` (covered by the
+          # attestation, like the rest of the archive).
+          cp scripts/local-signing.sh dist/pkg/
           # Ad hoc signature only: the installer signs again on the user's Mac.
           codesign --force --deep --sign - dist/pkg/Steno.app
-          tar -C dist/pkg -czf "dist/$FILE" Steno.app steno
+          tar -C dist/pkg -czf "dist/$FILE" Steno.app steno local-signing.sh
           echo "file=dist/$FILE" >> "$GITHUB_OUTPUT"
       - name: Attest build provenance
         if: github.event_name == 'push'
