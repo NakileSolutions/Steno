@@ -24,7 +24,75 @@ private final class CountingBackend: SpeechBackend {
     }
 }
 
+private final class FakeModel {}
+
+private final class TrackedRecognizer: SpeechRecognizer, FinalRecognizer {
+    let name = "fake"
+    func transcribe(_ samples: [Float]) async throws -> String { "" }
+}
+
+private final class TrackedVAD: VoiceActivityDetector {
+    let name = "silero"
+    let frameSize = 512
+    let model: FakeModel
+    init(model: FakeModel) { self.model = model }
+    func speechProbability(_ frame: [Float]) async throws -> Float { 0 }
+}
+
+private final class TrackedDiarizer: SpeakerDiarizer {
+    func diarize(fileURL: URL) async throws -> [RawSpeakerTurn] { [] }
+}
+
+/// Records, at each load, which of the models loaded before are still alive.
+private final class TrackingBackend: SpeechBackend {
+    let asrName = "fake"
+    private var loaded: [(String, () -> Bool)] = []
+    private(set) var aliveAtLoad: [String: [String]] = [:]
+
+    private func track(_ name: String, _ object: AnyObject) {
+        aliveAtLoad[name] = loaded.filter { $0.1() }.map(\.0)
+        loaded.append((name, { [weak object] in object != nil }))
+    }
+
+    func loadRecognizer() async throws -> SpeechRecognizer {
+        let r = TrackedRecognizer()
+        track("asr", r)
+        return r
+    }
+
+    func loadVADFactory() async throws -> () -> VoiceActivityDetector {
+        let model = FakeModel()
+        track("vad", model)
+        return { TrackedVAD(model: model) }
+    }
+
+    func loadDiarizer() async throws -> SpeakerDiarizer {
+        let d = TrackedDiarizer()
+        track("diarizer", d)
+        return d
+    }
+
+    func loadFinalRecognizer(language: String) async throws -> FinalRecognizer {
+        let r = TrackedRecognizer()
+        track("final", r)
+        return r
+    }
+}
+
 final class SpeechModelsTests: XCTestCase {
+    func testPrefetchFreesEachModelBeforeLoadingTheNext() async {
+        let backend = TrackingBackend()
+        let models = SpeechModels(backend: backend, forceEnergyVAD: false)
+        let code = await Spikes.prefetchModels(models: models)
+        XCTAssertEqual(code, 0)
+        // Every model was loaded, and none of the earlier ones was still in memory by then
+        // (they used to pile up to ~2.4 GB during `make install`).
+        XCTAssertEqual(backend.aliveAtLoad.keys.sorted(), ["asr", "diarizer", "final", "vad"])
+        for (name, alive) in backend.aliveAtLoad {
+            XCTAssertEqual(alive, [], "still loaded when \(name) was loaded: \(alive)")
+        }
+    }
+
     func testDiarizerIsCachedUntilReleased() async throws {
         let backend = CountingBackend()
         let models = SpeechModels(backend: backend, forceEnergyVAD: true)
