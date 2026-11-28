@@ -175,11 +175,31 @@ fn http(port: u16, method: &str, path: &str, body: &str) -> (u16, String) {
     (code, body)
 }
 
+/// Port announced by `steno serve` on stderr ("… http://127.0.0.1:<port>/api …").
+/// The rest of stderr keeps being drained so the server never blocks on a full pipe.
+fn served_port(stderr: std::process::ChildStderr) -> u16 {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut tx = Some(tx);
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            let port = line
+                .split("http://127.0.0.1:")
+                .nth(1)
+                .and_then(|rest| rest.split(|c: char| !c.is_ascii_digit()).next()?.parse::<u16>().ok());
+            if let Some(port) = port {
+                if let Some(tx) = tx.take() {
+                    let _ = tx.send(port);
+                }
+            }
+        }
+    });
+    rx.recv_timeout(Duration::from_secs(20)).expect("the server did not announce its port")
+}
+
 #[test]
 fn serveur_http_de_l_api() {
     let h = home().join("serve");
     std::fs::create_dir_all(&h).unwrap();
-    let port = 4300 + (std::process::id() % 500) as u16;
     struct Kill(std::process::Child);
     impl Drop for Kill {
         fn drop(&mut self) {
@@ -187,23 +207,18 @@ fn serveur_http_de_l_api() {
             let _ = self.0.wait();
         }
     }
-    let _child = Kill(
+    // Port 0: the system picks a free port, so parallel runs and the Playwright servers
+    // (fixed ports in app/ui/e2e/ports.ts) never collide. The server prints the address it
+    // bound on stderr once it is listening.
+    let mut child = Kill(
         steno(&h)
-            .args(["serve", "--port", &port.to_string()])
+            .args(["serve", "--port", "0"])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .unwrap(),
     );
-    let mut up = false;
-    for _ in 0..50 {
-        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
-            up = true;
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    assert!(up, "le serveur ne répond pas");
+    let port = served_port(child.0.stderr.take().unwrap());
     let (c, b) = http(port, "POST", "/api/invoke/live_state", "");
     assert_eq!(c, 200, "{b}");
     assert!(b.contains("\"call\""));
