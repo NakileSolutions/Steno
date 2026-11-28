@@ -10,10 +10,23 @@ final class HallucinationFilterTests: XCTestCase {
         XCTAssertTrue(reject("Shall we?"))
         XCTAssertTrue(reject("Thank God."))
         XCTAssertTrue(reject("Oh."))
-        XCTAssertTrue(reject("Okay."))
         XCTAssertTrue(reject("Mm-hmm."))
+        XCTAssertTrue(reject("Thank you.", confidence: 0.99, duration: 0.6))
         // Longue mais peu fiable.
         XCTAssertTrue(reject("Thank you.", confidence: 0.5, duration: 2.5))
+    }
+
+    func testConfidentShortAnswersKept() {
+        for answer in ["Yes.", "No.", "OK.", "Okay.", "Yeah.", "Right."] {
+            XCTAssertFalse(reject(answer, confidence: 0.95, duration: 0.5), answer)
+        }
+        // Unknown confidence: nothing says it is noise.
+        XCTAssertFalse(reject("Yes.", confidence: nil, duration: 0.5))
+    }
+
+    func testUnsureShortAnswersDropped() {
+        XCTAssertTrue(reject("Yes.", confidence: 0.6, duration: 0.5))
+        XCTAssertTrue(reject("Okay.", confidence: 0.5, duration: 2.0))
     }
 
     func testInterjectionLongueEtFiableConservee() {
