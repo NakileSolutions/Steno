@@ -41,10 +41,8 @@ pub fn usable(text: &str, duration: f64) -> bool {
             return false;
         }
     }
-    if duration > 0.0 && text.chars().count() as f64 / duration > 40.0 {
-        return false;
-    }
-    true
+    // Faster than 40 characters per second: not real speech.
+    !(duration > 0.0 && text.chars().count() as f64 / duration > 40.0)
 }
 
 /// Motif de 1 à 12 caractères répété au moins 7 fois de suite (`(.{1,12}?)\1{6,}`).

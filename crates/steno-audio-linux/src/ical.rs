@@ -186,7 +186,7 @@ pub struct IcalTime {
 }
 
 impl IcalTime {
-    pub fn to_local(&self) -> Option<DateTime<Local>> {
+    pub fn to_local(self) -> Option<DateTime<Local>> {
         localize(self.naive, self.zone)
     }
 }

@@ -417,7 +417,9 @@ pub fn run() {
             // Still end the current meeting and stop the sidecar, with the same grace period
             // as "Quit Sténo".
             tauri::RunEvent::Exit => {
-                if shutdown_core(app) {
+                // Kept out of a match guard: shutting the core down is a side effect.
+                let stopping = shutdown_core(app);
+                if stopping {
                     std::thread::sleep(QUIT_GRACE);
                 }
             }
