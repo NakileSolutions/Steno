@@ -9,10 +9,10 @@
   <key>NSCalendarsUsageDescription</key>
   <string>Sténo lit vos réunions à venir et leurs invités pour préparer les comptes rendus et nommer les participants. Rien n’est modifié dans votre calendrier.</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Sténo transcrit votre voix pendant les réunions Teams, entièrement sur ce Mac.</string>
+  <string>Sténo transcrit votre voix pendant vos réunions (Teams, Zoom, Slack, Google Meet…), entièrement sur ce Mac.</string>
   <key>NSAudioCaptureUsageDescription</key>
-  <string>Sténo transcrit le son des réunions Teams (les autres participants), entièrement sur ce Mac.</string>
+  <string>Sténo transcrit le son de vos réunions (les autres participants), entièrement sur ce Mac.</string>
   <key>NSAppleEventsUsageDescription</key>
-  <string>Sténo lit le titre de la réunion Teams en cours.</string>
+  <string>Sténo lit le titre de la réunion en cours dans votre application d’appel.</string>
 </dict>
 </plist>
