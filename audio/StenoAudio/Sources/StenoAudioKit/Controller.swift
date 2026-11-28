@@ -281,7 +281,8 @@ actor Controller {
         }
         let diarizer: SpeakerDiarizer
         do {
-            diarizer = try await models.diarizer()
+            // No capture running: the live models go before the diarizer comes in.
+            diarizer = try await models.diarizer(captureRunning: session != nil)
         } catch {
             Log.error("modèles de diarisation : \(error)")
             output.send(.error(code: .modelMissing, message: "Modèles de diarisation indisponibles : \(error)", recoverable: true))
@@ -311,7 +312,9 @@ actor Controller {
         }
         let recognizer: FinalRecognizer
         do {
-            recognizer = try await models.finalRecognizer(language: language)
+            // No capture running: the live models go before the ~1 GB retranscription model
+            // comes in, without waiting for the deferred unload of `stop()`.
+            recognizer = try await models.finalRecognizer(language: language, captureRunning: session != nil)
         } catch {
             Log.error("modèle de retranscription : \(error)")
             output.send(.error(code: .modelMissing, message: "Retranscription impossible : \(error)", recoverable: true))

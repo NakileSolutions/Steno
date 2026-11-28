@@ -96,25 +96,63 @@ final class SpeechModelsTests: XCTestCase {
     func testDiarizerIsCachedUntilReleased() async throws {
         let backend = CountingBackend()
         let models = SpeechModels(backend: backend, forceEnergyVAD: true)
-        let first = try await models.diarizer()
-        let second = try await models.diarizer()
+        let first = try await models.diarizer(captureRunning: false)
+        let second = try await models.diarizer(captureRunning: false)
         XCTAssertTrue(first === second)
         XCTAssertEqual(backend.diarizerLoads, 1)
 
         await models.releaseDiarizer()
-        _ = try await models.diarizer()
+        _ = try await models.diarizer(captureRunning: false)
         XCTAssertEqual(backend.diarizerLoads, 2)
     }
 
     func testUnloadAlsoFreesTheDiarizer() async throws {
         let backend = CountingBackend()
         let models = SpeechModels(backend: backend, forceEnergyVAD: true)
-        _ = try await models.diarizer()
+        _ = try await models.diarizer(captureRunning: false)
 
         // End of listening: the diarizer must not survive it (it used to stay for the whole
         // life of the process when a diarization had failed).
         await models.unload()
-        _ = try await models.diarizer()
+        _ = try await models.diarizer(captureRunning: false)
         XCTAssertEqual(backend.diarizerLoads, 2, "unload() must drop the cached diarizer")
+    }
+
+    /// Loads the live ASR and VAD models, as a capture does, without keeping them.
+    private func loadLiveModels(_ models: SpeechModels) async {
+        _ = await models.recognizer()
+        _ = await models.makeVAD()
+    }
+
+    func testRetranscriptionFreesLiveModelsWhenNoCaptureRuns() async throws {
+        let backend = TrackingBackend()
+        let models = SpeechModels(backend: backend, forceEnergyVAD: false)
+        await loadLiveModels(models)
+
+        // Just after `stop`: the deferred unload has not run yet when the core asks for the
+        // retranscription. Parakeet and Silero must be gone before Canary is loaded.
+        _ = try await models.finalRecognizer(language: "en", captureRunning: false)
+        XCTAssertEqual(backend.aliveAtLoad["final"], [])
+    }
+
+    func testDiarizationFreesLiveModelsWhenNoCaptureRuns() async throws {
+        let backend = TrackingBackend()
+        let models = SpeechModels(backend: backend, forceEnergyVAD: false)
+        await loadLiveModels(models)
+
+        _ = try await models.diarizer(captureRunning: false)
+        XCTAssertEqual(backend.aliveAtLoad["diarizer"], [])
+    }
+
+    func testBatchJobsKeepLiveModelsWhileACaptureRuns() async throws {
+        let backend = TrackingBackend()
+        let models = SpeechModels(backend: backend, forceEnergyVAD: false)
+        await loadLiveModels(models)
+
+        // A new meeting started right after the previous one: its models stay loaded.
+        _ = try await models.finalRecognizer(language: "en", captureRunning: true)
+        _ = try await models.diarizer(captureRunning: true)
+        XCTAssertEqual(backend.aliveAtLoad["final"]?.sorted(), ["asr", "vad"])
+        XCTAssertEqual(backend.aliveAtLoad["diarizer"]?.sorted(), ["asr", "vad"])
     }
 }
