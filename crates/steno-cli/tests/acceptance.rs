@@ -196,20 +196,20 @@ fn mot_d_appel_detection_et_pieges() {
         .count();
     assert!(ok >= 18, "seulement {ok}/20 commandes détectées");
 
-    // Texte piège : 0 déclenchement.
+    // Trap text, words that sound like « Sténo »: 0 triggers.
     let trap = [
-        "Le script de migration cherche les doublons dans la table.",
-        "Dans la description du ticket, on cherche encore la cause.",
-        "Il s'est inscrit à la formation, cherche pas.",
-        "Le script tourne en recette depuis hier soir.",
-        "La description de la MR est vide, tu peux la compléter ?",
-        "Je me suis inscrit sur le canal d'astreinte.",
-        "On prescrit une revue de code systématique.",
-        "Script, description, inscrit : trois mots pièges.",
+        "Le scénario de migration cherche les doublons dans la table.",
+        "Sur le tableau, au stylo, on cherche encore la cause.",
+        "Le ténor de l'équipe est en formation, cherche pas.",
+        "Le scénario tourne en recette depuis hier soir.",
+        "La sténographie de la réunion est vide, tu peux la compléter ?",
+        "Je me suis mis sur le créneau d'astreinte.",
+        "On a branché la stéréo pour la démo, vérifie le son.",
+        "Scénario, stylo, sténographie : trois mots pièges.",
         "Le steno de l'équipe, c'est toi cette semaine, cherche les notes.",
-        "Tu as lu la transcription d'hier ? Cherche dedans.",
-        "Écris un script pour vérifier les créneau.",
-        "Scripte ça proprement, on vérifie après.",
+        "Tu as noté au stylo hier ? Cherche dedans.",
+        "Prends un créneau pour vérifier les scénarios.",
+        "Sténographie ça proprement, on vérifie après.",
     ];
     for t in trap {
         assert!(det.detect(t).is_none(), "faux déclenchement : {t}");
