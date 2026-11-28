@@ -19,11 +19,37 @@ import CoreML
 import FluidAudio
 import Foundation
 
+/// Where each model lives under `STENO_MODELS_DIR`: one subfolder per model, so a single folder
+/// holds everything `--prefetch-models` prepares (nothing goes to FluidAudio's default cache).
+struct ModelLocations: Equatable {
+    /// Parakeet TDT v3 (live transcription), passed to `AsrModels.downloadAndLoad(to:)`.
+    let parakeet: URL
+    /// Silero VAD, passed to `VadManager(modelDirectory:)` (FluidAudio adds `Models/<repo>`).
+    let vad: URL
+    /// Offline diarizer, passed to `OfflineDiarizerManager.prepareModels(directory:)`.
+    let diarizer: URL
+    /// Canary 1B v2 (end-of-meeting retranscription): the download root; the models end up in
+    /// `canaryModels`, the repo folder FluidAudio creates under it.
+    let canary: URL
+
+    init(base: URL) {
+        parakeet = base.appendingPathComponent("parakeet-tdt-v3", isDirectory: true)
+        vad = base.appendingPathComponent("silero-vad", isDirectory: true)
+        diarizer = base.appendingPathComponent("diarizer", isDirectory: true)
+        canary = base.appendingPathComponent("canary-1b-v2", isDirectory: true)
+    }
+
+    var canaryModels: URL {
+        canary.appendingPathComponent(Repo.canary1bV2.folderName, isDirectory: true)
+    }
+}
+
 final class FluidAudioBackend: SpeechBackend {
     let asrName = "parakeet-tdt-v3"
 
-    /// Dossier des modèles (`STENO_MODELS_DIR`), sinon le cache par défaut de FluidAudio.
+    /// Models folder (`STENO_MODELS_DIR`), otherwise FluidAudio's default cache.
     private let modelsDirectory: URL?
+    private var locations: ModelLocations? { modelsDirectory.map(ModelLocations.init(base:)) }
 
     init(modelsDirectory: URL? = FluidAudioBackend.modelsDirectoryFromEnvironment()) {
         self.modelsDirectory = modelsDirectory
@@ -38,7 +64,7 @@ final class FluidAudioBackend: SpeechBackend {
 
     func loadRecognizer() async throws -> SpeechRecognizer {
         let models = try await AsrModels.downloadAndLoad(
-            to: modelsDirectory?.appendingPathComponent("parakeet-tdt-v3", isDirectory: true),
+            to: locations?.parakeet,
             version: .v3
         )
         let manager = AsrManager(config: .default)
@@ -50,14 +76,34 @@ final class FluidAudioBackend: SpeechBackend {
     }
 
     func loadVADFactory() async throws -> () -> VoiceActivityDetector {
-        let manager = try await VadManager(config: VadConfig(defaultThreshold: 0.5))
+        let config = VadConfig(defaultThreshold: 0.5)
+        let manager: VadManager
+        if let dir = locations?.vad {
+            manager = try await VadManager(config: config, modelDirectory: dir)
+        } else {
+            manager = try await VadManager(config: config)
+        }
         return { SileroVAD(manager: manager) }
     }
 
     func loadDiarizer() async throws -> SpeakerDiarizer {
         let manager = OfflineDiarizerManager()
-        try await manager.prepareModels()
+        try await manager.prepareModels(directory: locations?.diarizer)
         return FluidDiarizer(manager: manager)
+    }
+
+    /// Downloads Canary 1B v2 (int4) if needed and returns the folder holding its models.
+    /// `CanaryModels.download` only knows FluidAudio's default cache, so with `STENO_MODELS_DIR`
+    /// the same download goes through `ModelHub` into our own folder.
+    static func canaryDirectory(modelsDirectory: URL?) async throws -> URL {
+        guard let locations = modelsDirectory.map(ModelLocations.init(base:)) else {
+            return try await CanaryModels.download(precision: .int4)
+        }
+        let dir = locations.canaryModels
+        if !CanaryModels.modelsExist(at: dir, precision: .int4) {
+            try await ModelHub.download(.canary1bV2, to: locations.canary, variant: CanaryPrecision.int4.rawValue)
+        }
+        return dir
     }
 
     /// Charge Canary 1B v2 (int4, seule variante publiée) sur CPU + GPU.
@@ -65,8 +111,11 @@ final class FluidAudioBackend: SpeechBackend {
     /// Le chargement par défaut de FluidAudio vise le Neural Engine : la compilation ANE de
     /// l'encodeur a dépassé 35 min ici sans aboutir. Sur le GPU, le modèle se charge en quelques
     /// secondes. `STENO_CANARY_UNITS=ane` rétablit le Neural Engine.
-    static func loadCanary(_ lang: CanaryLanguage) async throws -> CanaryManager {
-        let dir = try await CanaryModels.download(precision: .int4)
+    static func loadCanary(
+        _ lang: CanaryLanguage,
+        modelsDirectory: URL? = FluidAudioBackend.modelsDirectoryFromEnvironment()
+    ) async throws -> CanaryManager {
+        let dir = try await canaryDirectory(modelsDirectory: modelsDirectory)
         let cpu = MLModelConfiguration()
         cpu.computeUnits = .cpuOnly
         let accel = MLModelConfiguration()
@@ -89,7 +138,7 @@ final class FluidAudioBackend: SpeechBackend {
         guard let lang = CanaryLanguage(rawValue: language) else {
             throw SpeechModelError.unavailable("langue non prise en charge par Canary : \(language)")
         }
-        let manager = try await Self.loadCanary(lang)
+        let manager = try await Self.loadCanary(lang, modelsDirectory: modelsDirectory)
         return CanaryRecognizer(manager: manager, language: language)
     }
 }
@@ -187,7 +236,9 @@ extension Spikes {
         do {
             let t0 = Date()
             let parakeet = AsrManager(config: .default)
-            try await parakeet.loadModels(try await AsrModels.downloadAndLoad(version: .v3))
+            let parakeetDirectory = FluidAudioBackend.modelsDirectoryFromEnvironment()
+                .map { ModelLocations(base: $0).parakeet }
+            try await parakeet.loadModels(try await AsrModels.downloadAndLoad(to: parakeetDirectory, version: .v3))
             print(String(format: "Parakeet v3 chargé en %.1f s", Date().timeIntervalSince(t0)))
             let t1 = Date()
             let canary = try await FluidAudioBackend.loadCanary(.french)

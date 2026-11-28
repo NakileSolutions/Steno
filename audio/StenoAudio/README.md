@@ -42,7 +42,7 @@ Useful environment variables:
 |---|---|
 | `STENO_TAP_MODE=global` | plan B: tap on all of the Mac's audio except Sténo (if an app outputs audio through an unidentified process) |
 | `STENO_VAD=energy` | energy-based VAD instead of Silero |
-| `STENO_MODELS_DIR=<dir>` | models directory (otherwise FluidAudio's default cache) |
+| `STENO_MODELS_DIR=<dir>` | models directory for all four models, one subfolder each (`parakeet-tdt-v3`, `silero-vad`, `diarizer`, `canary-1b-v2`); otherwise FluidAudio's default cache |
 | `STENO_AUDIO_DEBUG=1` | verbose logs on stderr |
 
 Other commands: `--version`, `--help`, `--list-devices` (microphones and outputs with their UID, as
