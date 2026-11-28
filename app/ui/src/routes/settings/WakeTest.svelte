@@ -5,6 +5,7 @@
   import { toastError } from '../../lib/ui.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import { t, tn } from '../../lib/i18n.svelte';
+  import { WAKE_TEST_TRAP, wakeTestPhrase } from '../../lib/wake';
 
   let {
     settings = $bindable(),
@@ -12,10 +13,7 @@
   }: { settings: Settings; onclose: () => void } = $props();
 
   const word = $derived(settings.voice.wake_word);
-  const phrase = $derived(`${settings.voice.strict ? (settings.voice.prefixes[0] ?? 'ok') + ' ' : ''}${word}, cherche quelque chose`);
-  const TRAP =
-    "Le script de déploiement est décrit dans la description du ticket. Thomas s'est inscrit à la revue de jeudi. " +
-    'Il faudra transcrire les échanges et prescrire un nouveau délai. Le scripteur a tout noté sur le tableau.';
+  const phrase = $derived(wakeTestPhrase(settings.voice));
 
   type Attempt = { text: string; detected: boolean; intent: string | null };
   let step = $state<'record' | 'trap' | 'result'>('record');
@@ -133,7 +131,7 @@
     </div>
   {:else if step === 'trap'}
     <p>{t('Lisez ce texte à voix haute. Il contient des mots proches du mot d’appel :')} <strong>{t('aucun déclenchement')}</strong> {t('n’est attendu.')}</p>
-    <blockquote class="trap">{TRAP}</blockquote>
+    <blockquote class="trap">{t(WAKE_TEST_TRAP)}</blockquote>
     <div class="row foot">
       <span class="grow small muted">{t('Environ 20 secondes.')}</span>
       <button class="btn primary" onclick={recordTrap} disabled={recording}><Icon name="mic" size={14} />{recording ? t('Écoute… lisez le texte') : t('Commencer la lecture')}</button>

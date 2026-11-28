@@ -4,6 +4,7 @@
 // détermine l'intention (recherche par défaut).
 
 import type { Settings, WakeDetect } from './types';
+import { t, tk } from './i18n.svelte';
 
 export const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/’/g, "'").toLowerCase();
 
@@ -34,4 +35,21 @@ export function detectWake(text: string, voice: Settings['voice']): WakeDetect {
     }
   }
   return { detected: true, intent: 'search', query: orig.slice(idx + 1).join(' ') || null };
+}
+
+// ---------- Wake word test (PLAN §6.4) ----------
+
+/**
+ * Text the wake word test asks the user to read aloud: words that sound like the default wake
+ * word (« Sténo »), none of which should trigger. Shown in the interface language with `t()`.
+ */
+// One string literal: the translation coverage test only reads the first literal of `tk(…)`.
+export const WAKE_TEST_TRAP = tk(
+  'Le sténographe a noté le scénario du créneau de jeudi. Stéphane a prêté son stylo au ténor de la chorale. Il faudra rester sur le même tempo et étendre le délai. Tout est noté sur le tableau.',
+);
+
+/** Command the wake word test asks the user to say, in the interface language. */
+export function wakeTestPhrase(voice: Pick<Settings['voice'], 'wake_word' | 'strict' | 'prefixes'>): string {
+  const prefix = voice.strict ? (voice.prefixes[0] ?? 'ok') + ' ' : '';
+  return `${prefix}${voice.wake_word}, ${t('cherche quelque chose')}`;
 }
