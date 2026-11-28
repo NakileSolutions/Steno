@@ -290,16 +290,17 @@ actor Controller {
         do {
             let turns = try await runDiarization(fileURL: url, diarizer: diarizer)
             output.send(.diarization(meetingId: meetingId, turns: turns))
-            await models.releaseDiarizer()
         } catch where String(describing: error).contains("noSpeechDetected") {
             // Personne n'a parlé côté appel (test seul, micro coupé…) : rien à attribuer.
             Log.info("diarisation : aucune voix dans \(file)")
             output.send(.diarization(meetingId: meetingId, turns: []))
-            await models.releaseDiarizer()
         } catch {
             Log.error("diarisation : \(error)")
             output.send(.error(code: .asrFailed, message: "Diarisation impossible : \(error)", recoverable: true))
         }
+        // Whatever the outcome, failures included: the diarization models (~350 MB) must not
+        // stay in memory until the next diarization.
+        await models.releaseDiarizer()
     }
 
     private func retranscribe(meetingId: String, audioDir: String, language: String,

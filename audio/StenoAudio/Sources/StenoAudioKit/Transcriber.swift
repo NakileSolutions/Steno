@@ -90,10 +90,12 @@ actor SpeechModels {
         _ = startVADLoad()
     }
 
-    /// Libère les modèles d'ASR et de VAD (fin d'écoute) : la mémoire revient au niveau de repos.
+    /// Frees the ASR, VAD and diarization models (end of listening): memory goes back to its
+    /// idle level. A diarization already running keeps its own reference until it ends.
     func unload() {
         recognizerTask = nil
         vadTask = nil
+        diarizerInstance = nil
         recognizerFailed = false
         failureReported = false
     }
