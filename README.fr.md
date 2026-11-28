@@ -80,6 +80,24 @@ https://github.com/user-attachments/assets/105980e3-199a-4d61-aa63-8473f7afd498
 
 ## Installation
 
+### Version précompilée (Mac Apple Silicon, Debian / Ubuntu amd64)
+
+Ni Rust, ni Node, ni Xcode : le script d'installation télécharge la dernière version et vérifie
+qu'elle a bien été produite par le workflow de release de ce dépôt, à partir du bon tag
+(attestation GitHub, vérifiée avec le CLI GitHub `gh`). Il l'installe ensuite :
+- sur macOS, en signant l'app sur votre Mac avec l'identité locale « Steno Local Signing », pour
+  que les autorisations soient conservées d'une mise à jour à l'autre ;
+- sur Linux, en installant le `.deb` avec `apt`.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NakileSolutions/Steno/main/scripts/install.sh -o install.sh
+less install.sh   # lisez-le d'abord
+sh install.sh     # ou : sh install.sh 0.4.0
+```
+
+Pour compiler depuis les sources (contributeurs, Mac Intel, autres systèmes Linux), suivez les
+sections ci-dessous.
+
 ### macOS
 
 ```bash
