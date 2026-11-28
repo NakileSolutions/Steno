@@ -16,10 +16,12 @@ let package = Package(
         .executable(name: "steno-audio", targets: ["StenoAudio"]),
     ],
     dependencies: [
-        // FluidAudio (Apache 2.0) : Parakeet TDT v3, Silero VAD, diarisation hors ligne.
-        // L'API évolue d'une version mineure à l'autre : Package.resolved fige la version
-        // réellement utilisée. Passer à `.upToNextMinor(from:)` si une 0.19 casse l'API.
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.18.4"),
+        // FluidAudio (Apache 2.0): Parakeet TDT v3, Silero VAD, offline diarization.
+        // Its API changes between minor versions (0.x), so stay on 0.18.x: a plain
+        // `swift package update` must not pull a 0.19 that breaks the build. Package.resolved
+        // pins the exact version. Moving to a new minor is a deliberate change (check the
+        // API notes at the top of FluidAudioBackend.swift).
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", .upToNextMinor(from: "0.18.4")),
     ],
     targets: [
         // C / Objective-C helpers: lock-free sample ring for the Core Audio IO thread and
