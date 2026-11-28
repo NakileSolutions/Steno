@@ -32,7 +32,12 @@ describe('detectWake', () => {
 
   it('accepte le mot d’appel en deuxième position et les variantes', () => {
     expect(detectWake('Ok Sténo, résume', voice()).intent).toBe('recap');
-    expect(detectWake('Skribe, note : vérifier le quota', voice()).intent).toBe('note');
+    expect(detectWake('Sténau, note : vérifier le quota', voice()).intent).toBe('note');
+  });
+
+  it('ne garde aucune variante de l’ancien nom « Scribe » dans les réglages par défaut', () => {
+    expect(detectWake('Skribe, note : vérifier le quota', voice()).detected).toBe(false);
+    expect(detectWake('Scrib, cherche APP-1234', voice()).detected).toBe(false);
   });
 
   it('ignore le mot d’appel au-delà des deux premiers mots et les mots pièges', () => {
