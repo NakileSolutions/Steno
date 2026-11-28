@@ -53,11 +53,13 @@ enum Cmd {
         #[arg(long)]
         install: bool,
     },
-    /// Exporte une réunion (ou toutes) en markdown.
+    /// Exporte une réunion (ou toutes) : compte rendu complet en markdown, ou transcription
+    /// seule (txt, sous-titres srt / vtt).
     Export {
         id: Option<String>,
         #[arg(long)]
         all: bool,
+        /// md (or markdown), txt, srt, vtt.
         #[arg(long, default_value = "md")]
         format: String,
         /// Dossier de sortie (sinon : sortie standard pour une réunion).
@@ -284,8 +286,10 @@ async fn main() -> Result<()> {
             init::run(&core).await?;
         }
         Cmd::Export { id, all, format, out } => {
-            if format != "md" {
-                bail!("format non pris en charge : {format} (seul « md » existe)");
+            // `md` stays the CLI default; the core names it `markdown`.
+            let format = if format == "md" { "markdown".to_string() } else { format };
+            if !steno_core::export::FORMATS.contains(&format.as_str()) {
+                bail!("format non pris en charge : {format} (md, txt, srt ou vtt)");
             }
             let core = open_core(None)?;
             let ids: Vec<String> = if all {
@@ -296,11 +300,11 @@ async fn main() -> Result<()> {
             match out {
                 Some(dir) => {
                     for id in &ids {
-                        let p = steno_core::export::export_to_dir(core.db(), id, &dir)?;
+                        let p = steno_core::export::export_to_dir_as(core.db(), id, &dir, &format)?;
                         eprintln!("{}", p.display());
                     }
                 }
-                None if ids.len() == 1 => print!("{}", core.export_meeting(&ids[0])?),
+                None if ids.len() == 1 => print!("{}", core.export_meeting_as(&ids[0], &format)?),
                 None => bail!("--all demande --out <dossier>"),
             }
         }

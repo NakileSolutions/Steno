@@ -151,7 +151,7 @@ meetings). By hand: `git pull && make install`, or `steno update --install`.
 | Window | Meetings (summary, transcript, requests, notes, context), Live, Search, Decisions & actions, Settings |
 | Voice | "*Hey Sténo, search / check / take a note / summarize / cancel…*", "*Hey Sténo, stop listening*" (French or English; wake word and verbs are configurable) |
 | Shortcuts | ⌃⌥S start/stop · ⌃⌥Space aside (hold) · ⌃⌥N quick note (Linux: Ctrl+Alt+…, or `steno-app --toggle / --aside / --note` bound in the desktop settings) |
-| CLI | `steno ask "what did we decide about the export?"` · `steno export <id>` · `steno doctor` · `steno mcp` · `steno skill install` |
+| CLI | `steno ask "what did we decide about the export?"` · `steno export <id> [--format txt|srt|vtt]` · `steno doctor` · `steno mcp` · `steno skill install` |
 
 Give your agent read-only access to your meetings: `steno skill install` (or Settings →
 Agent → "Sténo in your agent"). The skill is copied to `~/.claude/skills` and
