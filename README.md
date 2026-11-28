@@ -173,7 +173,7 @@ Agent → "Sténo in your agent"). The skill is copied to `~/.claude/skills` and
 - **The agent only reads** and does not receive the environment's API keys, unless explicitly
   enabled.
 - **Tell participants** the meeting is being transcribed: Sténo offers a message ready to paste
-  into the call chat. Depending on your country and context, their consent may be required
+  into the call chat (in the interface language until you edit it). Depending on your country and context, their consent may be required
   (GDPR in Europe).
 
 Details and vulnerability reporting: [`SECURITY.md`](SECURITY.md).

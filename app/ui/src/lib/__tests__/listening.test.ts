@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
-  DEFAULT_CALL_APPS, LINUX_CALL_APPS, MACOS_CALL_APPS, callAppsFor, callAppId, callAppShortName, callLabel, callOffer, defaultCallApps, formatShortcut,
+  DEFAULT_CALL_APPS, DEFAULT_CONSENT_MESSAGE, DEFAULT_CONSENT_MESSAGE_EN, LINUX_CALL_APPS, MACOS_CALL_APPS, callAppsFor, callAppId, callAppShortName, callLabel, callOffer,
+  consentMessage, defaultCallApps, formatShortcut,
   isBrowserApp, isBuiltinCallApp, isListening, isValidBundle, meetingCallChip, normalizeLiveState,
-  normalizeSettings, parseBundles, stopPhrase,
+  normalizeSettings, parseBundles, stopPhrase, withLocalizedConsent,
 } from '../listening';
+import { setLang } from '../i18n.svelte';
 import type { CallApp, LiveState, Settings } from '../types';
 
 const st = (state: LiveState['state'], active: boolean, title: string | null = 'Daily ORION', app: string | null = 'teams', app_name: string | null = 'Microsoft Teams') => ({
@@ -221,5 +223,45 @@ describe('stopPhrase', () => {
   it('a des valeurs par défaut', () => {
     expect(stopPhrase('', null)).toBe('Sténo, arrête l’écoute');
     expect(stopPhrase('Sténo', { stop: [] })).toBe('Sténo, arrête l’écoute');
+  });
+});
+
+describe('English interface defaults', () => {
+  afterEach(() => setLang('fr'));
+  const builtinStop = ["arrête l'écoute", "arrête d'écouter", 'arrête la transcription', 'termine la réunion', 'fin de la réunion', 'stop listening', 'end the meeting'];
+
+  it('stopPhrase picks a built-in verb of the interface language', () => {
+    setLang('en');
+    expect(stopPhrase('Sténo', { stop: builtinStop })).toBe('Sténo, stop listening');
+    expect(stopPhrase('', null)).toBe('Sténo, stop listening');
+    expect(stopPhrase('Sténo', { stop: ["arrête l'écoute", 'halt'] })).toBe('Sténo, arrête l’écoute');
+    setLang('fr');
+    expect(stopPhrase('Sténo', { stop: ['stop listening', "arrête l'écoute"] })).toBe('Sténo, arrête l’écoute');
+    expect(stopPhrase('Sténo', { stop: ['stop listening'] })).toBe('Sténo, stop listening');
+  });
+
+  it('a never-edited consent message follows the interface language', () => {
+    setLang('en');
+    expect(consentMessage(DEFAULT_CONSENT_MESSAGE)).toBe(DEFAULT_CONSENT_MESSAGE_EN);
+    expect(consentMessage('')).toBe(DEFAULT_CONSENT_MESSAGE_EN);
+    expect(consentMessage(null)).toBe(DEFAULT_CONSENT_MESSAGE_EN);
+    expect(consentMessage('Je transcris cette réunion.')).toBe('Je transcris cette réunion.');
+    setLang('fr');
+    expect(consentMessage(DEFAULT_CONSENT_MESSAGE_EN)).toBe(DEFAULT_CONSENT_MESSAGE);
+    expect(consentMessage(` ${DEFAULT_CONSENT_MESSAGE}\n`)).toBe(DEFAULT_CONSENT_MESSAGE);
+  });
+
+  it('withLocalizedConsent only replaces a default message', () => {
+    setLang('en');
+    const s = { privacy: { consent_message: DEFAULT_CONSENT_MESSAGE } } as unknown as Settings;
+    expect(withLocalizedConsent(s).privacy.consent_message).toBe(DEFAULT_CONSENT_MESSAGE_EN);
+    expect(s.privacy.consent_message).toBe(DEFAULT_CONSENT_MESSAGE);
+    const edited = { privacy: { consent_message: 'Custom' } } as unknown as Settings;
+    expect(withLocalizedConsent(edited)).toBe(edited);
+  });
+
+  it('the French default matches the core', () => {
+    const rs = fs.readFileSync(path.resolve(__dirname, '../../../../../crates/steno-core/src/settings.rs'), 'utf8');
+    expect(rs).toContain(`pub const DEFAULT_CONSENT_MESSAGE: &str = "${DEFAULT_CONSENT_MESSAGE}";`);
   });
 });

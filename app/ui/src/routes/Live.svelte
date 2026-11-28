@@ -5,7 +5,7 @@
   import { ROOM, callOffer, isListening, meetingCallChip } from '../lib/listening';
   import { isDeviceMissing, missingInputLabel } from '../lib/audio';
   import type { AudioDevice } from '../lib/types';
-  import { prefs, stopHint } from '../lib/prefs.svelte';
+  import { consentToCopy, prefs, stopHint } from '../lib/prefs.svelte';
   import { href, navigate } from '../lib/router.svelte';
   import type { Request, Segment, Speaker } from '../lib/types';
   import { clockDuration, timeS } from '../lib/format';
@@ -229,7 +229,7 @@
   let consentDismissed = $state<string | null>(null);
   const showConsent = $derived(!!meeting && prefs.consentReminder && consentDismissed !== meeting.id && s.state !== 'processing');
   async function copyConsent() {
-    if (await copyText(prefs.consentMessage)) {
+    if (await copyText(consentToCopy())) {
       toast(t('Message copié : collez-le dans le chat de l’appel.'));
       consentDismissed = meeting?.id ?? null;
     }

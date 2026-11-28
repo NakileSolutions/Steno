@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api';
   import { setPrefs } from '../lib/prefs.svelte';
+  import { withLocalizedConsent } from '../lib/listening';
   import { router, setQuery } from '../lib/router.svelte';
   import { SETTINGS_SECTIONS } from '../lib/sections';
   import type { Settings } from '../lib/types';
@@ -35,7 +36,8 @@
 
   onMount(async () => {
     try {
-      const s = await api.getSettings();
+      // A never-edited consent message is shown in the interface language (not a change to save).
+      const s = withLocalizedConsent(await api.getSettings());
       settings = s;
       saved = JSON.stringify(s);
     } catch (e) {
@@ -47,8 +49,9 @@
     if (!settings) return;
     saving = true;
     try {
-      const s = await api.saveSettings($state.snapshot(settings) as Settings);
-      setPrefs(s);
+      const r = await api.saveSettings($state.snapshot(settings) as Settings);
+      setPrefs(r);
+      const s = withLocalizedConsent(r);
       settings = s;
       saved = JSON.stringify(s);
       toast(t('Réglages enregistrés.'));
@@ -61,8 +64,9 @@
   function revert() {
     if (saved) settings = JSON.parse(saved);
   }
-  function replaced(s: Settings) {
-    setPrefs(s);
+  function replaced(r: Settings) {
+    setPrefs(r);
+    const s = withLocalizedConsent(r);
     settings = s;
     saved = JSON.stringify(s);
   }
