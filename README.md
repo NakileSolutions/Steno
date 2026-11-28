@@ -11,6 +11,10 @@ Confluence or Datadog. It uses the AI agent you already have (Claude Code, Codex
 OpenCode…), with your own subscription. No audio ever leaves your computer, and **Sténo never
 publishes anything**: it reads, you publish.
 
+*One-minute tour (captions in French):*
+
+https://github.com/user-attachments/assets/105980e3-199a-4d61-aa63-8473f7afd498
+
 ![Meeting summary](docs/screenshots/detail-compte-rendu-clair.png)
 
 ## Features
