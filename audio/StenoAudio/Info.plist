@@ -25,6 +25,6 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Sténo utilise le micro pour transcrire localement ce que vous dites pendant vos réunions et détecter vos commandes vocales. L'audio ne quitte jamais votre Mac.</string>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>Sténo capte le son de Microsoft Teams pour transcrire localement ce que disent les autres participants. L'audio ne quitte jamais votre Mac.</string>
+	<string>Sténo capte le son de votre application d’appel (Teams, Zoom, Slack, Google Meet…) pour transcrire localement ce que disent les autres participants. L'audio ne quitte jamais votre Mac.</string>
 </dict>
 </plist>
