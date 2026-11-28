@@ -175,7 +175,7 @@ Réglages → Agent → « Sténo dans votre agent »). Le skill est copié dans
 - **L'agent ne fait que lire** et ne reçoit pas les clés d'API de l'environnement, sauf
   activation explicite.
 - **Prévenez les participants** que la réunion est transcrite : Sténo propose un message prêt
-  à coller dans le chat de l'appel. Selon votre pays et votre contexte, leur consentement peut
+  à coller dans le chat de l'appel (dans la langue de l'interface tant que vous ne le modifiez pas). Selon votre pays et votre contexte, leur consentement peut
   être obligatoire (RGPD en Europe).
 
 Détails et signalement des failles : [`SECURITY.md`](SECURITY.md).

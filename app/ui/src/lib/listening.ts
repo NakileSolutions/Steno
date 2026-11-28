@@ -3,10 +3,19 @@
 
 import type { CallApp, LiveCall, LiveState, Settings, VoiceVerbs } from './types';
 import { normalizeAgentSettings } from './agents';
-import { t, tk } from './i18n.svelte';
+import { i18n, t, tk, type Lang } from './i18n.svelte';
 import { platform as currentPlatform, type Platform } from './platform';
 
-export const DEFAULT_STOP_VERB = 'arrête l’écoute';
+/** Built-in stop verbs of each interface language (the core recognises both by default). */
+const STOP_VERBS: Record<Lang, string[]> = {
+  fr: ['arrête l’écoute', 'arrête d’écouter', 'arrête la transcription', 'termine la réunion', 'fin de la réunion'],
+  en: ['stop listening', 'end the meeting'],
+};
+
+/** Stop verb shown when none is set, in the interface language. */
+export function defaultStopVerb(): string {
+  return STOP_VERBS[i18n.lang][0];
+}
 
 /** L'écoute est en cours (ou en pause) : il y a quelque chose à arrêter. */
 export function isListening(s: Pick<LiveState, 'state'>): boolean {
@@ -187,6 +196,31 @@ export function normalizeLiveState(input: LiveState): LiveState {
 /** Message d'information par défaut (identique au cœur : `DEFAULT_CONSENT_MESSAGE`). */
 export const DEFAULT_CONSENT_MESSAGE =
   "Pour information : j\'utilise Sténo pour transcrire cette réunion et en préparer un compte rendu. La transcription reste sur mon ordinateur ; un assistant IA s\'en sert pour rédiger le compte rendu. Dites-le-moi si vous préférez que je ne transcrive pas.";
+/** English version of `DEFAULT_CONSENT_MESSAGE`. */
+export const DEFAULT_CONSENT_MESSAGE_EN =
+  'For your information: I am using Sténo to transcribe this meeting and prepare its minutes. The transcript stays on my computer; an AI assistant uses it to write the minutes. Let me know if you would rather I did not transcribe.';
+
+/** Default consent message in the interface language. */
+export function defaultConsentMessage(): string {
+  return i18n.lang === 'en' ? DEFAULT_CONSENT_MESSAGE_EN : DEFAULT_CONSENT_MESSAGE;
+}
+
+/**
+ * Consent message to show and copy. The core saves the French default on first launch, so a
+ * message that is empty or still one of the defaults (never edited) follows the interface
+ * language; an edited message is kept as is.
+ */
+export function consentMessage(saved: string | null | undefined): string {
+  const m = saved?.trim() ?? '';
+  return !m || m === DEFAULT_CONSENT_MESSAGE || m === DEFAULT_CONSENT_MESSAGE_EN ? defaultConsentMessage() : (saved as string);
+}
+
+/** Settings with a never-edited consent message shown in the interface language. */
+export function withLocalizedConsent(s: Settings): Settings {
+  if (!s.privacy) return s;
+  const m = consentMessage(s.privacy.consent_message);
+  return m === s.privacy.consent_message ? s : { ...s, privacy: { ...s.privacy, consent_message: m } };
+}
 
 export const DEFAULT_REPORT_SETTINGS = { default_template: 'standard', ask_context_on_stop: false, context_delay_s: 60, templates: [] };
 
@@ -300,9 +334,15 @@ export function formatShortcut(accel: string | null | undefined, p: Platform = c
   return mods.join('') + (space && mods.length ? ` ${k}` : k);
 }
 
-/** Phrase d'arrêt à la voix : « Sténo, arrête l’écoute ». */
+/**
+ * Voice stop phrase: « Sténo, arrête l’écoute » / "Sténo, stop listening". Among the configured
+ * stop verbs, a built-in one of the interface language comes first (the default list holds both
+ * languages, French first); otherwise the first configured verb, then the language's default.
+ */
 export function stopPhrase(wakeWord: string | null | undefined, verbs?: Partial<VoiceVerbs> | null): string {
   const w = wakeWord?.trim() || 'Sténo';
-  const v = verbs?.stop?.find((x) => x.trim())?.trim() || DEFAULT_STOP_VERB;
-  return `${w}, ${v.replace(/'/g, '’')}`;
+  const configured = (verbs?.stop ?? []).map((x) => x.trim().replace(/'/g, '’')).filter(Boolean);
+  const own = STOP_VERBS[i18n.lang];
+  const v = configured.find((x) => own.includes(x.toLowerCase())) ?? configured[0] ?? defaultStopVerb();
+  return `${w}, ${v}`;
 }

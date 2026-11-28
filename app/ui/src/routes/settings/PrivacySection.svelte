@@ -5,7 +5,7 @@
   import { navigate } from '../../lib/router.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import TagInput from '../../lib/components/TagInput.svelte';
-  import { DEFAULT_CONSENT_MESSAGE } from '../../lib/listening';
+  import { defaultConsentMessage } from '../../lib/listening';
   import { t } from '../../lib/i18n.svelte';
 
   let { settings = $bindable() }: { settings: Settings } = $props();
@@ -79,7 +79,7 @@
   <div class="field-body">
     <label class="check toggle"><span>{t('Le rappeler au début de chaque écoute')}</span><input class="switch" type="checkbox" role="switch" bind:checked={settings.privacy.consent_reminder} /></label>
     <textarea id="consent-msg" class="input" rows="4" bind:value={settings.privacy.consent_message}></textarea>
-    <button class="btn sm ghost" type="button" onclick={() => (settings.privacy.consent_message = DEFAULT_CONSENT_MESSAGE)}>{t('Revenir au message par défaut')}</button>
+    <button class="btn sm ghost" type="button" onclick={() => (settings.privacy.consent_message = defaultConsentMessage())}>{t('Revenir au message par défaut')}</button>
   </div>
 </div>
 <div class="field">
