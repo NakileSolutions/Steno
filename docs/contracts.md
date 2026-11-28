@@ -81,6 +81,17 @@ CREATE TABLE runtime (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
   (`steno settings import`) saved them.
 - Write transactions use `BEGIN IMMEDIATE` (the app and the CLI share the database).
 
+Migrations after `001_init.sql` (the schema above):
+
+| Migration | Change |
+|---|---|
+| `002_call_app.sql` | `meetings.call_app TEXT`: call app of the meeting (`teams`, `slack`, `zoom`…). |
+| `003_context.sql` | `meeting_context(meeting_id PK, text, template, updated_at)`: free-text context and report template of a meeting; `context_files(id, meeting_id, name, kind, size, text, truncated, added_at)`: attached documents (extracted text), index `context_files(meeting_id, id)`. |
+| `004_job_not_before.sql` | `jobs.not_before TEXT` (UTC, RFC 3339): a job waits until that time (delay left after the meeting to add context before the report is written). |
+| `005_planning.sql` | `meeting_context.event_id TEXT`: link to the calendar event; `meeting_participants(id, meeting_id, name, email, source DEFAULT 'manual')`: invited participants, index `meeting_participants(meeting_id, id)`. Planned meetings use `meetings.status = 'planned'`, with `started_at` set to the scheduled time. |
+
+The three new tables are children of `meetings` with `ON DELETE CASCADE`.
+
 ---
 
 ## 2. Protocole du sidecar `steno-audio`
@@ -553,8 +564,9 @@ type Settings = /* section 4 */;
   un écho (même phrase sur `them` puis `me` à moins de 2 s).
 - `fixtures/expected.json` : ce que les tests attendent de ce fichier (nombre de commandes,
   intentions, phrase privée…).
-- `fixtures/agent-*.sh` : faux agents (scripts) qui imitent la sortie des CLI pour tester
-  les adaptateurs sans abonnement.
+- `fixtures/fake-bin/` (`claude`, `codex`, `agy`, `grok`): fake agent CLIs (scripts) that
+  mimic the real CLIs' output, so the adapters are tested without a subscription. The tests
+  put this folder first in `PATH`.
 
 ---
 
