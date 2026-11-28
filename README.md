@@ -223,7 +223,8 @@ Contributions are welcome: open an issue to discuss before a large change, and r
 green CI and **signed** commits (GPG or SSH). Code, commits, pull requests and technical docs
 are in **English** (some older docs and comments are still being migrated from French).
 
-Project rules, including for coding agents (Claude Code, Codex…): [`AGENTS.md`](AGENTS.md).
+How to contribute: [`CONTRIBUTING.md`](CONTRIBUTING.md). Project rules, including for coding
+agents (Claude Code, Codex…): [`AGENTS.md`](AGENTS.md).
 Releasing a version: [`RELEASING.md`](RELEASING.md).
 
 ## Contributors

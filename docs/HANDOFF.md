@@ -10,12 +10,13 @@ All the software described in `PLAN.md` is **written**. Everything that does not
 has been **run and tested on Linux**: Rust core, CLI, UI, and the Tauri app launched on a virtual
 display, with a simulated audio sidecar and a fake agent CLI.
 
-Three things have **never run**:
-- the Swift audio sidecar (`audio/StenoAudio`), for lack of a Mac;
-- the real agent CLIs with a real subscription;
-- Teams capture.
+When this document was first written, three things had **never run**: the Swift audio
+sidecar (`audio/StenoAudio`), the real agent CLIs with a real subscription, and Teams capture.
+That was the purpose of phase 0 (`docs/spikes.md`).
 
-That is the purpose of phase 0 (`docs/spikes.md`), to be done first on a Mac.
+Update (November 2026): the Swift sidecar now builds on a Mac and `swift test` passes. CI does
+not run it yet: run it locally when you touch `audio/StenoAudio`. The other spike results
+(real calls, real agent CLIs) are tracked in `docs/spikes.md`.
 
 Product rules added after the initial plan (applied everywhere):
 0. **Multi-app**: call detection covers a configurable list of apps (`audio.call_apps`:
@@ -36,7 +37,7 @@ Product rules added after the initial plan (applied everywhere):
 |---|---|---|
 | `crates/steno-core` | Rust lib: SQLite database, settings, job queue, live session, wake word, echo suppression, agent adapters, read-only policy, report, correlation, diagnostics, API dispatcher | ~8,700 lines |
 | `crates/steno-cli` | `steno` bin: ask, doctor, init, export, mcp, meetings, settings, jobs, replay, simulate, serve, daemon, policy-hook | ~1,000 lines + 580 of tests |
-| `app/src-tauri` | Tauri 2 app: status bar, windows, global shortcuts, notifications, the 49 commands | ~800 lines |
+| `app/src-tauri` | Tauri 2 app: status bar, windows, global shortcuts, notifications, every API command | ~800 lines |
 | `app/ui` | Svelte 5 + Vite + TS, fake backend, HTTP backend, Vitest and Playwright tests | ~7,500 lines |
 | `audio/StenoAudio` | Swift sidecar: Teams process tap, microphone with echo cancellation, FluidAudio, diarization, spikes | ~3,700 lines + 500 of tests |
 | `crates/steno-audio-linux` | Rust sidecar for Linux, same protocol: PulseAudio / PipeWire, WebRTC AEC, sherpa-onnx (Parakeet, Canary, Silero, pyannote), EDS / .ics calendar | ~5,000 lines, tests included |
@@ -59,7 +60,7 @@ CLI `steno`: same core; `steno serve` = same API over HTTP + SSE (e2e tests, bro
 Key points:
 - **A single source of truth for the API**: `docs/contracts.md` §5. The Tauri app
   (`app/src-tauri/src/commands.rs`) and `steno serve` (`steno_core::api::dispatch`) expose
-  exactly the same 49 commands. Two tests check this:
+  exactly the same commands (82 in November 2026). Two tests check this:
   - `api::tests::toutes_les_commandes_du_contrat_sont_connues`;
   - `tests::commandes_tauri_conformes_au_contrat`.
 - **Agent security** (`crates/steno-core/src/policy.rs`, `agents/claude_code.rs`). With Claude Code:
@@ -104,20 +105,12 @@ AppIndicator icon, clicking on notifications.
 | Search performance (500 meetings, 150,000 sentences) | ✅ 16 to 75 ms | `cargo test -p steno-core --release --test perf -- --ignored` |
 | Tauri app (commands, events, status bar, shortcuts) | 🟡 compiled and launched on Linux; native macOS menu never seen | command conformance test; manual run under Xvfb |
 | UI (every screen in the plan) | ✅ | Vitest + Playwright (mock and real), screenshots `docs/screenshots/` |
-| Swift sidecar | 🔴 never compiled | — |
+| Swift sidecar | 🟡 builds on a Mac, unit tests green; not run in CI | `cd audio/StenoAudio && swift test` |
 
 ## 5. Tests
 
-Status at handover: **everything is green**.
-- Rust: 74 tests in total:
-  - 58 core unit tests;
-  - 3 app tests;
-  - 1 CLI unit test;
-  - 7 CLI functional tests;
-  - 5 acceptance tests.
-- Vitest: 66 tests.
-- Playwright: 16 tests, 14 on the mock and 2 real scenarios.
-- Performance: test green.
+Everything below must stay green. The test counts grew a lot after the handover: run
+the commands rather than relying on numbers here.
 
 | Command | Contents |
 |---|---|
@@ -126,7 +119,7 @@ Status at handover: **everything is green**.
 | `cd app/ui && npm run test:unit` | Vitest: formatting, markdown sanitizing, router, pure logic |
 | `cd app/ui && npm run test:e2e` | Playwright: `maquette` project (UI + fake backend) and `reel` project (UI → `steno serve` → core → fake `claude` → SQLite) |
 | `make test` | all of the above |
-| `swift test` (in `audio/StenoAudio`) | protocol, vocabulary correction, segmenter, utilities (**never run**) |
+| `swift test` (in `audio/StenoAudio`) | protocol, vocabulary correction, segmenter, hallucination filter, calendar, utilities (macOS only, not in CI) |
 
 Test tools:
 - `fixtures/daily-45min.jsonl` (regenerable with `fixtures/generate.py`) with `fixtures/expected.json`;
@@ -139,10 +132,9 @@ On a Mac, for the e2e tests: `cd app/ui && npx playwright install chromium` once
 ## 6. Remaining work (by priority)
 
 ### P0 — Phase 0 on a Mac (blocking, details in `docs/spikes.md`)
-1. **Compile the sidecar** (`cd audio/StenoAudio && swift build -c release && swift test`) and fix the errors. Uncertain points are marked `À VÉRIFIER` (to verify) in the code and listed in `audio/StenoAudio/README.md`:
-   - FluidAudio 0.18.x API: `AsrManager.transcribe(_:decoderState:language:)`, `VadManager`, `OfflineDiarizerManager`;
-   - `CATapDescription` initializers;
-   - error code when system audio is denied.
+1. ~~**Compile the sidecar**~~: done, `swift build -c release && swift test` pass on a Mac
+   (FluidAudio is pinned to 0.18.x in `Package.swift`). Points still marked `À VÉRIFIER`
+   (to verify) in `audio/StenoAudio/README.md` need a real call to confirm.
 2. **S4** (work Mac, MDM): if system audio is blocked, stop and report it.
 3. **S1**: Teams capture, then **Slack (huddle) and Zoom**, **launched from Steno.app**, to check that the permission covers the sidecar. Plan B: capture in Rust in the main process (`objc2-core-audio`), with the same protocol.
 4. **S2**: French transcription quality and latency (< 1 s per sentence).
@@ -155,7 +147,7 @@ On a Mac, for the e2e tests: `cd app/ui && npx playwright install chromium` once
 - `make install`, then the first-run wizard end to end.
 - **Status bar**: clicking opens the native menu, labels follow the state (« ● Écoute en cours — … » "Listening —", « Appel Teams détecté : … » "Teams call detected:"), the « ● » appears next to the icon, the « Réunion confidentielle » ("Confidential meeting") checkbox works.
 - Global shortcuts: ⌃⌥S, ⌃⌥Space held (aside, with press and release events), ⌃⌥N.
-- macOS notifications. Clicking a notification does not open the answer yet: `tauri-plugin-notification` does not handle the click action on desktop, and the `route` field is ready in `CoreEvent::Notify`.
+- macOS notifications. Clicking a notification that carries a route (answer ready, report…) opens Sténo on it (`app/src-tauri/src/notify.rs`: `mac-notification-sys` on macOS, D-Bus on Linux).
 - Dock: the icon appears when the window is open and disappears when it closes (`ActivationPolicy`).
 - Signing: `make install` signs with the local identity "Steno Local Signing" (scripts/local-signing.sh); the signing requirement (identifier + certificate) is stable, so TCC permissions survive from one build to the next. When signed ad hoc, the app lost them on every build.
 - Audio feedback when a command is detected (`afplay`): must never be injected into the Teams audio.
@@ -165,8 +157,8 @@ On a Mac, for the e2e tests: `cd app/ui && npx playwright install chromium` once
 - Diarization: matching speaker turns to `them` segments, suggested renaming (« Marie ? ») to validate in the UI.
 - Prompts (`crates/steno-core/src/prompts.rs`, `agent/playbooks/`): to adjust on real answers (`TL;DR` format, final JSON block of the report and of the correlation).
 - `codex`, `gemini`, `opencode`: check the options on the installed versions, then update `docs/adapters.md`. If a CLI can block MCP tools by pattern, set `tool_deny_list: true` and translate the policy.
-- Pause / resume listening: the `paused` state exists in the protocol but is not exposed.
-- Clicking a notification → open the answer; "last 5 answers" directly in the native menu.
+- ~~Pause / resume listening~~: done (`pause_meeting` / `resume_meeting`, `LiveState.state = "paused"`).
+- ~~Clicking a notification → open the answer; "last 5 answers" in the native menu~~: done (`notify.rs`, `tray.rs`).
 
 ### Notes left by the UI work (non-blocking)
 - `get_settings` still returns `audio.end_grace_s` (obsolete, ignored): to remove in a settings migration.
