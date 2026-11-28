@@ -4,6 +4,8 @@
 //   1. l'énoncé est presque silencieux (aucune voix réelle) ;
 //   2. ou c'est une interjection anglaise isolée typique des hallucinations, prononcée
 //      brièvement ou transcrite avec une confiance faible ;
+//      real one-word answers ("Yes.", "No.", "OK.") are short by nature: they are only
+//      dropped when transcribed with a low confidence, never for being short;
 //   3. ou c'est une phrase très courte transcrite avec une confiance très faible.
 // Les mots français courts (« Oui. », « D'accord. ») ne sont jamais visés par la règle 2.
 
@@ -25,6 +27,10 @@ enum HallucinationFilter {
         "all right", "alright", "sorry", "hello", "hi", "wow", "yep", "nope", "huh",
     ]
 
+    /// Fillers that are also real answers in a meeting: kept when short, unless the model is
+    /// unsure of them (a confident "Yes." is someone answering, not noise).
+    static let answers: Set<String> = ["yes", "no", "ok", "okay", "yeah", "right"]
+
     /// Raison de l'écart, ou nil si la phrase est conservée.
     static func rejection(text: String, confidence: Float?, duration: Double, rmsDb: Double) -> String? {
         let norm = normalized(text)
@@ -33,7 +39,8 @@ enum HallucinationFilter {
             return String(format: "énoncé presque silencieux (%.0f dBFS)", rmsDb)
         }
         let words = norm.split(separator: " ").count
-        if fillers.contains(norm), duration < 1.5 || (confidence ?? 1) < fillerConfidence {
+        let unsure = (confidence ?? 1) < fillerConfidence
+        if fillers.contains(norm), unsure || (duration < 1.5 && !answers.contains(norm)) {
             return "interjection isolée typique d'une hallucination"
         }
         if words <= 3, let c = confidence, c < shortConfidence {
