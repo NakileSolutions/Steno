@@ -73,6 +73,10 @@ CREATE TABLE runtime (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
   not own the heartbeat (`steno ask`) while another one does. The request stays `queued`
   and the owner runs it (live session, agents' cancellation tokens). Not an AI job: it
   never waits behind `agent.max_parallel`.
+- `jobs.type = 'diarize'`: retranscription with the final model, then diarization, of a
+  finished meeting. One runs at a time (both load large models in the audio sidecar and
+  read the whole recording); the others stay `pending` until it ends. Not an AI job: it
+  never waits behind `agent.max_parallel`.
 - `jobs.status`: a `request` job abandoned after 3 attempts also moves its request to
   `error`. A request is only set `running` from `queued` or `running` (never after a
   cancellation).
