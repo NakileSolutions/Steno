@@ -199,6 +199,26 @@ mod tests {
     }
 
     #[test]
+    fn steno_neighbours_are_forbidden() {
+        for w in ["créneau", "creneaux", "scénario", "stylo", "ténor", "stéréo", "sténographie", "sténotypie"] {
+            assert!(conflict("Sténo", w, &[]).is_some(), "{w} should be refused");
+        }
+        // One letter away from a forbidden word.
+        assert!(conflict("Sténo", "stenor", &[]).is_some());
+        assert!(conflict("Sténo", "scenarion", &[]).is_some());
+    }
+
+    #[test]
+    fn steno_variants_stay_usable() {
+        let g = generate("Sténo");
+        let c = check("Sténo", &g, &[]);
+        assert!(c.rejected.is_empty(), "variants of the default wake word refused: {c:?}");
+        for v in ["stenos", "esteno", "stenau", "stenot"] {
+            assert!(conflict("Sténo", v, &[]).is_none(), "{v} should stay usable");
+        }
+    }
+
+    #[test]
     fn mot_compose() {
         let g = generate("Hey Greffier");
         assert!(g.iter().all(|v| v.starts_with("hey ")));
