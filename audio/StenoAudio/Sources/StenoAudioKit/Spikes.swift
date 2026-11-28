@@ -231,18 +231,22 @@ enum Spikes {
     }
 
     /// Télécharge et compile les modèles (ASR, VAD, diarisation) : appelé par `make install`.
-    static func prefetchModels() async -> Int32 {
-        let models = SpeechModels(backend: FluidAudioBackend())
+    /// Each model is freed before the next one is loaded, so peak memory stays at the largest
+    /// single model instead of the sum of all of them.
+    static func prefetchModels(models: SpeechModels = SpeechModels(backend: FluidAudioBackend())) async -> Int32 {
         print("Téléchargement / chargement du modèle de transcription…")
         guard await models.recognizer() != nil else {
             print("ERREUR : modèle de transcription indisponible (voir stderr).")
             return 1
         }
         print("Modèle de transcription : OK")
-        let vad = await models.makeVAD()
-        print("VAD : \(vad.name)\(vad.name == "silero" ? "" : " (Silero indisponible, repli)")")
+        await models.unload()
+        let vadName = await models.makeVAD().name
+        print("VAD : \(vadName)\(vadName == "silero" ? "" : " (Silero indisponible, repli)")")
+        await models.unload()
         do {
             _ = try await models.diarizer()
+            await models.releaseDiarizer()
             print("Diarisation : OK")
         } catch {
             print("Diarisation : ÉCHEC — \(error)")
