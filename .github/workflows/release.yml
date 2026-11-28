@@ -1,18 +1,36 @@
 name: Release
 
 # A vX.Y.Z tag (signed, pushed by an administrator: tags are protected) publishes the release on
-# GitHub. Installed Sténo apps detect it and offer the update.
+# GitHub with prebuilt binaries:
+#   - Steno-X.Y.Z-macos-arm64.tar.gz: Steno.app (with the Swift sidecar) and the `steno` CLI,
+#     ad hoc signed here; the installer re-signs it on the user's Mac with the local
+#     "Steno Local Signing" identity (scripts/local-signing.sh), so macOS keeps its permissions;
+#   - steno_X.Y.Z_amd64.deb: the Debian / Ubuntu package.
+# Each file gets a GitHub artifact attestation (build provenance), attached as
+# <file>.sigstore.json. Installers verify it before installing:
+#   gh attestation verify <file> --repo NakileSolutions/Steno \
+#     --signer-workflow NakileSolutions/Steno/.github/workflows/release.yml \
+#     --source-ref refs/tags/vX.Y.Z
+# Installed Sténo apps detect the release and offer the update.
+#
+# A pull request that changes this workflow runs a dry run: both packages are built and kept as
+# workflow artifacts, with no attestation and no release.
 on:
   push:
     tags: ["v*.*.*"]
+  pull_request:
+    paths: [".github/workflows/release.yml"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
-    name: Publish the release
+    name: Create the release
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Tag version matches the code
@@ -24,3 +42,102 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "Sténo ${GITHUB_REF_NAME#v}"
+
+  macos:
+    name: macOS package (Apple Silicon)
+    needs: release
+    if: ${{ !cancelled() && (needs.release.result == 'success' || github.event_name == 'pull_request') }}
+    runs-on: macos-15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the app (with the Swift sidecar) and the CLI
+        run: make app cli
+      - name: Package
+        id: pkg
+        run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          FILE="Steno-$VERSION-macos-arm64.tar.gz"
+          mkdir -p dist/pkg
+          cp -R target/release/bundle/macos/Steno.app dist/pkg/
+          cp target/release/steno dist/pkg/
+          # Ad hoc signature only: the installer signs again on the user's Mac.
+          codesign --force --deep --sign - dist/pkg/Steno.app
+          tar -C dist/pkg -czf "dist/$FILE" Steno.app steno
+          echo "file=dist/$FILE" >> "$GITHUB_OUTPUT"
+      - name: Attest build provenance
+        if: github.event_name == 'push'
+        id: attest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ steps.pkg.outputs.file }}
+      - name: Attach to the release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FILE: ${{ steps.pkg.outputs.file }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE" "$FILE.sigstore.json"
+          gh release upload "$GITHUB_REF_NAME" "$FILE" "$FILE.sigstore.json"
+      - name: Keep the package (dry run)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: steno-macos
+          path: ${{ steps.pkg.outputs.file }}
+
+  linux:
+    name: Debian / Ubuntu package (amd64)
+    needs: release
+    if: ${{ !cancelled() && (needs.release.result == 'success' || github.event_name == 'pull_request') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/ui/package-lock.json
+      - name: Build the .deb (app, sidecar, CLI)
+        run: make deps && make deb
+      - name: Package installs and sidecar responds
+        id: pkg
+        run: |
+          FILE=$(ls target/release/bundle/deb/*.deb)
+          sudo apt-get install -y "./$FILE"
+          steno-audio --version && steno --help >/dev/null
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+      - name: Attest build provenance
+        if: github.event_name == 'push'
+        id: attest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ steps.pkg.outputs.file }}
+      - name: Attach to the release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FILE: ${{ steps.pkg.outputs.file }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE" "$FILE.sigstore.json"
+          gh release upload "$GITHUB_REF_NAME" "$FILE" "$FILE.sigstore.json"
+      - name: Keep the package (dry run)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: steno-deb
+          path: ${{ steps.pkg.outputs.file }}
