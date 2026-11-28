@@ -324,8 +324,7 @@ actor Controller {
             items: items,
             audioDir: URL(fileURLWithPath: audioDir, isDirectory: true),
             recognizer: recognizer,
-            corrector: VocabularyCorrector(vocabulary: vocabulary),
-            load: Spikes.loadMono16k
+            corrector: VocabularyCorrector(vocabulary: vocabulary)
         )
         output.send(.retranscription(meetingId: meetingId, items: result))
     }
