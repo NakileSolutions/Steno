@@ -257,7 +257,7 @@ pub struct RunRequest {
     pub model: Option<String>,       // résolu depuis les réglages (vide = défaut du CLI)
     pub session: SessionMode,        // None | New(String) | Resume(String)
     pub repos: Vec<PathBuf>,         // dépôts lisibles pour cette exécution
-    pub exclude_globs: Vec<String>,  // motifs exclus des dépôts (Repo.exclude_globs), lectures directes refusées
+    pub exclude_globs: Vec<String>,  // patterns excluded from the repositories (Repo.exclude_globs): direct reads refused
     pub tools: ToolAccess,           // None | ReadOnly { connectors: Vec<String> }
     pub max_tool_calls: u32,
     pub timeout: Duration,
@@ -579,14 +579,14 @@ type Settings = /* section 4 */;
 `steno serve --port 4180 --ui app/ui/dist` expose l'API du §5 sur `127.0.0.1` et sert
 l'interface sur la même origine. Ouvrir `http://127.0.0.1:4180/?backend=http`.
 
-- `POST /api/invoke/<commande>` : corps = arguments JSON en camelCase (vide = aucun),
-  `Content-Type: application/json` obligatoire (415 sinon) ;
+- `POST /api/invoke/<commande>` : corps = arguments JSON en camelCase (vide = aucun) ;
   200 → JSON du résultat (`null` si rien) ; 400 → `{"error": "…"}` ; 404 si commande inconnue.
 - `GET /api/events` : flux SSE ; `event:` = nom de l'événement du §5, `data:` = charge JSON.
-- Toutes les routes `/api/*` refusent (403) un en-tête `Host` autre que `127.0.0.1`,
-  `localhost` ou `[::1]` (avec ou sans le port du serveur), un en-tête `Origin` autre que
-  `http://127.0.0.1:<port>` ou `http://localhost:<port>`, et `Sec-Fetch-Site` autre que
-  `same-origin` ou `none` : une page web tierce ne peut ni appeler l'API ni lire le flux.
+- Every `/api/*` route refuses (403) a `Host` header other than `127.0.0.1`, `localhost` or
+  `[::1]` (with or without the server's port), an `Origin` header other than
+  `http://127.0.0.1:<port>` or `http://localhost:<port>`, and a `Sec-Fetch-Site` other than
+  `same-origin` or `none`: a third-party web page can neither call the API nor read the stream.
+  Command calls also require `Content-Type: application/json` (415 otherwise).
 - Variables : `STENO_HOME`, `STENO_SIDECAR` (ex. `steno replay fichier.jsonl --speed 20`).
 - `pick_folder` renvoie `null` (pas de sélecteur natif).
 

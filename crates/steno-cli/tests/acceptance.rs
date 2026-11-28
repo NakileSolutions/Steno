@@ -329,7 +329,7 @@ async fn exclusions_et_confidentialite() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn apartes_isoles_de_la_reunion() {
+async fn asides_isolated_from_the_meeting() {
     let c = core("apartes-isoles", None);
     let m = c.start_meeting(Some("Revue budget".into())).await.unwrap();
     let r1 = c.ask("où est géré le verrou de créneau ?", Some(&m.id), "text").unwrap();
@@ -343,11 +343,11 @@ async fn apartes_isoles_de_la_reunion() {
     let log = std::fs::read_to_string(env().join("fake-claude.log")).unwrap();
     let mine = format!("/runs/{}/", m.id);
     let last: Vec<String> = serde_json::from_str(log.lines().rfind(|l| l.contains(&mine)).unwrap()).unwrap();
-    assert!(last.contains(&"--no-session-persistence".to_string()), "aparté sans la session de la réunion : {last:?}");
+    assert!(last.contains(&"--no-session-persistence".to_string()), "aside without the meeting's session: {last:?}");
     assert!(!last.contains(&"--resume".to_string()));
-    assert_eq!(c.db().get_meeting(&m.id).unwrap().unwrap().agent_session_id, session, "session de la réunion intacte");
+    assert_eq!(c.db().get_meeting(&m.id).unwrap().unwrap().agent_session_id, session, "meeting session untouched");
 
-    // Note dictée en aparté : ni note ni action de la réunion.
+    // Note dictated in an aside: neither a note nor an action of the meeting.
     let r3 = c.ask("note que la prime de Marie est de 3000 euros", Some(&m.id), "hotkey").unwrap();
     let r3 = c.db().get_request(&r3.id).unwrap().unwrap();
     assert_eq!(r3.status, "done");
@@ -355,14 +355,14 @@ async fn apartes_isoles_de_la_reunion() {
     assert!(!c.db().notes(&m.id).unwrap().iter().any(|n| n.text.contains("prime")));
     assert!(!c.db().actions(&m.id).unwrap().iter().any(|a| a.text.contains("prime")));
 
-    // Barre de menu : ni apartés ni demandes d'une réunion confidentielle.
+    // Menu bar: neither asides nor requests from a confidential meeting.
     let recent = c.recent_requests(20).unwrap();
     assert!(recent.iter().any(|r| r.id == r1.id));
     assert!(!recent.iter().any(|r| r.origin == "hotkey"), "{recent:?}");
-    // Bannières : aucun texte d'aparté.
+    // Banners: no aside text.
     while let Ok(ev) = rx.try_recv() {
         if let steno_core::events::CoreEvent::Notify { body, .. } = ev {
-            assert!(!body.contains("salaire") && !body.contains("prime"), "texte privé dans une notification : {body}");
+            assert!(!body.contains("salaire") && !body.contains("prime"), "private text in a notification: {body}");
         }
     }
     c.stop_meeting().await.unwrap();
@@ -374,7 +374,7 @@ async fn apartes_isoles_de_la_reunion() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn annulation_et_recap_d_un_aparte_sans_fuite() {
+async fn cancel_and_recap_of_an_aside_without_leak() {
     let c = core("aparte-annulation", None);
     let m = c.start_meeting(Some("Revue primes".into())).await.unwrap();
     let pending = |id: &str, origin: &str, query: &str| Request {
@@ -394,7 +394,7 @@ async fn annulation_et_recap_d_un_aparte_sans_fuite() {
         answer_md: None,
         tools_used: vec![],
     };
-    // « Annule » dit publiquement pendant qu'un aparté attend : son texte ne ressort pas.
+    // « Annule » said publicly while an aside is waiting: its text does not come out.
     c.db().insert_request(&pending("aparte-1", "hotkey", "le salaire de Marie")).unwrap();
     let r = c.ask("annule", Some(&m.id), "voice").unwrap();
     assert_eq!(r.intent, "cancel");
@@ -402,9 +402,9 @@ async fn annulation_et_recap_d_un_aparte_sans_fuite() {
     assert_eq!(c.db().get_request("aparte-1").unwrap().unwrap().status, "cancelled");
     c.db().insert_request(&pending("publique-1", "voice", "les erreurs Datadog")).unwrap();
     let r = c.ask("annule", Some(&m.id), "voice").unwrap();
-    assert!(r.summary.unwrap().contains("les erreurs Datadog"), "demande publique : texte repris");
+    assert!(r.summary.unwrap().contains("les erreurs Datadog"), "public request: text repeated");
 
-    // Récapitulatif demandé en aparté : sans la session de la réunion.
+    // Recap asked in an aside: without the meeting's session.
     let r = c.ask("récapitule", Some(&m.id), "hotkey").unwrap();
     assert_eq!(r.intent, "recap");
     assert_eq!(wait_request(&c, &r.id).await.status, "done");
@@ -412,26 +412,26 @@ async fn annulation_et_recap_d_un_aparte_sans_fuite() {
     let mine = format!("/runs/{}/", m.id);
     let last: Vec<String> = serde_json::from_str(log.lines().rfind(|l| l.contains(&mine)).unwrap()).unwrap();
     assert!(last.contains(&"--no-session-persistence".to_string()), "{last:?}");
-    assert!(c.db().get_meeting(&m.id).unwrap().unwrap().agent_session_id.is_none(), "aucune session enregistrée pour la réunion");
+    assert!(c.db().get_meeting(&m.id).unwrap().unwrap().agent_session_id.is_none(), "no session saved for the meeting");
     c.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn bascule_confidentielle_sans_export_ni_tache() {
+async fn switch_to_confidential_without_export_or_job() {
     let c = core("bascule-confidentielle", None);
     let out = env().join("exports-confidentiels");
     let mut s = c.settings();
     s.privacy.auto_export_dir = Some(out.display().to_string());
     c.save_settings(s).unwrap();
 
-    // Passée en confidentielle pendant l'écoute : ni compte rendu ni export automatique.
+    // Switched to confidential while listening: neither summary nor automatic export.
     let m = c.start_meeting(Some("Point salaires".into())).await.unwrap();
     c.add_note(&m.id, "Augmentation de Paul").unwrap();
     c.set_confidential(&m.id, true).unwrap();
     c.stop_meeting().await.unwrap();
     wait_until("réunion terminée", 60, || c.db().get_meeting(&m.id).unwrap().unwrap().status == "done").await;
 
-    // Tâches en attente annulées au passage en confidentielle.
+    // Pending jobs cancelled when switching to confidential.
     let m2 = c.start_meeting(Some("Point primes".into())).await.unwrap();
     c.stop_meeting().await.unwrap();
     c.db().enqueue_job_at("export", Some(&m2.id), &serde_json::json!({}), Some("2999-01-01T00:00:00Z")).unwrap();
@@ -439,15 +439,15 @@ async fn bascule_confidentielle_sans_export_ni_tache() {
     c.set_confidential(&m2.id, true).unwrap();
     assert!(!c.db().has_job("export", &m2.id, &["pending", "running"]).unwrap());
     assert!(c.db().has_job("export", &m2.id, &["cancelled"]).unwrap());
-    // Export lancé malgré tout : rien n'est écrit pour une réunion confidentielle.
+    // Export started anyway: nothing is written for a confidential meeting.
     c.db().enqueue_job("export", Some(&m2.id), &serde_json::json!({})).unwrap();
     wait_until("export traité", 30, || !c.db().has_job("export", &m2.id, &["pending", "running"]).unwrap()).await;
     tokio::time::sleep(Duration::from_millis(500)).await;
     let written: Vec<_> = std::fs::read_dir(&out).map(|d| d.flatten().map(|e| e.file_name()).collect()).unwrap_or_default();
-    assert!(written.is_empty(), "export d'une réunion confidentielle : {written:?}");
+    assert!(written.is_empty(), "export of a confidential meeting: {written:?}");
     assert!(c.db().get_report(&m.id).unwrap().is_none());
 
-    // Compte rendu en préparation : la réunion ne reste pas bloquée « en cours ».
+    // Summary being prepared: the meeting does not stay stuck "in progress".
     let m3 = c.start_meeting(Some("Point départs".into())).await.unwrap();
     c.stop_meeting().await.unwrap();
     c.db().set_meeting_status(&m3.id, "processing").unwrap();
@@ -455,7 +455,7 @@ async fn bascule_confidentielle_sans_export_ni_tache() {
     assert_eq!(c.db().get_meeting(&m3.id).unwrap().unwrap().status, "done");
     assert!(steno_core::export::auto_export(c.db(), &m3.id, &out).unwrap().is_none());
 
-    // Clic par erreur : repasser en non confidentielle relance le compte rendu annulé.
+    // Misclick: switching back to non-confidential restarts the cancelled summary.
     let mut s = c.settings();
     s.report.context_delay_s = 600;
     c.save_settings(s).unwrap();
@@ -465,31 +465,31 @@ async fn bascule_confidentielle_sans_export_ni_tache() {
     c.set_confidential(&m4.id, true).unwrap();
     assert!(c.db().has_job("report", &m4.id, &["cancelled"]).unwrap());
     c.set_confidential(&m4.id, false).unwrap();
-    assert!(c.db().has_job("report", &m4.id, &["pending", "running", "done", "error"]).unwrap(), "compte rendu relancé");
+    assert!(c.db().has_job("report", &m4.id, &["pending", "running", "done", "error"]).unwrap(), "summary restarted");
     c.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn suppression_de_reunion_sans_traversee_de_chemin() {
+async fn meeting_deletion_without_path_traversal() {
     let c = core("suppression-traversee", None);
     let marker = env().join("runs").join("temoin.txt");
     std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
     std::fs::write(&marker, "x").unwrap();
     for id in ["..", "../..", ".", "../runs", "a/../..", "/tmp", ""] {
-        assert!(c.delete_meeting(id).is_err(), "{id:?} doit être refusé");
+        assert!(c.delete_meeting(id).is_err(), "{id:?} must be refused");
     }
-    assert!(marker.exists() && env().join("steno").parent().unwrap().exists(), "aucun dossier supprimé");
+    assert!(marker.exists() && env().join("steno").parent().unwrap().exists(), "no folder deleted");
     c.shutdown();
 }
 
-/// Dernière invite reçue par le faux agent contenant `needle`.
+/// Last prompt received by the fake agent that contains `needle`.
 fn last_prompt_with(needle: &str) -> Option<String> {
     let prompts = std::fs::read_to_string(env().join("fake-claude-prompts.log")).unwrap_or_default();
     prompts.lines().filter_map(|l| serde_json::from_str::<String>(l).ok()).rfind(|p| p.contains(needle))
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn confidentiel_et_apartes_jamais_envoyes_a_l_agent() {
+async fn confidential_and_asides_never_sent_to_the_agent() {
     let c = core("confidentiel-historique", None);
     let segment = |id: &str, text: &str| steno_core::db::NewSegment {
         meeting_id: id.into(),
@@ -520,18 +520,18 @@ async fn confidentiel_et_apartes_jamais_envoyes_a_l_agent() {
         tools_used: vec![],
     };
 
-    // Compte rendu : les demandes posées en aparté n'y figurent pas.
+    // Summary: the requests made in an aside are not in it.
     let m = c.start_meeting(Some("Revue Pégase".into())).await.unwrap();
     c.db().insert_segment(&segment(&m.id, "Le projet Pégase avance, livraison vendredi")).unwrap();
     c.db().insert_request(&request(&m.id, "voice", "où en est la livraison Pégase")).unwrap();
     c.db().insert_request(&request(&m.id, "hotkey", "quel est le salaire de Marie")).unwrap();
     c.stop_meeting().await.unwrap();
     wait_until("compte rendu", 60, || c.db().get_meeting(&m.id).unwrap().unwrap().status == "done").await;
-    let p = last_prompt_with("Revue Pégase").expect("invite du compte rendu");
+    let p = last_prompt_with("Revue Pégase").expect("summary prompt");
     assert!(p.contains("Compte rendu à rédiger") && p.contains("où en est la livraison Pégase"));
-    assert!(!p.contains("salaire de Marie"), "demande en aparté absente du compte rendu");
+    assert!(!p.contains("salaire de Marie"), "aside request missing from the summary");
 
-    // Historique : aucun extrait ni compte rendu d'une réunion confidentielle.
+    // History: no excerpt or summary from a confidential meeting.
     let conf = c.start_meeting(Some("Point RH Pégase".into())).await.unwrap();
     c.set_confidential(&conf.id, true).unwrap();
     c.db().insert_segment(&segment(&conf.id, "Pégase : rupture conventionnelle de Paul")).unwrap();
@@ -540,9 +540,9 @@ async fn confidentiel_et_apartes_jamais_envoyes_a_l_agent() {
     let r = c.ask_history("que sait-on de Pégase ?", "text").unwrap();
     let r = wait_request(&c, &r.id).await;
     assert_eq!(r.status, "done", "{:?}", r.error);
-    let p = last_prompt_with("que sait-on de Pégase").expect("invite de l'historique");
+    let p = last_prompt_with("que sait-on de Pégase").expect("history prompt");
     assert!(p.contains("Revue Pégase"), "{p}");
-    assert!(!p.contains("rupture conventionnelle") && !p.contains("Point RH"), "réunion confidentielle envoyée : {p}");
+    assert!(!p.contains("rupture conventionnelle") && !p.contains("Point RH"), "confidential meeting sent: {p}");
     c.shutdown();
 }
 
@@ -862,7 +862,7 @@ async fn contexte_documents_et_format_du_compte_rendu() {
     assert!(c.add_context_file(&m.id, "photo.png", &data).is_err(), "format refusé");
     let huge = "A".repeat(steno_core::context::MAX_FILE_BYTES / 3 * 4 + 1024);
     let e = c.add_context_file(&m.id, "enorme.md", &huge).unwrap_err().to_string();
-    assert!(e.contains("dépasse"), "taille refusée avant le décodage : {e}");
+    assert!(e.contains("dépasse"), "size refused before decoding: {e}");
     let ctx = c.set_meeting_context(&m.id, "Réunion Nova : surveiller la TVA.", Some(&fmt)).unwrap();
     assert_eq!(ctx.files.len(), 1);
     assert!(c.set_meeting_context(&m.id, "x", Some("inconnu")).is_err());

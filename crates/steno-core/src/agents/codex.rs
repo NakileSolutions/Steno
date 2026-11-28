@@ -42,13 +42,13 @@ pub(crate) fn build_args(req: &RunRequest, last_message: &Path) -> Vec<String> {
         a.push("-m".into());
         a.push(m.clone());
     }
-    // La valeur est insérée dans du TOML (`-c clé=valeur`) : liste blanche stricte.
+    // The value is inserted into TOML (`-c key=value`): strict allowlist.
     match &req.effort {
         Some(e) if crate::settings::valid_effort(e) => {
             a.push("-c".into());
             a.push(format!("model_reasoning_effort=\"{e}\""));
         }
-        Some(e) => tracing::warn!("niveau de réflexion ignoré (caractères non autorisés) : {e:?}"),
+        Some(e) => tracing::warn!("reasoning level ignored (characters not allowed): {e:?}"),
         None => {}
     }
     // L'invite est lue sur l'entrée standard.
@@ -310,7 +310,7 @@ mod tests {
         for e in ["high\"\nmcp_servers.x.command=\"sh", "high\" sandbox_mode=\"danger-full-access", "x".repeat(21).as_str(), "HIGH"] {
             r.effort = Some(e.to_string());
             let a = build_args(&r, Path::new("/tmp/l"));
-            assert!(!a.iter().any(|x| x.starts_with("model_reasoning_effort")), "{e:?} doit être ignoré");
+            assert!(!a.iter().any(|x| x.starts_with("model_reasoning_effort")), "{e:?} must be ignored");
             assert!(a.contains(&"mcp_servers={}".to_string()));
         }
     }

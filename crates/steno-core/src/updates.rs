@@ -8,8 +8,8 @@
 //! est remplacée à la fin seulement : un échec de compilation laisse la version courante en
 //! place. Le redémarrage reste à l'initiative de l'utilisateur (jamais pendant une réunion).
 //!
-//! Garanties avant de compiler : version `X.Y.Z` stricte, clone relié au dépôt officiel, tag
-//! signé par une clé de publication connue de ce binaire (`RELEASE_SIGNERS`) et présent sur
+//! Guarantees before building: strict `X.Y.Z` version, clone tied to the official repository, tag
+//! signed by a release key known to this binary (`RELEASE_SIGNERS`) and present on
 //! `main`.
 
 use crate::core::Inner;
@@ -26,12 +26,12 @@ pub const REPO: &str = "NakileSolutions/Steno";
 /// Version de ce binaire.
 pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
 
-/// Clés SSH autorisées à signer les tags de version (format `allowed_signers` de
-/// `ssh-keygen`), partagées avec le workflow de publication. Pour changer de clé : publier
-/// d'abord, signée avec l'ancienne, une version qui ajoute la nouvelle ligne (RELEASING.md).
+/// SSH keys allowed to sign version tags (`allowed_signers` format of `ssh-keygen`), shared
+/// with the release workflow. To change keys: first release, signed with the old one, a
+/// version that adds the new line (RELEASING.md).
 pub const RELEASE_SIGNERS: &str = include_str!("../release-signers");
 
-/// Empreintes `SHA256:…` des clés d'un fichier `allowed_signers`.
+/// `SHA256:…` fingerprints of the keys in an `allowed_signers` file.
 pub fn signer_fingerprints(signers: &str) -> Vec<String> {
     use base64::Engine;
     use sha2::Digest;
@@ -49,14 +49,14 @@ pub fn signer_fingerprints(signers: &str) -> Vec<String> {
         .collect()
 }
 
-/// Numéro de version publiable : exactement `X.Y.Z` (chiffres seulement, sans suffixe).
+/// Releasable version number: exactly `X.Y.Z` (digits only, no suffix).
 pub fn valid_version(v: &str) -> bool {
     let parts: Vec<&str> = v.split('.').collect();
     parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.len() <= 9 && p.bytes().all(|b| b.is_ascii_digit()))
 }
 
-/// Adresse du dépôt officiel : HTTPS ou SSH GitHub (`.git` final facultatif), avec ou sans
-/// utilisateur (`https://moi@github.com/…`) et port SSH habituel (`ssh.github.com:443`, `:22`).
+/// Official repository address: GitHub over HTTPS or SSH (trailing `.git` optional), with or
+/// without a user (`https://me@github.com/…`) and the usual SSH ports (`ssh.github.com:443`, `:22`).
 pub fn official_remote(url: &str) -> bool {
     let u = url.trim();
     let path = if let Some(rest) = u.strip_prefix("https://").or_else(|| u.strip_prefix("ssh://")) {
@@ -105,9 +105,9 @@ pub struct UpdateStatus {
     pub log_path: Option<String>,
 }
 
-/// Compare deux versions `x.y.z`. `true` si `a` (version publiée) est plus récente que `b`
-/// (version installée). Une pré-version publiée (`0.3.0-rc1`) n'est jamais proposée ; une
-/// version finale l'emporte sur la pré-version installée du même numéro.
+/// Compares two `x.y.z` versions. `true` if `a` (published version) is newer than `b`
+/// (installed version). A published pre-release (`0.3.0-rc1`) is never offered; a final
+/// version wins over the installed pre-release of the same number.
 pub fn newer(a: &str, b: &str) -> bool {
     fn split(v: &str) -> (Vec<u64>, bool) {
         let v = v.trim();
@@ -186,19 +186,16 @@ fn git(dir: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// Adresse effective de `origin` (réécritures `insteadOf` appliquées), si elle existe.
+/// Effective `origin` address (`insteadOf` rewrites applied), if any.
 fn origin_url(dir: &Path) -> Option<String> {
     git(dir, &["remote", "get-url", "origin"]).ok()
 }
 
-/// Vérifie que `tag` est un tag annoté signé (SSH) par l'une des clés de `signers`
-/// (format `allowed_signers`). Le trousseau GPG et la configuration de l'utilisateur ne
-/// suffisent jamais à faire accepter un tag.
-/// Vérifie que `refs/tags/<tag>` est un tag annoté **nommé `<tag>` dans son en-tête** (un
-/// ancien tag signé renommé est refusé), signé en SSH (dernier bloc de l'objet) par l'une des
-/// clés de `signers` (format `allowed_signers`). GPG est neutralisé et la clé qui a signé doit
-/// figurer parmi les empreintes attendues : ni le trousseau ni la configuration de
-/// l'utilisateur ne suffisent à faire accepter un tag.
+/// Checks that `refs/tags/<tag>` is an annotated tag **named `<tag>` in its header** (an old
+/// signed tag under a new name is refused), SSH-signed (last block of the object) by one of
+/// the keys in `signers` (`allowed_signers` format). GPG is disabled and the signing key must
+/// be among the expected fingerprints: neither the user's keyring nor their configuration is
+/// enough to get a tag accepted.
 pub fn verify_tag(dir: &Path, tag: &str, signers: &str) -> Result<String> {
     let tag_ref = format!("refs/tags/{tag}");
     if git(dir, &["cat-file", "-t", &tag_ref]).ok().as_deref() != Some("tag") {
@@ -241,9 +238,9 @@ pub fn verify_tag(dir: &Path, tag: &str, signers: &str) -> Result<String> {
     Ok(detail)
 }
 
-/// Commit de version acceptable : `Cargo.toml` à cette version, présent sur `main` du dépôt
-/// officiel, et plus récent que les sources actuelles (ni rétrogradation ni recompilation de
-/// la version déjà présente).
+/// Acceptable version commit: `Cargo.toml` at this version, present on the official
+/// repository's `main`, and newer than the current sources (neither a downgrade nor a rebuild
+/// of the version already there).
 fn check_release_commit(dir: &Path, version: &str, oid: &str) -> Result<()> {
     let cargo = git(dir, &["show", &format!("{oid}:Cargo.toml")])?;
     let declared = toml::from_str::<toml::Value>(&cargo)
@@ -324,8 +321,8 @@ pub fn initial_status() -> UpdateStatus {
 
 /// Vérifie la dernière version publiée ; notifie une seule fois par nouvelle version.
 pub async fn check(inner: &Inner) -> Result<UpdateStatus> {
-    // Test et passage à « checking » sous un seul verrou : une installation qui démarre au même
-    // moment n'est jamais écrasée.
+    // Test and switch to "checking" under a single lock: an install that starts at the same
+    // moment is never overwritten.
     let installing = {
         let mut u = inner.update.lock().unwrap();
         let installing = u.state == "installing";
@@ -343,7 +340,7 @@ pub async fn check(inner: &Inner) -> Result<UpdateStatus> {
     let blocker = install_blocker(dir.as_deref());
     match res {
         Ok(rel) => {
-            // Seul un tag `vX.Y.Z` strict est une version proposée.
+            // Only a strict `vX.Y.Z` tag is an offered version.
             let latest = rel
                 .as_ref()
                 .map(|r| r.tag_name.strip_prefix('v').unwrap_or(&r.tag_name).to_string())
@@ -357,7 +354,7 @@ pub async fn check(inner: &Inner) -> Result<UpdateStatus> {
                 u.notes = rel.as_ref().and_then(|r| r.body.clone());
                 u.published_at = rel.as_ref().and_then(|r| r.published_at.clone());
                 u.checked_at = Some(crate::now_iso());
-                // Une installation lancée pendant la vérification garde son état et son message.
+                // An install started during the check keeps its state and its message.
                 if u.state != "installing" {
                     u.state = if was_installed { "installed".into() } else { "idle".into() };
                     u.source_dir = dir.as_ref().map(|d| d.display().to_string());
@@ -395,8 +392,8 @@ pub async fn check(inner: &Inner) -> Result<UpdateStatus> {
 /// Installe la dernière version publiée depuis les sources (quelques minutes).
 pub async fn install(inner: Arc<Inner>) -> Result<()> {
     let log = crate::paths::logs_dir().join("update.log");
-    // L'état passe à « installing » sous le même verrou que le test : deux demandes
-    // simultanées ne peuvent pas lancer deux installations.
+    // The state switches to "installing" under the same lock as the test: two simultaneous
+    // requests cannot start two installs.
     let (version, previous) = {
         let mut u = inner.update.lock().unwrap();
         if u.state == "installing" {
@@ -490,7 +487,7 @@ fn run_install(dir: &Path, tag: &str, log: &Path) -> Result<()> {
             git(dir, &["checkout", "-q", &oid])?;
         }
     }
-    // On compile exactement le commit signé, sans modification.
+    // Build exactly the signed commit, unmodified.
     if git(dir, &["rev-parse", "HEAD"])? != oid || !git(dir, &["status", "--porcelain", "--untracked-files=no"])?.is_empty() {
         bail!("les sources ne correspondent pas exactement au tag {tag} : installation annulée");
     }
@@ -642,13 +639,13 @@ mod tests {
         assert!(!newer("0.1.0", "0.1.0"));
         assert!(!newer("0.1.0-beta", "0.1.0"));
         assert!(!newer("0.0.9", "0.1"));
-        assert!(!newer("0.3.0-rc1", "0.2.2"), "pré-version publiée jamais proposée");
-        assert!(newer("0.2.0", "0.2.0-rc1"), "version finale après la pré-version installée");
+        assert!(!newer("0.3.0-rc1", "0.2.2"), "a published pre-release is never offered");
+        assert!(newer("0.2.0", "0.2.0-rc1"), "final version after the installed pre-release");
         assert!(!newer("0.1.9", "0.2.0-rc1"));
     }
 
     #[test]
-    fn numeros_de_version_stricts() {
+    fn strict_version_numbers() {
         for v in ["0.2.2", "1.0.0", "10.20.30"] {
             assert!(valid_version(v), "{v}");
         }
@@ -658,7 +655,7 @@ mod tests {
     }
 
     #[test]
-    fn depot_officiel() {
+    fn official_repository() {
         for u in [
             "https://github.com/NakileSolutions/Steno.git",
             "https://github.com/NakileSolutions/Steno",
@@ -704,7 +701,7 @@ mod tests {
         g(&["init", "-q", "-b", "main"]);
         g(&["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "x"]);
         std::fs::write(d.path().join("Makefile"), "all:\n").unwrap();
-        assert!(install_blocker(Some(d.path())).unwrap().contains("origin"), "sans dépôt distant : installation impossible");
+        assert!(install_blocker(Some(d.path())).unwrap().contains("origin"), "no remote: install impossible");
         g(&["remote", "add", "origin", "https://github.com/NakileSolutions/Steno.git"]);
         assert!(install_blocker(Some(d.path())).is_none(), "fichier non suivi : sans effet");
         g(&["add", "Makefile"]);
@@ -720,7 +717,7 @@ mod tests {
         assert!(install_blocker(Some(d.path())).is_none());
     }
 
-    /// Dépôt de test avec un tag signé par une clé SSH jetable.
+    /// Test repository with a tag signed by a throwaway SSH key.
     fn signed_repo() -> Option<(tempfile::TempDir, String)> {
         let d = tempfile::tempdir().unwrap();
         let key = d.path().join("cle");
@@ -747,10 +744,10 @@ mod tests {
         sign("v0.1.0");
         g(&[&id[..], &["tag", "-a", "v9.9.8", "-m", "annoté sans signature"]].concat());
         g(&[&id[..], &["tag", "v9.9.7"]].concat());
-        // Ancien tag signé (v0.1.0) republié sous un autre nom.
+        // Old signed tag (v0.1.0) published again under another name.
         let old = g(&["rev-parse", "refs/tags/v0.1.0"]);
         g(&["update-ref", "refs/tags/v9.9.6", &old]);
-        // Faux bloc SSH dans le message, signature finale d'un autre type.
+        // Fake SSH block in the message, final signature of another type.
         let commit = g(&["rev-parse", "HEAD"]);
         let forged = format!(
             "object {commit}\ntype commit\ntag v9.9.5\ntagger t <publication@test> 1795000000 +0100\n\n\
@@ -768,22 +765,22 @@ mod tests {
     }
 
     #[test]
-    fn tag_signe_par_une_cle_de_publication() {
+    fn tag_signed_by_a_release_key() {
         let Some((d, signers)) = signed_repo() else { return };
         let repo = d.path().join("depot");
         assert!(verify_tag(&repo, "v9.9.9", &signers).is_ok());
         assert!(verify_tag(&repo, "v9.9.8", &signers).unwrap_err().to_string().contains("signé"));
         assert!(verify_tag(&repo, "v9.9.7", &signers).unwrap_err().to_string().contains("n'est pas signé"));
-        assert!(verify_tag(&repo, "v9.9.9", RELEASE_SIGNERS).is_err(), "clé inconnue de Sténo : refusé");
+        assert!(verify_tag(&repo, "v9.9.9", RELEASE_SIGNERS).is_err(), "key unknown to Sténo: refused");
         assert!(verify_tag(&repo, "v0.0.0", &signers).is_err());
         let e = verify_tag(&repo, "v9.9.6", &signers).unwrap_err().to_string();
-        assert!(e.contains("renommé"), "ancien tag signé republié sous un autre nom : {e}");
+        assert!(e.contains("renommé"), "old signed tag published again under another name: {e}");
         assert!(verify_tag(&repo, "v9.9.5", &signers).is_err(), "faux bloc SSH, signature finale PGP");
     }
 
     #[test]
-    fn vrai_tag_de_version_verifie() {
-        // Tags publiés présents dans le clone (pas en CI, où le dépôt est copié sans tags).
+    fn real_version_tag_verified() {
+        // Published tags present in the clone (not in CI, where the repository is copied without tags).
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         if git(&root, &["cat-file", "-t", "refs/tags/v0.2.2"]).ok().as_deref() == Some("tag") {
             assert!(verify_tag(&root, "v0.2.2", RELEASE_SIGNERS).is_ok());
@@ -791,13 +788,13 @@ mod tests {
     }
 
     #[test]
-    fn empreinte_de_la_cle_de_publication() {
+    fn release_key_fingerprint() {
         assert_eq!(signer_fingerprints(RELEASE_SIGNERS), ["SHA256:cVy45Aj++geRYY+SECDc0QWkd3WQQ6H+nBMPjKV9+PY"]);
-        assert!(signer_fingerprints("# commentaire seulement\n").is_empty());
+        assert!(signer_fingerprints("# comment only\n").is_empty());
     }
 
     #[test]
-    fn commit_de_version_controle() {
+    fn version_commit_checked() {
         let Some((d, _)) = signed_repo() else { return };
         let repo = d.path().join("depot");
         let g = |args: &[&str]| {
@@ -806,16 +803,16 @@ mod tests {
             String::from_utf8_lossy(&o.stdout).trim().to_string()
         };
         let oid = g(&["rev-parse", "HEAD"]);
-        // Pas de main distante : refusé.
+        // No remote main: refused.
         assert!(check_release_commit(&repo, "9.9.9", &oid).unwrap_err().to_string().contains("main"));
         g(&["update-ref", "refs/remotes/origin/main", &oid]);
-        // Déjà sur ce commit : ni rétrogradation ni recompilation en boucle.
+        // Already on this commit: neither a downgrade nor an endless rebuild.
         assert!(check_release_commit(&repo, "9.9.9", &oid).unwrap_err().to_string().contains("déjà"));
         g(&["checkout", "-q", "--orphan", "autre"]);
         g(&["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "y"]);
         assert!(check_release_commit(&repo, "9.9.9", &oid).is_ok());
-        assert!(check_release_commit(&repo, "9.9.8", &oid).unwrap_err().to_string().contains("version"), "Cargo.toml à une autre version");
-        // Une ligne `version = …` hors de [workspace.package] ne compte pas.
+        assert!(check_release_commit(&repo, "9.9.8", &oid).unwrap_err().to_string().contains("version"), "Cargo.toml at another version");
+        // A `version = …` line outside [workspace.package] does not count.
         std::fs::write(repo.join("Cargo.toml"), "[workspace.package]\nversion = \"1.0.0\"\n[dependencies.x]\nversion = \"9.9.7\"\n").unwrap();
         g(&["add", "Cargo.toml"]);
         g(&["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "z"]);
@@ -828,7 +825,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn installation_refusee_sans_rester_bloquee() {
+    async fn refused_install_does_not_stay_stuck() {
         let core = crate::Core::new(crate::Db::open_in_memory().unwrap(), Default::default()).unwrap();
         let inner = core.inner.clone();
         {
@@ -855,7 +852,7 @@ mod tests {
         let e = install(inner.clone()).await.unwrap_err().to_string();
         assert!(e.contains("réunion est en cours"), "{e}");
         let st = inner.update_status();
-        assert_eq!(st.state, "idle", "état remis en place après le refus");
+        assert_eq!(st.state, "idle", "state restored after the refusal");
         assert_eq!(st.message, None);
         inner.update.lock().unwrap().state = "installing".into();
         assert!(install(inner.clone()).await.unwrap_err().to_string().contains("déjà en cours"));

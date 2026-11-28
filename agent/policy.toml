@@ -14,10 +14,10 @@ allowed_commands = [
 ]
 pipe_commands = ["head", "tail", "wc", "sort", "uniq", "grep", "rg", "cut"]
 
-# Options interdites pour toute commande autorisée : celles qui lancent un programme ou
-# écrivent un fichier (formes `--opt=…` et abréviations `--out` comprises). Sous Claude Code,
-# `grep` est ugrep et `find` est bfs. Sténo ajoute toujours cette liste et deux règles par
-# commande : `sort -o` et `git grep -O` (lettre cherchée dans tout le groupe d'options).
+# Options refused for every allowed command: those that run a program or write a file
+# (`--opt=…` forms and `--out` abbreviations included). Under Claude Code, `grep` is ugrep and
+# `find` is bfs. Sténo always adds this list and per-command rules: `sort -o`, `git grep -O`
+# (letter searched across the whole option group) and options that follow symbolic links.
 denied_arguments = [
   "-exec", "-execdir", "-ok", "-okdir", "-delete", "-rm", "-fls", "-fprint", "-fprint0", "-fprintf",
   "--output", "--pre", "--pre-glob", "--hostname-bin", "--compress-program",

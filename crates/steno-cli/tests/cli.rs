@@ -172,20 +172,20 @@ fn crochet_de_politique() {
     };
     let cwd = dir.display().to_string();
     let (code, out, _) = run_raw(&pf, &serde_json::json!({"tool_name":"Bash","tool_input":{"command":"rg -n creneau"},"cwd":cwd}).to_string());
-    assert_eq!((code, out.as_str()), (0, ""), "autorisé : code 0, rien sur la sortie standard");
+    assert_eq!((code, out.as_str()), (0, ""), "allowed: code 0, nothing on standard output");
     for cmd in ["git log -p", "git diff", "grep -A2 -rn creneau .", "ls | grep x", "rg -o 'APP-[0-9]+'"] {
         assert_eq!(run(serde_json::json!({"tool_name":"Bash","tool_input":{"command":cmd},"cwd":cwd})).0, 0, "{cmd}");
     }
-    // Toute erreur est un refus bloquant (code 2), jamais un code que l'agent ignorerait.
+    // Any error is a blocking denial (code 2), never a code the agent would ignore.
     assert_eq!(run_raw(&dir.join("absente.json"), "{}").0, 2);
-    assert_eq!(run_raw(&pf, "pas du json").0, 2);
+    assert_eq!(run_raw(&pf, "not json").0, 2);
     for cmd in ["git push", "rg --pre=sh x", "find . -delete", "rg x | sort -o y"] {
         assert_eq!(run(serde_json::json!({"tool_name":"Bash","tool_input":{"command":cmd},"cwd":cwd})).0, 2, "{cmd}");
     }
     let mut c = steno(h).arg("policy-hook").stdin(Stdio::null()).status().unwrap();
-    assert_eq!(c.code(), Some(2), "sans fichier de politique");
+    assert_eq!(c.code(), Some(2), "no policy file");
     c = steno(h).args(["policy-hook", pf.to_str().unwrap()]).stdin(Stdio::null()).status().unwrap();
-    assert_eq!(c.code(), Some(2), "entrée vide");
+    assert_eq!(c.code(), Some(2), "empty input");
     assert_eq!(run(serde_json::json!({"tool_name":"mcp__atlassian__getJiraIssue","tool_input":{},"cwd":cwd})).0, 0);
     let (code, err) = run(serde_json::json!({"tool_name":"mcp__slack__slack_send_message","tool_input":{},"cwd":cwd}));
     assert_eq!(code, 2);
@@ -221,7 +221,7 @@ fn http(port: u16, method: &str, path: &str, body: &str) -> (u16, String) {
     http_with(port, method, path, "Host: localhost\r\nContent-Type: application/json\r\n", body)
 }
 
-/// Requête HTTP avec des en-têtes choisis (chacun terminé par `\r\n`).
+/// HTTP request with chosen headers (each ending with `\r\n`).
 fn http_with(port: u16, method: &str, path: &str, headers: &str, body: &str) -> (u16, String) {
     let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
     s.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
@@ -282,7 +282,7 @@ fn serveur_http_de_l_api() {
             .unwrap(),
     );
     let port = served_port(child.0.stderr.take().unwrap());
-    // Langue fixe : les messages vérifiés ci-dessous ne dépendent pas de la langue de la machine.
+    // Fixed language: the messages checked below do not depend on the machine's language.
     let (_, b) = http(port, "POST", "/api/invoke/get_settings", "");
     let mut s: serde_json::Value = serde_json::from_str(&b).unwrap();
     s["profile"]["language"] = "fr".into();
@@ -378,7 +378,7 @@ fn replay_without_calendar_reports_no_calendar_source() {
 }
 
 #[test]
-fn serveur_http_refuse_les_requetes_etrangeres() {
+fn http_server_refuses_foreign_requests() {
     let h = home().join("serve-securite");
     std::fs::create_dir_all(&h).unwrap();
     struct Kill(std::process::Child);
@@ -399,23 +399,23 @@ fn serveur_http_refuse_les_requetes_etrangeres() {
     let port = served_port(child.0.stderr.take().unwrap());
     let local = format!("Host: 127.0.0.1:{port}\r\n");
     let json = "Content-Type: application/json\r\n";
-    // Requête légitime de la page servie.
+    // Legitimate request from the served page.
     let (c, b) = http_with(port, "POST", "/api/invoke/live_state", &format!("{local}{json}Origin: http://127.0.0.1:{port}\r\nSec-Fetch-Site: same-origin\r\n"), "{}");
     assert_eq!(c, 200, "{b}");
-    // Rebinding DNS : nom d'hôte étranger résolu vers 127.0.0.1.
+    // DNS rebinding: foreign host name resolving to 127.0.0.1.
     let (c, _) = http_with(port, "POST", "/api/invoke/live_state", &format!("Host: rebind.example:{port}\r\n{json}"), "{}");
     assert_eq!(c, 403);
     let (c, _) = http_with(port, "GET", "/api/events", &format!("Host: rebind.example:{port}\r\n"), "");
-    assert_eq!(c, 403, "flux d'événements protégé aussi");
-    // Corps non JSON (requête envoyée sans pré-vérification CORS).
+    assert_eq!(c, 403, "event stream protected too");
+    // Non-JSON body (request sent without a CORS preflight).
     let (c, _) = http_with(port, "POST", "/api/invoke/start_meeting", &format!("{local}Content-Type: text/plain\r\n"), r#"{"title":"x"}"#);
     assert_eq!(c, 415);
-    // Page d'une autre origine.
+    // Page from another origin.
     let (c, _) = http_with(port, "POST", "/api/invoke/delete_all_data", &format!("{local}{json}Origin: https://evil.example\r\n"), "{}");
     assert_eq!(c, 403);
     let (c, _) = http_with(port, "POST", "/api/invoke/delete_all_data", &format!("{local}{json}Sec-Fetch-Site: cross-site\r\n"), "{}");
     assert_eq!(c, 403);
     let (c, b) = http(port, "POST", "/api/invoke/live_state", "");
-    assert_eq!(c, 200, "aucune réunion n'a été lancée par les requêtes refusées : {b}");
+    assert_eq!(c, 200, "no meeting was started by the refused requests: {b}");
     assert!(b.contains("\"meeting\":null"), "{b}");
 }

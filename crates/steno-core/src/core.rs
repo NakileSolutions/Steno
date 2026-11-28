@@ -142,8 +142,8 @@ impl Inner {
         })
     }
 
-    /// Motifs exclus (`Repo.exclude_globs`, un par ligne ou séparés par des virgules) des
-    /// dépôts lisibles d'une exécution.
+    /// Excluded patterns (`Repo.exclude_globs`, one per line or comma-separated) of a run's
+    /// readable repositories.
     fn exclude_globs_for(&self, repos: &[PathBuf]) -> Vec<String> {
         let Ok(all) = self.db.list_repos() else { return vec![] };
         let mut out: Vec<String> = vec![];
@@ -254,14 +254,14 @@ impl Inner {
             hook_exe: self.hook_exe.clone(),
             skills: s.agent.use_skills,
         };
-        // Jeton enregistré avant de relire la confidentialité : un passage en confidentielle
-        // concurrent l'annule forcément, ou est vu par la relecture.
+        // Token registered before reading confidentiality again: a concurrent switch to
+        // confidential either cancels it or is seen by the second read.
         let cancel = cancel.child_token();
         let cancel_key = meeting.map(|m| format!("meeting:{}:{}", m.id, uuid::Uuid::new_v4().simple()));
         if let Some(k) = &cancel_key {
             self.cancels.lock().unwrap().insert(k.clone(), cancel.clone());
         }
-        // Réunion passée en confidentielle entre-temps : rien ne part.
+        // Meeting switched to confidential in the meantime: nothing is sent.
         if let Some(m) = meeting {
             if self.db.get_meeting(&m.id)?.map(|f| f.confidential).unwrap_or(false) {
                 if let Some(k) = &cancel_key {
@@ -721,7 +721,7 @@ impl Core {
                     let _ = cancel_request(&self.inner, &r.id);
                 }
             }
-            // Compte rendu, corrélation, export : tâches annulées, exécutions d'agent arrêtées.
+            // Summary, correlation, export: jobs cancelled, agent runs stopped.
             self.inner.db.cancel_meeting_jobs(id, &["report", "correlate", "export", "request"])?;
             let prefix = format!("meeting:{id}:");
             for (k, tok) in self.inner.cancels.lock().unwrap().iter() {
@@ -729,7 +729,7 @@ impl Core {
                     tok.cancel();
                 }
             }
-            // Compte rendu en préparation abandonné : la réunion ne reste pas « en cours ».
+            // Summary being prepared is dropped: the meeting does not stay "in progress".
             if self.inner.db.get_meeting(id)?.is_some_and(|m| m.status == "processing") {
                 self.inner.db.set_meeting_status(id, "done")?;
             }
@@ -737,8 +737,8 @@ impl Core {
             && self.inner.db.get_report(id)?.is_none()
             && !self.inner.db.has_job("report", id, &["pending", "running"])?
         {
-            // Retour en arrière (clic par erreur) : le compte rendu annulé par le passage en
-            // confidentielle est relancé.
+            // Going back (misclick): the summary cancelled by the switch to confidential is
+            // restarted.
             self.inner.db.enqueue_job("report", Some(id), &serde_json::json!({}))?;
             self.inner.jobs_notify.notify_one();
         }
@@ -774,7 +774,7 @@ impl Core {
     }
 
     pub fn delete_meeting(&self, id: &str) -> Result<()> {
-        // Identifiant vérifié avant toute suppression : jamais de dossier hors de `runs`/`cache`.
+        // Id checked before any deletion: never a folder outside `runs`/`cache`.
         let (Some(run), Some(cache)) =
             (crate::paths::meeting_subdir(&crate::paths::runs_dir(), id), crate::paths::meeting_subdir(&crate::paths::cache_dir(), id))
         else {
@@ -835,7 +835,7 @@ impl Core {
             .filter(|n| !n.is_empty())
             .context("nom de fichier manquant")?
             .to_string();
-        // Taille vérifiée avant le décodage : un contenu démesuré n'est jamais décodé en mémoire.
+        // Size checked before decoding: oversized content is never decoded in memory.
         if data_base64.trim().len() > crate::context::MAX_FILE_BYTES / 3 * 4 + 64 {
             bail!("« {name} » dépasse {} Mo", crate::context::MAX_FILE_BYTES / 1024 / 1024);
         }
@@ -1102,8 +1102,8 @@ pub(crate) fn create_request(
                 text = first.to_uppercase().collect::<String>() + &text[first.len_utf8()..];
             }
             if origin == "hotkey" {
-                // Aparté : la note reste dans cette demande privée, jamais dans les notes ou les
-                // actions de la réunion (compte rendu, export, MCP).
+                // Aside: the note stays in this private request, never in the meeting's notes or
+                // actions (summary, export, MCP).
                 let short = crate::text::truncate(&text, 120);
                 let summary = if inner.lang() == "en" { format!("🔒 Noted privately: {short}") } else { format!("🔒 Noté en aparté : {short}") };
                 finish(&mut r, "done", summary, text.clone());
@@ -1145,7 +1145,7 @@ pub(crate) fn create_request(
         }
     }
     inner.emit(CoreEvent::Request(r.clone()));
-    // Notifications d'un aparté : aucun texte privé dans la bannière (écran partagé).
+    // Notifications of an aside: no private text in the banner (shared screen).
     let aside = origin == "hotkey";
     if r.status == "queued" && matches!(intent, Intent::Cancel | Intent::Stop) {
         // Not an AI job: never waits behind `agent.max_parallel` (the search it cancels).
@@ -1172,7 +1172,7 @@ pub(crate) fn run_control(inner: &Inner, intent: Intent, meeting_id: Option<&str
         Intent::Cancel => match inner.db.last_active_request(meeting_id)? {
             Some(last) => {
                 cancel_request(inner, &last.id)?;
-                // Aparté ou réunion confidentielle : le texte de la demande ne ressort pas.
+                // Aside or confidential meeting: the request's text does not come out.
                 let private = last.origin == "hotkey"
                     || last.meeting_id.as_deref().and_then(|id| inner.db.get_meeting(id).ok().flatten()).is_some_and(|m| m.confidential);
                 let summary =

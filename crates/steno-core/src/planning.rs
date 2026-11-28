@@ -271,8 +271,8 @@ pub async fn link_calendar(inner: &Inner, meeting_id: &str, call_title: Option<&
     Ok(())
 }
 
-/// Ce que l'on sait d'une réunion prévue. Le contexte (souvent la description de l'invitation,
-/// écrite par un tiers) est un bloc de données ; titres et noms tiennent sur une ligne.
+/// What is known about a planned meeting. The context (often the invitation's description,
+/// written by a third party) is a data block; titles and names fit on one line.
 fn prep_material(inner: &Inner, m: &Meeting) -> Result<String> {
     use crate::prompts::{fenced, sanitize_inline};
     let c = inner.db.meeting_context(&m.id)?;

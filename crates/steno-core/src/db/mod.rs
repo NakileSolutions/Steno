@@ -82,7 +82,7 @@ impl Db {
         })
     }
 
-    /// Ouvre une base existante en lecture seule, sans migration ni écriture (serveur MCP).
+    /// Opens an existing database read-only, with no migration and no write (MCP server).
     pub fn open_read_only(path: &Path) -> Result<Db> {
         use rusqlite::OpenFlags;
         let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
@@ -175,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn ouverture_en_lecture_seule() {
+    fn read_only_open() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("steno.db");
         Db::open(&p).unwrap().with(|c| c.execute("INSERT INTO settings(key, value) VALUES ('a', '1')", [])).unwrap();
@@ -183,7 +183,7 @@ mod tests {
         let v: String = ro.with(|c| c.query_row("SELECT value FROM settings WHERE key='a'", [], |r| r.get(0))).unwrap();
         assert_eq!(v, "1");
         assert!(ro.with(|c| c.execute("INSERT INTO settings(key, value) VALUES ('b', '2')", [])).is_err());
-        assert!(Db::open_read_only(&dir.path().join("absente.db")).is_err(), "aucune base créée");
+        assert!(Db::open_read_only(&dir.path().join("absente.db")).is_err(), "no database created");
         assert!(!dir.path().join("absente.db").exists());
     }
 }

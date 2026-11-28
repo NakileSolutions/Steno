@@ -38,7 +38,7 @@
         if (i >= 0) recent[i] = r;
         else loadRecent();
       }),
-      // Réunion passée en confidentielle ou supprimée : ses demandes quittent la liste.
+      // Meeting switched to confidential or deleted: its requests leave the list.
       onEvent('steno://meetings', () => loadRecent()),
       onEvent('steno://live', (st) => {
         const c = st.meeting?.confidential ?? false;

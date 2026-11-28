@@ -119,7 +119,7 @@ pub struct RunRequest {
     pub effort: Option<String>,
     pub session: SessionMode,
     pub repos: Vec<PathBuf>,
-    /// Motifs exclus des dépôts (`Repo.exclude_globs`), appliqués par le crochet de politique.
+    /// Patterns excluded from the repositories (`Repo.exclude_globs`), enforced by the policy hook.
     pub exclude_globs: Vec<String>,
     pub tools: ToolAccess,
     pub max_tool_calls: u32,
@@ -311,11 +311,11 @@ pub fn parse_mcp_list(out: &str) -> Vec<McpServer> {
     v
 }
 
-/// Clés d'API retirées de l'environnement de tout agent (en plus des clés propres à chaque
-/// adaptateur), sauf autorisation explicite dans les réglages : leur seule présence fait passer
-/// un CLI de l'abonnement à la facturation à l'usage. Liste indicative, non exhaustive. Les
-/// identifiants de cloud (AWS, compte de service Google, Azure) restent : ils ne servent que si
-/// l'utilisateur a configuré Bedrock, Vertex ou Azure, et les retirer casserait ces installations.
+/// API keys removed from every agent's environment (on top of each adapter's own keys), unless
+/// explicitly allowed in the settings: their mere presence moves a CLI from the subscription to
+/// API billing. Best-effort list. Cloud credentials (AWS, Google service account, Azure) are
+/// kept: they only matter once the user has set up Bedrock, Vertex or Azure, and removing them
+/// would break those setups.
 pub(crate) const SECRET_ENV: &[&str] = &[
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
@@ -448,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn cles_d_api_retirees() {
+    fn api_keys_removed() {
         let removed = |allow: bool| -> Vec<String> {
             let mut c = tokio::process::Command::new("true");
             strip_env(&mut c, allow, &["CLE_PROPRE_A_L_AGENT"]);
@@ -456,12 +456,12 @@ mod tests {
         };
         let r = removed(false);
         for k in ["CLE_PROPRE_A_L_AGENT", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "XAI_API_KEY"] {
-            assert!(r.iter().any(|x| x == k), "{k} doit être retirée");
+            assert!(r.iter().any(|x| x == k), "{k} must be removed");
         }
         for k in ["AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "GOOGLE_APPLICATION_CREDENTIALS", "AZURE_OPENAI_API_KEY"] {
             assert!(!r.iter().any(|x| x == k), "{k} reste (Bedrock, Vertex, Azure)");
         }
-        assert!(removed(true).is_empty(), "clés autorisées dans les réglages");
+        assert!(removed(true).is_empty(), "keys allowed in the settings");
     }
 
     #[test]

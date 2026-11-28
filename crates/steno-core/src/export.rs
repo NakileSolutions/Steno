@@ -138,9 +138,9 @@ pub fn meeting_markdown(db: &Db, id: &str) -> Result<String> {
 }
 
 /// Écrit `<dossier>/<id>.md` et renvoie le chemin.
-/// Export automatique (Réglages → Confidentialité) : jamais une réunion confidentielle. La
-/// confidentialité est relue avant et après l'écriture d'un fichier temporaire, qui n'est
-/// renommé que si la réunion n'est pas passée en confidentielle entre-temps.
+/// Automatic export (Settings → Privacy): never a confidential meeting. Confidentiality is
+/// read again before and after writing a temporary file, which is only renamed if the
+/// meeting has not switched to confidential in the meantime.
 pub fn auto_export(db: &Db, id: &str, dir: &Path) -> Result<Option<PathBuf>> {
     if !crate::paths::valid_meeting_id(id) {
         bail!("identifiant de réunion invalide");

@@ -57,15 +57,19 @@ Lecture seule, en trois couches :
 2. `--disallowedTools` + `permissions.deny` (projet et `--settings`) : écriture, web, sous-agents.
 3. **Crochet `PreToolUse`** (`<exécutable Sténo> policy-hook <politique.json>`) appelé avant
    **chaque** outil : motifs MCP interdits, mots d'écriture dans le nom de l'outil
-   (`addOrEditJiraIssueComment`, `executeWrite`…), connecteurs non activés (nom exact),
-   commandes shell hors liste (`;`, `>`, `$`, `(`… refusés), options qui lancent un programme
-   ou écrivent un fichier (`--pre`, `-exec`, `-delete`, `sort -o`, `git grep -O`…) ou qui
-   suivent les liens symboliques (`rg -L`, `grep -R`, `find -L`…), chemins hors des dépôts
-   cochés (liens symboliques résolus), fichiers exclus du dépôt lus directement,
-   budget d'appels (15 en direct, 30 en corrélation). Code de sortie 2 = refus, raison renvoyée
-   à l'agent ; 0 = autorisé. Toute erreur interne du crochet (panique comprise) sort en 2.
+   (`addOrEditJiraIssueComment`, `executeWrite`…), connecteurs non activés, commandes shell
+   hors liste (`;`, `>`, `$(`… refusés), chemins hors des dépôts cochés, budget d'appels
+   (15 en direct, 30 en corrélation). Code de sortie 2 = refus, raison renvoyée à l'agent.
    Le crochet est le même binaire que l'app (`Steno.app/Contents/MacOS/steno-app policy-hook …`)
-   ou la CLI (`steno policy-hook …`). Sans exécutable de crochet, Claude Code n'est pas lancé.
+   ou la CLI (`steno policy-hook …`).
+
+The hook also refuses `$` outside single quotes and `(` `)` outside quotes; options that run a
+program or write a file (`--pre`, `-exec`, `-delete`, `sort -o`, `git grep -O`…) or follow
+symbolic links (`rg -L`, `grep -R`, `find -L`…), even after `--`; MCP servers other than the
+ticked ones (exact name); paths that leave the ticked repositories once symbolic links are
+resolved; and excluded repository files read directly. Exit code 0 means allowed; any internal
+error of the hook, panic included, exits with 2. Without a hook executable, Claude Code is not
+started.
 
 Sortie : `system/init` (session, modèle), `assistant` (`tool_use` → outils utilisés), `user`
 (`tool_result` en erreur → outil refusé, retiré de `tools_used`), `result` (réponse finale).
@@ -143,14 +147,15 @@ refusés ; aucun serveur MCP n'est autorisé. Sortie `{"response": …, "stats":
 ## `opencode` (expérimental)
 
 ```
-opencode run --format json --agent steno-lecture|steno-sans-outil [-m fournisseur/modèle]
-             [--session <id>] "<consigne courte>"     # invite sur stdin
+opencode run --format json --agent steno-lecture|steno-sans-outil [-m provider/model]
+             [--session <id>] "<short instruction>"     # prompt on stdin
 ```
 
 `opencode.json` dans le dossier d'exécution : `edit` et `webfetch` refusés, `bash` refusé
-sauf les commandes de lecture de `agent/policy.toml`, tous les autres outils (MCP compris)
-coupés par `"*": false`. Agent `steno-sans-outil` (aucun outil) pour les tâches sans outil,
-`steno-lecture` pour les recherches. Sortie JSON en flux (parties `text`) ou texte brut.
+sauf les commandes de lecture de `agent/policy.toml`. Sortie JSON en flux (parties `text`)
+ou texte brut. Every other tool (MCP included) is turned off with `"*": false`. The
+`steno-sans-outil` agent (no tool) runs the tasks that need no tool, `steno-lecture` runs the
+searches.
 
 ## `custom`
 

@@ -94,7 +94,7 @@ pub(crate) async fn execute(inner: &Inner, job: Job) {
             tracing::warn!("tâche {id} ({kind}) en échec : {msg}");
             let status = if msg.contains("annulée") { "cancelled" } else { "error" };
             let _ = inner.db.finish_job(id, status, Some(&msg));
-            // Annulée (réunion passée en confidentielle) : pas une panne à signaler.
+            // Cancelled (meeting switched to confidential): not a failure to report.
             if (kind == "correlate" || kind == "report") && status != "cancelled" {
                 inner.emit(CoreEvent::Notify {
                     title: if kind == "report" { inner.tr("⚠️ Compte rendu en échec", "⚠️ Summary failed") } else { inner.tr("⚠️ Corrélation en échec", "⚠️ Correlation failed") },
@@ -166,7 +166,7 @@ async fn run_request(inner: &Inner, job: &Job) -> Result<()> {
                     Some(m),
                     Tier::Quick,
                     ToolAccess::None,
-                    // Un aparté ne reprend ni n'enregistre la session de la réunion.
+                    // An aside neither resumes nor saves the meeting's session.
                     if aside { SessionMode::None } else { SessionMode::New(String::new()) },
                     prompt,
                     0,
@@ -228,7 +228,7 @@ async fn run_request(inner: &Inner, job: &Job) -> Result<()> {
                     meeting.as_ref(),
                     Tier::Search,
                     ToolAccess::ReadOnly { connectors },
-                    // Un aparté ne reprend ni n'enregistre la session de la réunion.
+                    // An aside neither resumes nor saves the meeting's session.
                     if meeting.is_some() && !aside { SessionMode::New(String::new()) } else { SessionMode::None },
                     prompt,
                     s.agent.live_tool_budget,
@@ -305,8 +305,8 @@ fn run_control(inner: &Inner, job: &Job) -> Result<()> {
     Ok(())
 }
 
-/// Échanges précédents rejoués à un agent sans reprise de session. Les apartés n'y figurent
-/// que pour un autre aparté : une demande publique ne reçoit jamais leur contenu.
+/// Previous exchanges replayed to an agent that cannot resume a session. Asides only appear
+/// for another aside: a public request never receives their content.
 fn previous_exchanges(requests: &[crate::model::Request], current: &str, current_is_aside: bool) -> Vec<String> {
     requests
         .iter()
@@ -338,7 +338,7 @@ async fn run_report(inner: &Inner, job: &Job) -> Result<()> {
             let _ = std::fs::remove_dir_all(dir);
         }
     }
-    // Réunion confidentielle : ni corrélation ni export automatique.
+    // Confidential meeting: neither correlation nor automatic export.
     if meeting.confidential {
         return Ok(());
     }
@@ -416,12 +416,12 @@ mod tests {
     }
 
     #[test]
-    fn echanges_rejoues_sans_les_apartes() {
+    fn replayed_exchanges_without_asides() {
         let all = [req("a", "voice", "verrou de créneau"), req("b", "hotkey", "salaire de Marie"), req("c", "text", "en cours")];
         let public = previous_exchanges(&all, "c", false).join("\n");
         assert!(public.contains("verrou de créneau"));
-        assert!(!public.contains("salaire de Marie"), "une demande publique ne reçoit jamais un aparté");
-        assert!(!public.contains("en cours"), "la demande elle-même n'est pas rejouée");
-        assert!(previous_exchanges(&all, "c", true).join("\n").contains("salaire de Marie"), "un aparté voit les apartés");
+        assert!(!public.contains("salaire de Marie"), "a public request never receives an aside");
+        assert!(!public.contains("en cours"), "the request itself is not replayed");
+        assert!(previous_exchanges(&all, "c", true).join("\n").contains("salaire de Marie"), "an aside sees the asides");
     }
 }

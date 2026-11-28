@@ -34,9 +34,9 @@ fn er(err: anyhow::Error) -> String {
     e(format!("{err:#}"))
 }
 
-/// Commandes qui modifient des données, exportent, enregistrent ou administrent : réservées à
-/// la fenêtre principale. Le panneau de la barre de menu (`#/tray`) n'appelle que la lecture
-/// de l'état, les commandes de l'écoute et `ask` / `cancel_request` / `recent_requests`.
+/// Commands that change data, export, save or administer: reserved for the main window. The
+/// menu bar panel (`#/tray`) only reads the state and calls the listening commands, `ask` on
+/// the live meeting, `cancel_request`, `recent_requests` and `open_main`.
 fn main_window_only(window: &tauri::WebviewWindow) -> R<()> {
     if window.label() == "main" {
         Ok(())
@@ -74,7 +74,7 @@ pub fn set_live_confidential(st: State<'_, AppState>, on: bool) -> R<()> {
 
 #[tauri::command]
 pub fn ask(window: tauri::WebviewWindow, st: State<'_, AppState>, query: String, meeting_id: Option<String>) -> R<Request> {
-    // Panneau de la barre de menu : la réunion en cours seulement (« note que… » y écrit).
+    // Menu bar panel: the live meeting only (« note que… » writes to it).
     if window.label() != "main" && meeting_id.is_some() {
         let live = st.core.db().live_meeting().map_err(er)?.map(|m| m.id);
         if live != meeting_id {

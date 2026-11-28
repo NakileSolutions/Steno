@@ -1,12 +1,12 @@
 //! Adaptateur OpenCode (`opencode run`), expérimental.
 //!
 //! Lecture seule : `opencode.json` dans le dossier d'exécution refuse l'édition, le web et
-//! toute commande shell hors de la liste autorisée, et coupe tous les autres outils (dont
-//! ceux des serveurs MCP, `"*": false`). Deux agents y sont définis : `steno-lecture`
-//! (lecture des dépôts) et `steno-sans-outil` (aucun outil), choisi selon `ToolAccess` par
-//! `--agent`. Les outils MCP ne peuvent pas être filtrés par motif : connecteurs non
-//! activables. L'invite passe par l'entrée standard (`opencode run` l'ajoute au message),
-//! jamais dans la ligne de commande. À VÉRIFIER (S3).
+//! any shell command outside the allowlist, and turns off every other tool (including
+//! those of MCP servers, `"*": false`). Two agents are defined there: `steno-lecture`
+//! (reads the repositories) and `steno-sans-outil` (no tool), picked from `ToolAccess` with
+//! `--agent`. MCP tools cannot be filtered by pattern: connectors cannot be enabled. The
+//! prompt goes through standard input (`opencode run` appends it to the message), never the
+//! command line. TO CHECK (S3).
 
 use super::*;
 use crate::agents::process::run_streaming;
@@ -31,7 +31,7 @@ pub struct OpenCode;
 const AGENT_READ: &str = "steno-lecture";
 const AGENT_NO_TOOLS: &str = "steno-sans-outil";
 
-/// Outils de lecture d'OpenCode autorisés pour une recherche (le shell reste filtré).
+/// OpenCode read tools allowed for a search (the shell stays filtered).
 const READ_TOOLS: &[&str] = &["read", "grep", "glob", "list", "bash"];
 
 pub(crate) fn config(policy: &ReadOnlyPolicy) -> Value {
@@ -41,8 +41,8 @@ pub(crate) fn config(policy: &ReadOnlyPolicy) -> Value {
         bash.insert(c.clone(), json!("allow"));
     }
     bash.insert("*".into(), json!("deny"));
-    // Motifs du plus général au plus précis : `*` coupe tout (outils MCP compris), puis les
-    // outils de lecture sont réactivés.
+    // Patterns from the most general to the most specific: `*` turns everything off (MCP tools
+    // included), then the read tools are turned back on.
     let mut read = serde_json::Map::new();
     read.insert("*".into(), json!(false));
     for t in ["write", "edit", "patch", "webfetch", "todowrite", "task"] {
@@ -80,7 +80,7 @@ pub(crate) fn config(policy: &ReadOnlyPolicy) -> Value {
     })
 }
 
-/// Arguments de `opencode run` (l'invite est envoyée à part, sur l'entrée standard).
+/// `opencode run` arguments (the prompt is sent separately, on standard input).
 pub(crate) fn build_args(req: &RunRequest) -> Vec<String> {
     let agent = if req.tools == ToolAccess::None { AGENT_NO_TOOLS } else { AGENT_READ };
     let mut a: Vec<String> = vec!["run".into(), "--format".into(), "json".into(), "--agent".into(), agent.into()];
@@ -218,22 +218,22 @@ mod tests {
     }
 
     #[test]
-    fn configuration_selon_les_outils() {
+    fn configuration_by_tool_access() {
         let mut p = ReadOnlyPolicy::no_tools();
         p.base = crate::policy::PolicyFile::builtin();
         let c = config(&p);
-        assert_eq!(c["tools"]["*"], false, "outils MCP et inconnus coupés");
+        assert_eq!(c["tools"]["*"], false, "MCP and unknown tools turned off");
         assert_eq!(c["tools"]["read"], true);
         assert_eq!(c["permission"]["bash"]["*"], "deny");
         assert_eq!(c["permission"]["bash"]["rg *"], "allow");
         let none = &c["agent"][AGENT_NO_TOOLS];
         for t in ["*", "bash", "read", "grep", "glob", "list", "write", "webfetch"] {
-            assert_eq!(none["tools"][t], false, "{t} coupé sans outils");
+            assert_eq!(none["tools"][t], false, "{t} turned off without tools");
         }
         assert_eq!(none["permission"]["bash"], "deny");
         let a = build_args(&req(ToolAccess::None));
         assert!(a.windows(2).any(|w| w[0] == "--agent" && w[1] == AGENT_NO_TOOLS));
-        assert!(!a.join(" ").contains("Transcription"), "l'invite ne passe pas par la ligne de commande");
+        assert!(!a.join(" ").contains("Transcription"), "the prompt does not go through the command line");
         let a = build_args(&req(ToolAccess::ReadOnly { connectors: vec![] }));
         assert!(a.windows(2).any(|w| w[0] == "--agent" && w[1] == AGENT_READ));
         assert!(a.join(" ").contains("--session ses_1") && a.join(" ").contains("-m fournisseur/modele"));

@@ -911,8 +911,8 @@ impl Db {
         })
     }
 
-    /// Dernières demandes affichées dans la barre de menu : ni apartés, ni demandes d'une
-    /// réunion confidentielle.
+    /// Latest requests shown in the menu bar: neither asides nor requests from a confidential
+    /// meeting.
     pub fn recent_requests(&self, limit: i64) -> Result<Vec<Request>> {
         self.with(|c| {
             let mut st = c.prepare(&format!(
@@ -1554,27 +1554,27 @@ impl Db {
 
     // ---------------------------------------------------------------- recherche
 
-    /// Recherche plein texte dans les transcriptions (hors apartés) et les comptes rendus,
-    /// pour l'utilisateur lui-même (réunions confidentielles comprises).
+    /// Full-text search in transcripts (asides excluded) and summaries, for the user
+    /// themselves (confidential meetings included).
     pub fn search(&self, query: &str, limit: i64) -> Result<Vec<SearchHit>> {
         let Some(q) = fts_query(query) else { return Ok(vec![]) };
         self.search_fts(&q, limit, true)
     }
 
-    /// Recherche plein texte hors réunions confidentielles (serveur MCP, outils tiers).
+    /// Full-text search without confidential meetings (MCP server, third-party tools).
     pub fn search_public(&self, query: &str, limit: i64) -> Result<Vec<SearchHit>> {
         let Some(q) = fts_query(query) else { return Ok(vec![]) };
         self.search_fts(&q, limit, false)
     }
 
-    /// Recherche « au moins un mot » pour les questions en langage naturel. Les extraits
-    /// partent vers l'agent IA : jamais de réunion confidentielle.
+    /// "At least one word" search for natural-language questions. The excerpts go to the AI
+    /// agent: never a confidential meeting.
     pub fn search_relevant(&self, question: &str, limit: i64) -> Result<Vec<SearchHit>> {
         let Some(q) = fts_query_any(question) else { return Ok(vec![]) };
         self.search_fts(&q, limit, false)
     }
 
-    /// Annule les tâches en attente ou en cours d'une réunion (types donnés).
+    /// Cancels the pending or running jobs of a meeting (given types).
     pub fn cancel_meeting_jobs(&self, meeting_id: &str, kinds: &[&str]) -> Result<usize> {
         let mut n = 0;
         for k in kinds {
@@ -1588,7 +1588,7 @@ impl Db {
         Ok(n)
     }
 
-    /// Identifiants des réunions confidentielles.
+    /// Ids of the confidential meetings.
     pub fn confidential_meeting_ids(&self) -> Result<std::collections::HashSet<String>> {
         self.with(|c| {
             let mut st = c.prepare("SELECT id FROM meetings WHERE confidential = 1")?;
@@ -1745,7 +1745,7 @@ mod tests {
     }
 
     #[test]
-    fn reunions_confidentielles_jamais_envoyees_a_l_ia() {
+    fn confidential_meetings_never_sent_to_the_ai() {
         let db = Db::open_in_memory().unwrap();
         db.insert_meeting(&meeting("pub", "Daily ORION")).unwrap();
         db.insert_meeting(&meeting("conf", "Point RH")).unwrap();
@@ -1754,10 +1754,10 @@ mod tests {
         db.save_report("conf", "# Point RH\n\nverrou de créneau, augmentation de Marie", None, None, false).unwrap();
         db.set_confidential("conf", true).unwrap();
         let ids = |hits: Vec<SearchHit>| hits.into_iter().map(|h| h.meeting_id).collect::<Vec<_>>();
-        assert!(ids(db.search("verrou creneau", 10).unwrap()).contains(&"conf".to_string()), "l'utilisateur retrouve ses réunions");
+        assert!(ids(db.search("verrou creneau", 10).unwrap()).contains(&"conf".to_string()), "the user finds their own meetings");
         let ai = ids(db.search_relevant("qu'a-t-on dit du verrou de créneau ?", 20).unwrap());
         assert!(ai.contains(&"pub".to_string()));
-        assert!(!ai.contains(&"conf".to_string()), "aucun extrait confidentiel pour l'agent : {ai:?}");
+        assert!(!ai.contains(&"conf".to_string()), "no confidential excerpt for the agent: {ai:?}");
         assert!(!ids(db.search_public("augmentation", 10).unwrap()).contains(&"conf".to_string()));
         assert_eq!(db.confidential_meeting_ids().unwrap().into_iter().collect::<Vec<_>>(), ["conf"]);
     }

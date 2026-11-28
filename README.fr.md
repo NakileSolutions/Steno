@@ -169,11 +169,13 @@ Réglages → Agent → « Sténo dans votre agent »). Le skill est copié dans
 - **Seul du texte est envoyé, et seulement à l'agent IA que vous avez choisi** : à votre
   demande, en fin de réunion pour le compte rendu, et pour la corrélation si vous l'activez.
   Il est traité selon les conditions de l'éditeur de cet agent.
-- **Réunion confidentielle** : aucun appel à l'IA. Les réunions dont le titre contient
-  « 1:1 », « RH », « entretien » ou « perso » ne sont jamais corrélées (réglable).
-- **Les apartés** (raccourci maintenu) sont exclus du compte rendu et de la recherche.
-- **L'agent ne fait que lire** et ne reçoit pas les clés d'API de l'environnement, sauf
-  activation explicite.
+- **Réunion confidentielle** : aucun appel à l'IA, et elle est exclue des questions sur
+  l'historique et de `steno mcp`. Les réunions dont le titre contient « 1:1 », « RH »,
+  « entretien » ou « perso » ne sont jamais corrélées (réglable).
+- **Les apartés** (raccourci maintenu) sont exclus du compte rendu, de l'export, de la
+  recherche, de `steno mcp` et des notifications.
+- **L'agent ne fait que lire** et ne reçoit pas les clés d'API de l'environnement qui le
+  feraient passer de votre abonnement à la facturation à l'usage, sauf activation explicite.
 - **Prévenez les participants** que la réunion est transcrite : Sténo propose un message prêt
   à coller dans le chat de l'appel (dans la langue de l'interface tant que vous ne le modifiez pas). Selon votre pays et votre contexte, leur consentement peut
   être obligatoire (RGPD en Europe).

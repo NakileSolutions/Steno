@@ -34,8 +34,8 @@ pub(crate) fn render_full(template: &str, prompt_file: &Path, run_dir: &Path, mo
         .replace("{model}", &sh_quote(model.unwrap_or("")))
 }
 
-/// Commande `sh -c <ligne>` lancée dans le dossier d'exécution, avec tout l'environnement :
-/// l'utilisateur a écrit la commande, qui peut appeler un outil lisant sa propre clé d'API.
+/// `sh -c <line>` command started in the run folder, with the whole environment: the user
+/// wrote the command, which may call a tool that reads its own API key.
 fn command(line: &str, req: &RunRequest) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new("sh");
     cmd.arg("-c").arg(line).current_dir(&req.run_dir);
@@ -149,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn environnement_complet() {
+    fn full_environment() {
         let req = RunRequest {
             run_dir: PathBuf::from("/tmp"),
             prompt: String::new(),
@@ -168,6 +168,6 @@ mod tests {
             skills: false,
         };
         let c = command("mon-ia", &req);
-        assert_eq!(c.as_std().get_envs().filter(|(_, v)| v.is_none()).count(), 0, "aucune variable retirée");
+        assert_eq!(c.as_std().get_envs().filter(|(_, v)| v.is_none()).count(), 0, "no variable removed");
     }
 }

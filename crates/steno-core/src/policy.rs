@@ -60,8 +60,8 @@ pub struct ReadOnlyPolicy {
     /// ou d'un plugin (consignes et références, jamais d'écriture).
     #[serde(default)]
     pub allow_skills: bool,
-    /// Motifs exclus des dépôts (`Repo.exclude_globs`) : filtre sur les lectures directes de
-    /// fichiers (chemin lu, fichier nommé dans une commande, motif de noms de fichiers).
+    /// Patterns excluded from the repositories (`Repo.exclude_globs`): a filter on direct file reads
+    /// (path read, file named in a command, file name pattern).
     #[serde(default)]
     pub exclude_globs: Vec<String>,
 }
@@ -140,7 +140,7 @@ fn word_hits(word: &str, denied: &str) -> bool {
     false
 }
 
-/// Nom d'un serveur MCP tel qu'il apparaît dans les noms d'outils (`mcp__<nom>__outil`) :
+/// MCP server name as it appears in tool names (`mcp__<name>__tool`):
 /// « claude.ai Atlassian » → `claude_ai_Atlassian`.
 pub fn mcp_server_id(name: &str) -> String {
     name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).collect()
@@ -166,9 +166,9 @@ pub fn in_skill_dir(path: &Path) -> bool {
     false
 }
 
-/// Motif d'exclusion d'un dépôt (insensible à la casse) appliqué à un chemin relatif au dépôt.
-/// Sans `/`, le motif vise un nom à n'importe quel niveau (`.env*`, `*.pem`) ; avec `/`, un
-/// chemin depuis la racine (`secrets/**`). Un dossier exclu exclut son contenu.
+/// Repository exclusion pattern (case-insensitive) applied to a path relative to the repository.
+/// Without `/`, the pattern matches a name at any depth (`.env*`, `*.pem`); with `/`, a path
+/// from the root (`secrets/**`). An excluded folder excludes its content.
 pub fn exclude_match(pattern: &str, rel: &str) -> bool {
     let p = pattern.trim().trim_end_matches('/');
     let rel = rel.trim_start_matches("./").trim_matches('/');
@@ -184,26 +184,26 @@ pub fn exclude_match(pattern: &str, rel: &str) -> bool {
     [rel, rooted.as_str()].iter().any(|r| glob_match(p, r) || glob_match(&within, r))
 }
 
-/// Caractères refusés partout dans une commande, même entre guillemets.
+/// Characters refused anywhere in a command, even inside quotes.
 const SHELL_META: &[&str] = &[";", "&", ">", "<", "`", "\n", "\r"];
 
-/// Options qui lancent un programme ou écrivent un fichier, refusées pour toute commande même
-/// si un `policy.toml` utilisateur plus ancien ne les liste pas. `grep` et `find` sont, sous
-/// Claude Code, ugrep et bfs (`--filter`, `--pager`, `--view`, `--save-config`, `-rm`).
+/// Options that run a program or write a file, refused for every command even when an older
+/// user `policy.toml` does not list them. Under Claude Code, `grep` and `find` are ugrep and bfs
+/// (`--filter`, `--pager`, `--view`, `--save-config`, `-rm`).
 const MANDATORY_DENIED_ARGUMENTS: &[&str] = &[
     "-exec", "-execdir", "-ok", "-okdir", "-delete", "-rm", "-fls", "-fprint", "-fprint0", "-fprintf", "--output",
     "--pre", "--pre-glob", "--hostname-bin", "--compress-program", "--filter", "--pager", "--view", "--save-config",
     "--config", "--open-files-in-pager",
 ];
 
-/// Règles propres à une commande : lettres d'options courtes cherchées dans tout le groupe, et
-/// options refusées en plus de la liste commune.
+/// Rules specific to a command: short option letters searched across the whole group, and
+/// options refused on top of the common list.
 fn command_rules(name: &str, sub: &str) -> (&'static str, &'static [&'static str]) {
     match (name, sub) {
-        // `sort -o` écrit un fichier ; `git grep -O` ouvre les fichiers avec un programme (`-1Osh`).
+        // `sort -o` writes a file; `git grep -O` opens the files with a program (`-1Osh`).
         ("sort", _) => ("o", &[]),
         ("git", "grep") => ("O", &[]),
-        // Options qui suivent les liens symboliques pendant un parcours (lecture hors des dépôts).
+        // Options that follow symbolic links during a walk (reads outside the repositories).
         ("rg", _) => ("L", &["--follow"]),
         ("grep", _) => ("RS", &["--dereference-recursive", "--dereference-files"]),
         ("ls", _) => ("L", &["--dereference"]),
@@ -212,15 +212,15 @@ fn command_rules(name: &str, sub: &str) -> (&'static str, &'static [&'static str
     }
 }
 
-/// Options dont la valeur est un fichier lu (et parfois affiché, `git blame --ignore-revs-file`).
+/// Options whose value is a file that is read (and sometimes printed, `git blame --ignore-revs-file`).
 const FILE_OPTIONS: &[&str] = &[
     "--file", "--contents", "--ignore-file", "--ignore-revs-file", "--files-from", "--files0-from", "--exclude-from",
     "--include-from", "--pathspec-from-file",
 ];
 
-/// Lettres d'options courtes suivies d'un fichier lu : `-f` (`rg`, `grep`, `git grep`) et, pour
-/// `git blame`, `-S` (fichier de révisions, dont chaque ligne ressort dans les erreurs). `find`
-/// n'a que des options d'un tiret en mots entiers.
+/// Short option letters followed by a file that is read: `-f` (`rg`, `grep`, `git grep`) and, for
+/// `git blame`, `-S` (revisions file, each line of which shows up in the errors). `find` only
+/// has single-dash options made of whole words.
 fn file_letters(name: &str, sub: &str) -> &'static str {
     match (name, sub) {
         ("find", _) => "",
@@ -229,8 +229,8 @@ fn file_letters(name: &str, sub: &str) -> &'static str {
     }
 }
 
-/// Valeur collée d'une option qui lit un fichier (`--contents=.env`, `-f.env`, `-nf/etc/x`,
-/// `-S.env`), à contrôler comme un opérande.
+/// Value glued to an option that reads a file (`--contents=.env`, `-f.env`, `-nf/etc/x`,
+/// `-S.env`), to check like an operand.
 fn file_option_value<'a>(t: &'a str, letters: &str) -> Option<&'a str> {
     if let Some(long) = t.strip_prefix("--") {
         let (name, value) = long.split_once('=')?;
@@ -241,10 +241,10 @@ fn file_option_value<'a>(t: &'a str, letters: &str) -> Option<&'a str> {
     t.get(i..).filter(|v| !v.is_empty())
 }
 
-/// Découpe une commande en étapes de tube (`|` hors guillemets), puis en mots tels que le
-/// programme les recevra (guillemets et barres obliques inverses retirés). Refuse ce que le
-/// shell développerait ou exécuterait : `$` hors guillemets simples, `(` `)` hors guillemets,
-/// `~utilisateur`, accolades, motifs pouvant désigner `..` (`.*`).
+/// Splits a command into pipeline steps (`|` outside quotes), then into words as the program
+/// will receive them (quotes and backslashes removed). Refuses what the shell would expand or
+/// run: `$` outside single quotes, `(` `)` outside quotes, `~user`, braces, patterns that can
+/// match `..` (`.*`).
 fn shell_words(cmd: &str) -> Result<Vec<Vec<String>>, String> {
     #[derive(PartialEq)]
     enum Q {
@@ -323,7 +323,7 @@ fn shell_words(cmd: &str) -> Result<Vec<Vec<String>>, String> {
     Ok(parts)
 }
 
-/// Le mot désigne-t-il un chemin à contrôler même s'il n'existe pas ?
+/// Does the word name a path to check even if it does not exist?
 fn looks_like_path(t: &str) -> bool {
     t.starts_with('/') || t.starts_with('~') || has_parent_component(t)
 }
@@ -332,7 +332,7 @@ fn has_parent_component(t: &str) -> bool {
     t.split(['/', '\\']).any(|c| c == "..")
 }
 
-/// Partie fixe d'un motif de noms de fichiers (`src/**/*.rs` → `src`).
+/// Fixed part of a file name pattern (`src/**/*.rs` → `src`).
 fn fixed_prefix(pattern: &str) -> String {
     let fixed: Vec<&str> = pattern.split('/').take_while(|c| !c.contains(['*', '?', '[', '{'])).collect();
     match fixed.join("/") {
@@ -342,7 +342,7 @@ fn fixed_prefix(pattern: &str) -> String {
     }
 }
 
-/// `git branch` : consultation seulement (ni création, ni suppression, ni renommage).
+/// `git branch`: read-only use (no creation, deletion or renaming).
 fn check_git_branch(args: &[&str]) -> Result<(), String> {
     const OPTIONS: &[&str] = &[
         "--list", "-l", "-a", "--all", "-r", "--remotes", "-v", "-vv", "--verbose", "--show-current", "--contains",
@@ -408,13 +408,13 @@ impl ReadOnlyPolicy {
         self.readable_dirs.iter().map(|d| d.canonicalize().unwrap_or_else(|_| d.clone())).collect()
     }
 
-    /// Motif d'exclusion qui vise ce chemin relatif au dépôt, s'il y en a un.
+    /// Exclusion pattern that matches this path relative to the repository, if any.
     fn excluded_rel(&self, rel: &str) -> Option<&str> {
         self.exclude_globs.iter().map(String::as_str).find(|p| exclude_match(p, rel))
     }
 
-    /// Motif d'exclusion visé par un chemin ou un motif de noms de fichiers (`**/.env*`,
-    /// `*.pem`, `{.env,a}`) relatif à `base`. Aucun parcours du disque.
+    /// Exclusion pattern matched by a path or a file name pattern (`**/.env*`, `*.pem`,
+    /// `{.env,a}`) relative to `base`. No disk walk.
     fn excluded_pattern(&self, pattern: &str, base: &Path) -> Option<&str> {
         if self.exclude_globs.is_empty() {
             return None;
@@ -426,8 +426,8 @@ impl ReadOnlyPolicy {
             .or_else(|| sample.split(['{', '}', ',']).find_map(|alt| self.excluded_rel(alt)))
     }
 
-    /// Le chemin, une fois résolu (liens symboliques compris), est-il dans un dossier lisible et
-    /// hors des fichiers exclus ?
+    /// Once resolved (symbolic links included), is the path inside a readable folder and outside
+    /// the excluded files?
     pub fn check_path(&self, path: &str, cwd: &Path) -> Result<(), String> {
         let expanded = if path == "~" {
             dirs::home_dir().unwrap_or_default()
@@ -453,7 +453,7 @@ impl ReadOnlyPolicy {
         }
     }
 
-    /// Vérifie une commande shell : syntaxe, commande autorisée, options, puis chemins.
+    /// Checks a shell command: syntax, allowed command, options, then paths.
     pub fn check_command(&self, cmd: &str, cwd: &Path) -> Result<(), String> {
         let cmd = cmd.trim();
         if cmd.is_empty() {
@@ -497,8 +497,8 @@ impl ReadOnlyPolicy {
                 continue;
             }
             let option = t.starts_with('-') && t != "-";
-            // Refusée même après `--` : pour `find`, `--` ne termine que les options de tête et
-            // l'expression qui suit s'exécute (`find -- . -delete`).
+            // Refused even after `--`: for `find`, `--` only ends the leading options and the
+            // expression that follows still runs (`find -- . -delete`).
             if option && self.denied_option(t, letters, extra) {
                 return Err(format!("option interdite : {t}"));
             }
@@ -518,7 +518,7 @@ impl ReadOnlyPolicy {
         }
     }
 
-    /// Option refusée : forme exacte, `--opt=…`, abréviation (`--out`) ou lettre dans un groupe.
+    /// Refused option: exact form, `--opt=…`, abbreviation (`--out`) or letter in a group.
     fn denied_option(&self, t: &str, letters: &str, extra: &[&str]) -> bool {
         let mut denied = MANDATORY_DENIED_ARGUMENTS
             .iter()
@@ -533,8 +533,8 @@ impl ReadOnlyPolicy {
         }
     }
 
-    /// Opérande : chemin contrôlé s'il en a l'air ou s'il existe (liens symboliques résolus),
-    /// et fichier ou motif nommé (`.env`, `*.pem`, `HEAD:.env` pour git) hors des exclusions.
+    /// Operand: path checked if it looks like one or exists (symbolic links resolved), and named
+    /// file or pattern (`.env`, `*.pem`, `HEAD:.env` for git) outside the exclusions.
     fn check_operand(&self, t: &str, git: bool, cwd: &Path) -> Result<(), String> {
         if looks_like_path(t) || cwd.join(t).symlink_metadata().is_ok() {
             self.check_path(t, cwd)?;
@@ -579,9 +579,9 @@ impl ReadOnlyPolicy {
         }
     }
 
-    /// Outils intégrés (`Read`, `Grep`, `Glob`, `LS`) : chemin explicite, sinon dossier courant,
-    /// et motif de noms de fichiers (`pattern` de Glob, `glob` de Grep). `..` est refusé : Claude
-    /// Code normalise ces chemins sans résoudre les liens symboliques.
+    /// Built-in tools (`Read`, `Grep`, `Glob`, `LS`): explicit path, otherwise the working folder,
+    /// and file name pattern (`pattern` of Glob, `glob` of Grep). `..` is refused: Claude Code
+    /// normalizes these paths without resolving symbolic links.
     fn check_read_tool(&self, tool: &str, input: &serde_json::Value, cwd: &Path) -> Result<(), String> {
         let field = |k: &str| input.get(k).and_then(|v| v.as_str()).filter(|s| !s.is_empty());
         let pattern = match tool {
@@ -617,8 +617,8 @@ impl ReadOnlyPolicy {
         Ok(())
     }
 
-    /// Incrémente le compteur sous verrou exclusif (appels d'outils parallèles) et refuse
-    /// au-delà du budget.
+    /// Increments the counter under an exclusive lock (parallel tool calls) and refuses beyond
+    /// the budget.
     fn count_call(&self) -> Decision {
         if self.max_tool_calls == 0 {
             return Decision::Allow;
@@ -643,8 +643,8 @@ impl ReadOnlyPolicy {
     }
 }
 
-/// Chemin absolu résolu comme le ferait le système : la partie existante la plus longue par
-/// `canonicalize` (liens symboliques, `..`), le reste ajouté tel quel.
+/// Absolute path resolved as the system would: the longest existing part through
+/// `canonicalize` (symbolic links, `..`), the rest appended as is.
 fn resolve(abs: &Path) -> PathBuf {
     let mut base = abs;
     let mut rest = PathBuf::new();
@@ -702,8 +702,8 @@ fn bump_counter(path: &Path) -> std::io::Result<u32> {
     Ok(n)
 }
 
-/// Exécute le crochet en garantissant un refus (code 2) en cas d'erreur ou de panique : jamais
-/// un autre code, que l'agent traiterait comme non bloquant.
+/// Runs the hook and guarantees a denial (code 2) on error or panic: never any other code,
+/// which the agent would treat as non-blocking.
 fn fail_closed(f: impl FnOnce() -> i32) -> i32 {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
         Ok(0) => 0,
@@ -715,8 +715,8 @@ fn fail_closed(f: impl FnOnce() -> i32) -> i32 {
     }
 }
 
-/// Point d'entrée de `<exécutable> policy-hook <fichier>` : lit l'appel sur l'entrée standard
-/// (4 Mo au plus) puis décide (voir `hook_main`).
+/// Entry point of `<executable> policy-hook <file>`: reads the call on standard input
+/// (4 MB at most), then decides (see `hook_main`).
 pub fn hook_entry(policy_path: &Path) -> i32 {
     fail_closed(|| {
         use std::io::Read;
@@ -729,8 +729,8 @@ pub fn hook_entry(policy_path: &Path) -> i32 {
     })
 }
 
-/// Crochet « avant outil » : lit l'appel en JSON (`tool_name`, `tool_input`, `cwd`), renvoie le
-/// code de sortie (0 = autorisé, 2 = refusé, raison sur stderr). En cas de doute, on refuse.
+/// "Before tool" hook: reads the call as JSON (`tool_name`, `tool_input`, `cwd`), returns the
+/// exit code (0 = allowed, 2 = denied, reason on stderr). When in doubt, deny.
 pub fn hook_main(policy_path: &Path, stdin: &str) -> i32 {
     fail_closed(|| {
         let policy = match ReadOnlyPolicy::read_from(policy_path) {
@@ -788,13 +788,13 @@ mod tests {
 
     fn accepted(p: &ReadOnlyPolicy, cwd: &Path, cmds: &[&str]) {
         for c in cmds {
-            assert!(p.check_command(c, cwd).is_ok(), "{c} devrait passer : {:?}", p.check_command(c, cwd));
+            assert!(p.check_command(c, cwd).is_ok(), "{c} should pass: {:?}", p.check_command(c, cwd));
         }
     }
 
     fn refused(p: &ReadOnlyPolicy, cwd: &Path, cmds: &[&str]) {
         for c in cmds {
-            assert!(p.check_command(c, cwd).is_err(), "{c} devrait être refusé");
+            assert!(p.check_command(c, cwd).is_err(), "{c} should be refused");
         }
     }
 
@@ -870,7 +870,7 @@ mod tests {
             assert!(!allow(t), "{t} devrait être refusé");
         }
         assert!(!allow("mcp__slack__slack_read_channel"), "connecteur non activé");
-        // Nom de serveur exact : un serveur qui contient le nom d'un autre n'en hérite pas.
+        // Exact server name: a server whose name contains another's does not inherit it.
         assert!(!allow("mcp__evil_datadog__search_logs"));
         assert!(!allow("mcp__datadog_evil__search_logs"));
         assert!(!allow("mcp____search_logs"));
@@ -934,7 +934,7 @@ mod tests {
     }
 
     #[test]
-    fn options_qui_executent_ou_ecrivent() {
+    fn options_that_run_or_write() {
         let d = tempfile::tempdir().unwrap();
         let p = pol(d.path());
         let cwd = d.path();
@@ -988,7 +988,7 @@ mod tests {
     }
 
     #[test]
-    fn git_branch_en_consultation() {
+    fn git_branch_read_only() {
         let d = tempfile::tempdir().unwrap();
         let p = pol(d.path());
         let cwd = d.path();
@@ -1015,7 +1015,7 @@ mod tests {
     }
 
     #[test]
-    fn exclusions_des_depots() {
+    fn repository_exclusions() {
         let d = tempfile::tempdir().unwrap();
         let repo = d.path();
         std::fs::create_dir_all(repo.join("src")).unwrap();
@@ -1051,7 +1051,7 @@ mod tests {
     }
 
     #[test]
-    fn liens_symboliques_et_dossier_courant() {
+    fn symlinks_and_working_folder() {
         let d = tempfile::tempdir().unwrap();
         let repo = d.path().join("repo");
         let dehors = d.path().join("dehors");
@@ -1071,7 +1071,7 @@ mod tests {
         assert!(matches!(p.decide("Read", &json!({"file_path": repo.join("lien").join("..").join("x")}), &repo), Decision::Deny(_)));
         assert!(matches!(p.decide("Glob", &json!({"pattern": "/etc/*"}), &repo), Decision::Deny(_)));
         assert!(matches!(p.decide("Glob", &json!({"pattern": "../*"}), &repo), Decision::Deny(_)));
-        // Dossier courant hors des dépôts : ni commande ni recherche sans chemin.
+        // Working folder outside the repositories: neither commands nor searches without a path.
         refused(&p, &dehors, &["rg x"]);
         assert!(matches!(p.decide("Grep", &json!({"pattern": "x"}), &dehors), Decision::Deny(_)));
     }
@@ -1087,7 +1087,7 @@ mod tests {
         assert!(matches!(p.decide("Write", &json!({"file_path": f}), d.path()), Decision::Deny(_)));
         assert!(matches!(p.decide("WebFetch", &json!({"url": "https://x"}), d.path()), Decision::Deny(_)));
         assert_eq!(p.decide("Grep", &json!({"pattern": "creneau"}), d.path()), Decision::Allow);
-        assert_eq!(p.decide("Grep", &json!({"pattern": "a..b"}), d.path()), Decision::Allow, "regex, pas un chemin");
+        assert_eq!(p.decide("Grep", &json!({"pattern": "a..b"}), d.path()), Decision::Allow, "regex, not a path");
         let mut none = p.clone();
         none.tools_enabled = false;
         assert!(matches!(none.decide("Read", &json!({"file_path": f}), d.path()), Decision::Deny(_)));
@@ -1109,12 +1109,12 @@ mod tests {
         assert_eq!(hook_main(&pf, &post), 2);
         assert_eq!(hook_main(&pf, "pas du json"), 2);
         assert_eq!(hook_main(&d.path().join("absente.json"), &call), 2);
-        assert_eq!(fail_closed(|| panic!("boum")), 2, "panique : refus");
-        assert_eq!(fail_closed(|| 1), 2, "jamais un code non bloquant");
+        assert_eq!(fail_closed(|| panic!("boum")), 2, "panic: denied");
+        assert_eq!(fail_closed(|| 1), 2, "never a non-blocking code");
     }
 
     #[test]
-    fn budget_tenu_sous_appels_paralleles() {
+    fn budget_held_under_parallel_calls() {
         let d = tempfile::tempdir().unwrap();
         let mut p = pol(d.path());
         p.max_tool_calls = 10;

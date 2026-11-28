@@ -1,6 +1,6 @@
 //! `steno mcp` : serveur MCP local, stdio, **lecture seule** (PLAN §9).
-//! JSON-RPC 2.0, un message par ligne. Les apartés (transcription privée et demandes posées en
-//! aparté) et les réunions confidentielles ne sont jamais renvoyés.
+//! JSON-RPC 2.0, one message per line. Asides (private transcript and requests made in an
+//! aside) and confidential meetings are never returned.
 
 use anyhow::Result;
 use steno_core::model::{ActionFilter, MeetingFilter};
@@ -37,8 +37,8 @@ fn arg<'a>(a: &'a Value, k: &str) -> Option<&'a str> {
     a.get(k).and_then(|v| v.as_str()).filter(|s| !s.is_empty())
 }
 
-/// Réunion consultable : existante et non confidentielle. Même réponse dans les deux cas de
-/// refus, pour ne pas révéler l'existence d'une réunion confidentielle.
+/// Meeting that can be looked up: existing and not confidential. Same answer for both refusal
+/// cases, so the existence of a confidential meeting is never revealed.
 fn public_meeting(db: &Db, a: &Value) -> Result<String> {
     let id = arg(a, "id").ok_or_else(|| anyhow::anyhow!("id manquant"))?;
     match db.get_meeting(id)? {
@@ -51,8 +51,8 @@ pub fn call_tool(db: &Db, name: &str, a: &Value) -> Result<Value> {
     Ok(match name {
         "search_meetings" => {
             let q = arg(a, "query").unwrap_or("");
-            // Réunions confidentielles retirées avant la limite de 20 : elles ne masquent jamais
-            // les réunions publiques plus anciennes.
+            // Confidential meetings are removed before the 20-result limit: they never hide
+            // older public meetings.
             let meetings = db.list_meetings(&MeetingFilter {
                 query: Some(q.to_string()),
                 from: arg(a, "from").map(String::from),
@@ -210,7 +210,7 @@ mod tests {
         let r = handle(&db, &json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_actions","arguments":{}}})).unwrap();
         assert_eq!(r["result"]["isError"], false);
         let r = handle(&db, &json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_report","arguments":{"id":"x"}}})).unwrap();
-        assert_eq!(r["result"]["isError"], true, "réunion inconnue");
+        assert_eq!(r["result"]["isError"], true, "unknown meeting");
         assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("réunion introuvable"));
         let r = handle(&db, &json!({"jsonrpc":"2.0","id":5,"method":"nope"})).unwrap();
         assert_eq!(r["error"]["code"], -32601);
@@ -233,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn recherche_sans_masquage_par_les_confidentielles() {
+    fn search_not_hidden_by_confidential_meetings() {
         let db = Db::open_in_memory().unwrap();
         let mut old = meeting("ancienne", "Revue Brindille");
         old.started_at = "2026-01-05T10:00:00+01:00".into();
@@ -246,11 +246,11 @@ mod tests {
         }
         let found = call_tool(&db, "search_meetings", &json!({"query": "Brindille"})).unwrap();
         let ids: Vec<&str> = found["meetings"].as_array().unwrap().iter().map(|m| m["id"].as_str().unwrap()).collect();
-        assert_eq!(ids, ["ancienne"], "25 réunions confidentielles récentes ne masquent pas la réunion publique");
+        assert_eq!(ids, ["ancienne"], "25 recent confidential meetings do not hide the public meeting");
     }
 
     #[test]
-    fn reunions_confidentielles_et_apartes_absents() {
+    fn confidential_meetings_and_asides_left_out() {
         let db = Db::open_in_memory().unwrap();
         for (id, title) in [("pub", "Daily ORION"), ("conf", "Point RH")] {
             db.insert_meeting(&meeting(id, title)).unwrap();
@@ -276,7 +276,7 @@ mod tests {
         for tool in ["get_meeting", "get_transcript", "get_report"] {
             let conf = call(tool, json!({"id": "conf"})).unwrap_err().to_string();
             let absent = call(tool, json!({"id": "n-existe-pas"})).unwrap_err().to_string();
-            assert_eq!(conf, absent, "{tool} : aucune différence entre confidentielle et inexistante");
+            assert_eq!(conf, absent, "{tool}: no difference between confidential and missing");
             assert_eq!(conf, "réunion introuvable");
             assert!(call(tool, json!({"id": "pub"})).is_ok(), "{tool}");
         }
@@ -307,6 +307,6 @@ mod tests {
         db.insert_request(&q("hotkey", "question en aparté sur l'entretien annuel")).unwrap();
         let m = call("get_meeting", json!({"id": "pub"})).unwrap().to_string();
         assert!(m.contains("verrou de créneau"), "{m}");
-        assert!(!m.contains("entretien annuel"), "les demandes en aparté ne sortent jamais : {m}");
+        assert!(!m.contains("entretien annuel"), "requests made in an aside never come out: {m}");
     }
 }

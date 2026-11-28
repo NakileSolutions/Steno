@@ -427,7 +427,7 @@ pub async fn generate(inner: &Inner, meeting_id: &str) -> Result<()> {
     let names = crate::prompts::speaker_names(&speakers);
     let transcript = crate::prompts::format_transcript(&segments, &names);
     let notes = inner.db.notes(meeting_id)?;
-    // Les demandes posées en aparté restent privées : jamais dans le compte rendu.
+    // Requests made in an aside stay private: never in the summary.
     let requests: Vec<_> = inner.db.requests(meeting_id)?.into_iter().filter(|r| r.origin != "hotkey").collect();
     let date = meeting_date(&meeting);
     if transcript.trim().is_empty() && notes.is_empty() {
@@ -450,7 +450,7 @@ pub async fn generate(inner: &Inner, meeting_id: &str) -> Result<()> {
     let res = match res {
         Ok(r) => r,
         Err(e) => {
-            // Rédaction arrêtée par un passage en confidentielle : réunion terminée, sans erreur.
+            // Writing stopped by a switch to confidential: meeting done, without error.
             let confidential = inner.db.get_meeting(meeting_id)?.is_some_and(|m| m.confidential);
             inner.db.set_meeting_status(meeting_id, if confidential { "done" } else { "error" })?;
             inner.emit(CoreEvent::MeetingsChanged);

@@ -176,8 +176,8 @@ async fn wait_request(core: &Core, id: &str, timeout: u64) -> Result<steno_core:
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Crochet de politique : traité avant toute analyse des arguments, et toujours fermé par
-    // défaut (code 2 sur toute erreur, jamais 1).
+    // Policy hook: handled before any argument parsing, and always fail-closed (code 2 on
+    // any error, never 1).
     let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
     if args.get(1).map(|a| a == "policy-hook").unwrap_or(false) {
         let policy = args.get(2).map(PathBuf::from).unwrap_or_default();
@@ -311,7 +311,7 @@ async fn main() -> Result<()> {
             }
         }
         Cmd::Mcp => {
-            // Lecture seule : ni migration, ni création de base, ni écriture.
+            // Read-only: no migration, no database creation, no write.
             let path = steno_core::paths::db_path();
             if !path.exists() {
                 bail!("base Sténo introuvable ({}) : lancez Sténo une première fois", path.display());

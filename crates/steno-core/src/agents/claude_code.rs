@@ -4,8 +4,8 @@
 //! Lecture seule : mode de permission `dontAsk` (tout ce qui n'est pas explicitement
 //! autorisé est refusé), liste d'outils autorisés minimale, refus explicites des outils
 //! d'écriture, et crochet `PreToolUse` qui applique `ReadOnlyPolicy` (motifs MCP interdits,
-//! commandes shell, chemins, budget d'appels). Sans exécutable de crochet, Claude Code n'est
-//! pas lancé.
+//! shell commands, paths, call budget). Without a hook executable, Claude Code is not
+//! started.
 
 use super::*;
 use crate::agents::process::run_streaming;
@@ -22,9 +22,9 @@ fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
-/// Paramètres `--settings` d'une exécution : refus explicites + crochet de politique. Sans
-/// exécutable de crochet, l'exécution est refusée : la politique (commandes, chemins, budget,
-/// outils MCP) ne serait pas appliquée.
+/// `--settings` of a run: explicit denials + policy hook. Without a hook executable, the run
+/// is refused: the policy (commands, paths, budget, MCP tools) would not be
+/// enforced.
 pub(crate) fn run_settings(req: &RunRequest) -> Result<Value> {
     let Some(exe) = &req.hook_exe else {
         anyhow::bail!("crochet de politique indisponible : exécution de Claude Code refusée");
@@ -361,10 +361,10 @@ mod tests {
     }
 
     #[test]
-    fn sans_crochet_pas_d_execution() {
+    fn no_run_without_hook() {
         let mut r = req(ToolAccess::ReadOnly { connectors: vec![] });
         r.hook_exe = None;
-        assert!(run_settings(&r).is_err(), "la politique ne serait pas appliquée");
+        assert!(run_settings(&r).is_err(), "the policy would not be enforced");
     }
 
     #[test]
