@@ -332,8 +332,8 @@ test.describe('réglages', () => {
 
     await page.getByRole('button', { name: 'Générer les variantes' }).click();
     const rejected = page.locator('.rejected');
-    await expect(rejected.getByText('script', { exact: true })).toBeVisible();
-    await expect(rejected.getByText('description', { exact: true })).toBeVisible();
+    await expect(rejected.getByText('creneau', { exact: true })).toBeVisible();
+    await expect(rejected.getByText('scenario', { exact: true })).toBeVisible();
 
     const variants = page.getByRole('group', { name: 'Variantes' });
     await page.getByLabel('Variantes : ajouter').fill('inscrit');

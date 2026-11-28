@@ -481,7 +481,7 @@ export function defaultSettings(): Settings {
       wake_word: 'Sténo',
       strict: false,
       prefixes: ['ok', 'dis', 'hey'],
-      variants: ['steno', 'scrib', 'skribe'],
+      variants: ['steno', 'stenau', 'stenot'],
       verbs: {
         search: ['cherche', 'recherche', 'regarde', 'trouve'],
         check: ['vérifie', 'confirme'],

@@ -48,8 +48,16 @@ function storeSettings(s: Settings) {
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const clone = <T>(v: T): T => structuredClone(v);
 
+// Excerpt of the core list (`crates/steno-core/src/wake/forbidden_fr.txt`): neighbours of
+// « Sténo », then of « Scribe » (the former default, still a possible wake word).
 const BANNED_VARIANTS: Record<string, string> = {
-  script: 'Mot courant en réunion de dev (liste intégrée).',
+  stenographie: 'Mot courant en français (liste intégrée).',
+  creneau: 'Mot courant en réunion de dev (liste intégrée).',
+  scenario: 'Mot courant en réunion de dev (liste intégrée).',
+  stylo: 'Mot courant en français (liste intégrée).',
+  tenor: 'Mot courant en français (liste intégrée).',
+  stereo: 'Mot courant en français (liste intégrée).',
+  script:'Mot courant en réunion de dev (liste intégrée).',
   scripts: 'Mot courant en réunion de dev (liste intégrée).',
   description: 'Mot courant en réunion de dev (liste intégrée).',
   inscrit: 'Mot courant en français (liste intégrée).',
@@ -870,7 +878,7 @@ export function createMockBackend(): Backend {
       const w = fold(String(a.word ?? '').trim());
       if (!w) return { accepted: [], rejected: [] };
       const cands = new Set<string>([w, w.replace(/e$/, ''), w.replace(/c/g, 'k'), w + 's', w.replace(/i/g, 'y')]);
-      if (w === 'steno') ['script', 'inscrit', 'description', 'stenos', 'skribe', 'scrib'].forEach((x) => cands.add(x));
+      if (w === 'steno') ['stenos', 'esteno', 'stenau', 'stenot', 'creneau', 'scenario', 'stylo'].forEach((x) => cands.add(x));
       return checkVariants(w, [...cands]);
     },
     check_variants: (a) => checkVariants(String(a.word), (a.variants as string[]) ?? []),
@@ -880,11 +888,11 @@ export function createMockBackend(): Backend {
       await sleep(Math.min(secs, 20) * 120 + 600);
       const w = settings.voice.wake_word;
       if (secs >= 10) {
-        return { text: "Le script de déploiement est décrit dans la description du ticket. Thomas s'est inscrit à la revue. Il faudra transcrire les échanges et prescrire un nouveau délai. Le scripteur a tout noté." };
+        return { text: 'Le sténographe a noté le scénario du créneau de jeudi. Stéphane a prêté son stylo au ténor de la chorale. Il faudra rester sur le même tempo et étendre le délai. Tout est noté sur le tableau.' };
       }
       wakeTestCount++;
       const miss = wakeTestCount % 5 === 3;
-      return { text: miss ? 'Scrabe, cherche quelque chose.' : `${w}, cherche quelque chose.` };
+      return { text: miss ? 'Scénario, cherche quelque chose.' : `${w}, cherche quelque chose.` };
     },
     doctor: async () => {
       await sleep(700);
