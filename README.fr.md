@@ -11,6 +11,8 @@ Datadog. Il utilise l'agent IA que vous avez déjà (Claude Code, Codex, Gemini 
 avec votre abonnement. Aucun audio ne sort de votre ordinateur, et **Sténo ne publie jamais rien** : il
 lit, vous publiez.
 
+https://github.com/user-attachments/assets/105980e3-199a-4d61-aa63-8473f7afd498
+
 ![Compte rendu](docs/screenshots/detail-compte-rendu-clair.png)
 
 ## Fonctionnalités
