@@ -153,7 +153,7 @@ version publiée puis relance `make install` ; il ne reste qu'à redémarrer. L'
 | Fenêtre | Réunions (compte rendu, transcription, demandes, notes, contexte), En direct, Recherche, Décisions & actions, Réglages |
 | Voix | « *OK Sténo, cherche / vérifie / note / résume / annule…* », « *OK Sténo, arrête l'écoute* » (mot d'appel et verbes réglables) |
 | Raccourcis | ⌃⌥S démarrer/arrêter · ⌃⌥Espace aparté (maintenir) · ⌃⌥N note rapide (Linux : Ctrl+Alt+…, ou `steno-app --toggle / --aside / --note` liés dans les réglages du bureau) |
-| CLI | `steno ask "qu'a-t-on décidé sur l'export ?"` · `steno export <id>` · `steno doctor` · `steno mcp` · `steno skill install` |
+| CLI | `steno ask "qu'a-t-on décidé sur l'export ?"` · `steno export <id> [--format txt|srt|vtt]` · `steno doctor` · `steno mcp` · `steno skill install` |
 
 Donner à votre agent l'accès aux réunions, en lecture seule : `steno skill install` (ou
 Réglages → Agent → « Sténo dans votre agent »). Le skill est copié dans `~/.claude/skills` et

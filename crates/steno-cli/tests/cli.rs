@@ -97,6 +97,39 @@ fn export_markdown_sans_apartes() {
 }
 
 #[test]
+fn export_transcript_formats_without_asides() {
+    let h = home();
+    let id = meeting_id(h);
+    let run = |format: &str| {
+        let out = steno(h).args(["export", &id, "--format", format]).output().unwrap();
+        assert!(out.status.success(), "{format}: {}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    let srt = run("srt");
+    assert!(srt.starts_with("1\n00:"), "{srt}");
+    assert!(srt.contains(" --> "));
+    let vtt = run("vtt");
+    assert!(vtt.starts_with("WEBVTT\n"), "{vtt}");
+    let txt = run("txt");
+    assert!(txt.starts_with("Daily ORION"), "{txt}");
+    for s in [&srt, &vtt, &txt] {
+        assert!(s.contains("verrou de créneau"));
+        assert!(!s.contains("entretien annuel"), "asides are never exported");
+    }
+    assert_eq!(run("markdown"), run("md"));
+
+    let dir = h.join("export-vtt");
+    let out = steno(h).args(["export", "--all", "--format", "vtt", "--out", dir.to_str().unwrap()]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let files: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|f| f.path()).collect();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].extension().unwrap(), "vtt");
+
+    let out = steno(h).args(["export", &id, "--format", "pdf"]).output().unwrap();
+    assert!(!out.status.success());
+}
+
+#[test]
 fn ask_historique_sans_ia_puis_avec() {
     let h = home();
     let out = steno(h).args(["ask", "--no-ai", "verrou de créneau"]).output().unwrap();

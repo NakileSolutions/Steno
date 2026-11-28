@@ -139,9 +139,15 @@ pub fn meeting_markdown(db: &Db, id: &str) -> Result<String> {
 
 /// Écrit `<dossier>/<id>.md` et renvoie le chemin.
 pub fn export_to_dir(db: &Db, id: &str, dir: &Path) -> Result<PathBuf> {
+    export_to_dir_as(db, id, dir, "markdown")
+}
+
+/// Writes `<dir>/<id>.<extension>` in the given format (see [`FORMATS`]) and returns the path.
+pub fn export_to_dir_as(db: &Db, id: &str, dir: &Path, format: &str) -> Result<PathBuf> {
+    let ext = extension(format)?;
     std::fs::create_dir_all(dir)?;
-    let p = dir.join(format!("{id}.md"));
-    std::fs::write(&p, meeting_markdown(db, id)?)?;
+    let p = dir.join(format!("{id}.{ext}"));
+    std::fs::write(&p, meeting_export(db, id, format)?)?;
     Ok(p)
 }
 
