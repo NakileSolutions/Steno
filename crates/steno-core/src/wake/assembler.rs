@@ -9,6 +9,10 @@ pub const MERGE_GAP_S: f64 = 2.0;
 pub const END_SILENCE_S: f64 = 1.5;
 /// Attente maximale (horloge murale) d'une suite d'énoncé avant de clore la commande.
 pub const FLUSH_AFTER: Duration = Duration::from_millis(3500);
+/// Shorter wait for « arrête l'écoute » / « annule »: just enough for the `them` channel's copy
+/// of a loudspeaker echo to arrive and discard the command (`EchoFilter::add_them`), so a remote
+/// participant cannot stop the recording when hardware echo cancellation is off.
+pub const STOP_FLUSH_AFTER: Duration = Duration::from_millis(1000);
 
 #[derive(Debug, Clone)]
 pub struct Utterance {
@@ -24,6 +28,9 @@ struct Pending {
     parts: Vec<String>,
     last_t1: f64,
     last_arrival: Instant,
+    /// Wait after the last utterance before closing: `FLUSH_AFTER`, or `STOP_FLUSH_AFTER`
+    /// while the text so far is a stop or cancel command.
+    flush_after: Duration,
 }
 
 /// Commande complète, prête à être analysée.
@@ -50,6 +57,13 @@ impl CommandAssembler {
         self.pending.is_some()
     }
 
+    fn flush_after(det: &Detector, text: &str) -> Duration {
+        match det.detect(text).map(|d| d.intent) {
+            Some(Intent::Stop | Intent::Cancel) => STOP_FLUSH_AFTER,
+            _ => FLUSH_AFTER,
+        }
+    }
+
     fn finalize(&mut self, det: &Detector) -> Option<Assembled> {
         let p = self.pending.take()?;
         // Les frontières d'énoncés comptent comme des pauses.
@@ -68,6 +82,7 @@ impl CommandAssembler {
                 p.parts.push(u.text.clone());
                 p.last_t1 = u.t1;
                 p.last_arrival = now;
+                p.flush_after = Self::flush_after(det, &p.parts.join(", "));
                 return out;
             }
             if let Some(a) = self.finalize(det) {
@@ -80,13 +95,8 @@ impl CommandAssembler {
                 parts: vec![u.text.clone()],
                 last_t1: u.t1,
                 last_arrival: now,
+                flush_after: Self::flush_after(det, &u.text),
             });
-            // « arrête l'écoute », « annule » : rien à attendre, on agit tout de suite.
-            if matches!(det.detect(&u.text).map(|d| d.intent), Some(Intent::Stop | Intent::Cancel)) {
-                if let Some(a) = self.finalize(det) {
-                    out.push(a);
-                }
-            }
         }
         out
     }
@@ -105,7 +115,7 @@ impl CommandAssembler {
     /// si aucune suite n'est arrivée.
     pub fn tick(&mut self, det: &Detector, now: Instant) -> Option<Assembled> {
         let p = self.pending.as_ref()?;
-        if now.duration_since(p.last_arrival) >= FLUSH_AFTER {
+        if now.duration_since(p.last_arrival) >= p.flush_after {
             return self.finalize(det);
         }
         None
@@ -153,13 +163,36 @@ mod tests {
     }
 
     #[test]
-    fn arret_immediat() {
+    fn stop_and_cancel_wait_for_the_echo_guard() {
         let det = Detector::new(&crate::wake::test_voice());
+        for (text, intent) in [("Scribe, arrête l'écoute.", Intent::Stop), ("Scribe, annule.", Intent::Cancel)] {
+            let mut a = CommandAssembler::new();
+            let t = Instant::now();
+            assert!(a.push_me(&det, &u(1, 0.0, 2.0, text), t).is_empty(), "{text}: not sent before the echo guard");
+            assert!(a.is_pending());
+            assert!(a.tick(&det, t + Duration::from_millis(500)).is_none());
+            let r = a.tick(&det, t + STOP_FLUSH_AFTER).unwrap();
+            assert_eq!(r.detection.unwrap().intent, intent);
+            assert!(!a.is_pending());
+        }
+        assert!(STOP_FLUSH_AFTER < FLUSH_AFTER);
+    }
+
+    #[test]
+    fn wait_follows_the_command_assembled_so_far() {
+        let det = Detector::new(&crate::wake::test_voice());
+        let t = Instant::now();
         let mut a = CommandAssembler::new();
-        let out = a.push_me(&det, &u(1, 0.0, 2.0, "Scribe, arrête l'écoute."), Instant::now());
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].detection.as_ref().unwrap().intent, Intent::Stop);
-        assert!(!a.is_pending());
+        a.push_me(&det, &u(1, 0.0, 1.0, "Scribe, cherche"), t);
+        assert!(a.tick(&det, t + STOP_FLUSH_AFTER).is_none(), "a search keeps the normal wait");
+        // The wake word alone, then the stop in a second utterance: the shorter wait applies
+        // from the second one.
+        let mut b = CommandAssembler::new();
+        b.push_me(&det, &u(1, 0.0, 1.0, "Scribe,"), t);
+        let t2 = t + Duration::from_millis(1500);
+        assert!(b.push_me(&det, &u(2, 1.5, 3.0, "arrête l'écoute."), t2).is_empty());
+        assert!(b.tick(&det, t2 + Duration::from_millis(500)).is_none());
+        assert_eq!(b.tick(&det, t2 + STOP_FLUSH_AFTER).unwrap().detection.unwrap().intent, Intent::Stop);
     }
 
     #[test]

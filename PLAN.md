@@ -306,6 +306,8 @@ These CLIs' options change fast: the agent implementing them **checks them again
   - `arrête l'écoute|termine la réunion|fin de la réunion` → `stop` (stops listening and starts the report)
   - The verbs can be edited in the settings (grammar file in the database).
 - End of command: consecutive `me` sentences less than 2 s apart are merged, until 1.5 s of silence.
+  `stop` and `cancel` wait only 1 s, just long enough for the `them` copy of a loudspeaker echo to
+  discard them: a remote participant saying « Sténo, arrête l'écoute » does not stop listening.
 - **Never any speech synthesis in the Teams audio.**
 
 ### 6.4 « Tester » ("Test") button
