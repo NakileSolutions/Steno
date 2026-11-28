@@ -131,6 +131,7 @@ Status at handover: **everything is green**.
 Test tools:
 - `fixtures/daily-45min.jsonl` (regenerable with `fixtures/generate.py`) with `fixtures/expected.json`;
 - `fixtures/fake-bin/claude`, which mimics `claude -p --output-format stream-json`, `--version` and `mcp list`, and **actually** calls the hook declared in `--settings`;
+- `fixtures/fake-bin/codex`, which mimics `codex exec --json` (prompt on stdin, last message written to `--output-last-message`), `--version` and `mcp list`, and refuses to run without `--sandbox read-only` and `-c mcp_servers={}`; tests point `CODEX_HOME` at a temporary folder so models come from a made-up `config.toml`;
 - `steno replay <fichier> --speed N`, the sidecar simulator: it announces the Teams call then waits for `start`.
 
 On a Mac, for the e2e tests: `cd app/ui && npx playwright install chromium` once.
