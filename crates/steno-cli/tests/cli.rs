@@ -272,3 +272,71 @@ fn serveur_http_de_l_api() {
     assert_eq!(c, 400);
     assert!(b.contains("JSON invalide"));
 }
+
+/// Runs `steno replay <file>`, sends `cmds` then `shutdown`, and returns every line it printed.
+fn replay_session(name: &str, fixture: &str, cmds: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    let dir = std::env::temp_dir().join(format!("steno-replay-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("replay.jsonl");
+    std::fs::write(&file, fixture).unwrap();
+    let mut child = steno(&dir)
+        .args(["replay", file.to_str().unwrap(), "--speed", "0"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    for c in cmds.iter().chain([&serde_json::json!({"cmd": "shutdown"})]) {
+        writeln!(stdin, "{c}").unwrap();
+    }
+    drop(stdin);
+    let mut out = String::new();
+    child.stdout.take().unwrap().read_to_string(&mut out).unwrap();
+    assert!(child.wait().unwrap().success());
+    let _ = std::fs::remove_dir_all(&dir);
+    out.lines().map(|l| serde_json::from_str(l).unwrap()).collect()
+}
+
+fn first_of<'a>(lines: &'a [serde_json::Value], kind: &str) -> &'a serde_json::Value {
+    lines.iter().find(|l| l["type"] == kind).unwrap_or_else(|| panic!("no {kind} in {lines:?}"))
+}
+
+#[test]
+fn replay_answers_calendar_events_from_the_fixture() {
+    let fixture = concat!(
+        r#"{"type":"calendar","events":["#,
+        r#"{"id":"ev-1","title":"Revue Nova","start":"2026-11-27T10:00:00+01:00","end":"2026-11-27T11:00:00+01:00","all_day":false,"#,
+        r#""attendees":[{"name":"Inès","email":"ines@exemple.fr","status":"accepted","organizer":false,"me":false}]},"#,
+        r#"{"id":"ev-2","title":"Point mensuel","start":"2026-12-20T09:00:00+01:00","end":"2026-12-20T09:30:00+01:00","all_day":false,"attendees":[]}"#,
+        "]}\n",
+        r#"{"type":"call","active":true,"app":"teams","title":"Revue Nova"}"#,
+        "\n",
+    );
+    let lines = replay_session(
+        "calendar",
+        fixture,
+        &[
+            serde_json::json!({"cmd": "permissions"}),
+            serde_json::json!({"cmd": "calendar_events", "from": "2026-11-27T08:00:00+01:00", "to": "2026-12-04T08:00:00+01:00"}),
+        ],
+    );
+    assert!(lines.iter().filter(|l| l["type"] == "permissions").all(|p| p["calendar"] == "granted"), "{lines:?}");
+    assert!(!lines.iter().any(|l| l["type"] == "error"), "{lines:?}");
+    let cal = first_of(&lines, "calendar");
+    let ids: Vec<&str> = cal["events"].as_array().unwrap().iter().map(|e| e["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["ev-1"], "only the events that overlap the requested window");
+    assert_eq!(cal["events"][0]["attendees"][0]["name"], "Inès");
+    assert_eq!(lines.iter().filter(|l| l["type"] == "calendar").count(), 1, "the fixture's calendar is not replayed as is");
+}
+
+#[test]
+fn replay_without_calendar_reports_no_calendar_source() {
+    let lines = replay_session(
+        "no-calendar",
+        "{\"type\":\"call\",\"active\":true,\"app\":\"teams\",\"title\":\"Daily\"}\n",
+        &[serde_json::json!({"cmd": "calendar_events", "from": "2026-11-27T08:00:00+01:00", "to": "2026-12-04T08:00:00+01:00"})],
+    );
+    assert_eq!(first_of(&lines, "permissions")["calendar"], "unknown");
+    assert_eq!(first_of(&lines, "calendar")["events"], serde_json::json!([]));
+}

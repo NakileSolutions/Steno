@@ -216,6 +216,9 @@ Simulateur : `steno replay <fixture.jsonl> [--speed N] [--exit]` parle exactemen
 (il rejoue un fichier d'exemple). Comme le vrai sidecar, il annonce l'appel (Teams ou autre) tout de
 suite mais n'envoie les phrases qu'après `start` ; `stop` met le rejeu en pause. Il permet de
 tester l'app et le cœur sans Mac.
+The file's `{"type":"calendar","events":[…]}` lines are the simulated calendar: they are not
+replayed; `calendar_events` answers with their events that overlap `from`–`to`, and
+`permissions.calendar` is then `granted` (`unknown` when the file has none).
 
 ---
 
