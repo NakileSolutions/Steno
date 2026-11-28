@@ -19,6 +19,27 @@ final class CalendarTests: XCTestCase {
         XCTAssertNil(CalendarReader.email(from: nil))
     }
 
+    func testRecurringOccurrencesGetDistinctIds() {
+        let monday = Date(timeIntervalSince1970: 1_795_852_800)
+        let tuesday = monday.addingTimeInterval(86_400)
+        let a = CalendarReader.eventId(external: "daily", local: "local-1", recurring: true, occurrence: monday)
+        let b = CalendarReader.eventId(external: "daily", local: "local-1", recurring: true, occurrence: tuesday)
+        XCTAssertEqual(a, "daily-1795852800")
+        XCTAssertNotEqual(a, b, "two occurrences of a daily must not share an id")
+        XCTAssertEqual(CalendarReader.eventId(external: nil, local: "local-1", recurring: true, occurrence: monday),
+                       "local-1-1795852800")
+        // One-off events keep their identifier (meetings already linked to them stay linked).
+        XCTAssertEqual(CalendarReader.eventId(external: "once", local: "local-2", recurring: false, occurrence: monday), "once")
+    }
+
+    func testCancelledAndAllDayEventsAreNotListed() {
+        XCTAssertTrue(CalendarReader.listed(allDay: false, status: .confirmed))
+        XCTAssertTrue(CalendarReader.listed(allDay: false, status: .tentative))
+        XCTAssertTrue(CalendarReader.listed(allDay: false, status: .none))
+        XCTAssertFalse(CalendarReader.listed(allDay: false, status: .canceled))
+        XCTAssertFalse(CalendarReader.listed(allDay: true, status: .confirmed))
+    }
+
     func testEncodage() throws {
         let ev = CalendarEvent(id: "e1", title: "Point Nova", start: "2026-11-27T10:00:00+01:00", end: "2026-11-27T10:30:00+01:00",
                                allDay: false, location: nil, url: nil, notes: nil, calendar: "Travail",
