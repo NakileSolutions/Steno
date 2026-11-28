@@ -334,7 +334,8 @@ async fn appel_teams_propose_sans_demarrer_et_arret_a_la_voix() {
         r#"{"type":"segment","ts":"2026-11-26T10:00:03+01:00","t0":1.0,"t1":3.0,"channel":"them","text":"On fait vite aujourd'hui.","private":false}"#,
         r#"{"type":"segment","ts":"2026-11-26T10:00:06+01:00","t0":4.0,"t1":6.0,"channel":"me","text":"D'accord, on garde le verrou de créneau.","private":false}"#,
         r#"{"type":"segment","ts":"2026-11-26T10:00:10+01:00","t0":8.0,"t1":10.0,"channel":"me","text":"Sténo, arrête l'écoute.","private":false}"#,
-        r#"{"type":"segment","ts":"2026-11-26T10:00:14+01:00","t0":12.0,"t1":14.0,"channel":"them","text":"Après l'arrêt : ne doit pas être enregistré.","private":false}"#,
+        // 2 s after the stop at speed 4: past the stop command's echo guard (STOP_FLUSH_AFTER).
+        r#"{"type":"segment","ts":"2026-11-26T10:00:18+01:00","t0":16.0,"t1":18.0,"channel":"them","text":"Après l'arrêt : ne doit pas être enregistré.","private":false}"#,
     ];
     std::fs::write(&file, lines.join("\n") + "\n").unwrap();
     let c = core("arret-voix", Some(SidecarSpec {
@@ -362,6 +363,38 @@ async fn appel_teams_propose_sans_demarrer_et_arret_a_la_voix() {
     tokio::time::sleep(Duration::from_millis(1500)).await;
     let segs = c.db().segments(&m.id, true, true).unwrap();
     assert!(!segs.iter().any(|s| s.text.contains("ne doit pas")), "rien n'est enregistré après l'arrêt");
+    c.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn stop_heard_from_the_loudspeakers_does_not_stop_listening() {
+    // A remote participant says « Sténo, arrête l'écoute. »; without hardware echo cancellation
+    // the microphone picks it up, and its `them` copy is transcribed a little later.
+    let file = env().join("echo-stop.jsonl");
+    let lines = [
+        r#"{"type":"teams_call","active":true,"title":"Point écho"}"#,
+        r#"{"type":"segment","ts":"2026-11-26T10:00:06+01:00","t0":4.0,"t1":6.0,"channel":"me","text":"D'accord, on garde le verrou de créneau.","private":false}"#,
+        r#"{"type":"segment","ts":"2026-11-26T10:00:10+01:00","t0":8.0,"t1":10.0,"channel":"me","text":"Sténo, arrête l'écoute.","private":false}"#,
+        r#"{"type":"segment","ts":"2026-11-26T10:00:10+01:00","t0":7.9,"t1":10.4,"channel":"them","text":"Sténo, arrête l'écoute.","private":false}"#,
+        r#"{"type":"segment","ts":"2026-11-26T10:00:18+01:00","t0":16.0,"t1":18.0,"channel":"them","text":"On continue, la réunion n'est pas finie.","private":false}"#,
+    ];
+    std::fs::write(&file, lines.join("\n") + "\n").unwrap();
+    let c = core("echo-stop", Some(SidecarSpec {
+        program: env!("CARGO_BIN_EXE_steno").into(),
+        args: vec!["replay".into(), file.display().to_string(), "--speed".into(), "4".into()],
+    }));
+    wait_until("appel Teams annoncé", 20, || c.live_state().call.active).await;
+    let m = c.start_meeting(None).await.unwrap();
+    wait_until("dernière phrase enregistrée", 20, || {
+        c.db().segments(&m.id, true, true).unwrap().iter().any(|s| s.text.contains("pas finie"))
+    })
+    .await;
+    assert_eq!(c.db().get_meeting(&m.id).unwrap().unwrap().status, "live", "the echoed stop must not end the meeting");
+    let reqs = c.db().requests(&m.id).unwrap();
+    assert!(!reqs.iter().any(|r| r.intent == "stop"), "{reqs:?}");
+    let segs = c.db().segments(&m.id, true, true).unwrap();
+    assert!(segs.iter().any(|s| s.channel == "me" && s.is_echo && s.text.contains("arrête")), "{segs:?}");
+    c.stop_meeting().await.unwrap();
     c.shutdown();
 }
 
